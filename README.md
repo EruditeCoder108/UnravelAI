@@ -55,7 +55,7 @@ graph TD
     U[User Code + Bug Symptom]:::user --> A
 
     subgraph Browser Layer [Instant & Free]
-        A(AST ANALYZER\nAcorn Parser):::browser
+        A(AST ANALYZER\n@babel/parser):::browser
         A -.->|Extracts Mutation Chains| A
         A -.->|Finds Timing Nodes| A
         A -.->|Detects Closure Captures| A
@@ -98,6 +98,7 @@ graph TD
 | **Teaching** | "Here's the fix, good luck" | Concept extraction: what broke, why, and how to never do it again |
 | **AI Awareness** | No self-reflection | "Why AI Loops" — explains exactly why other AI tools fail on this bug |
 | **Bug Classification** | Free-text description | Formal 12-category taxonomy with structured metadata |
+| **Uncertain Bugs** | Picks one answer, confidently wrong | Adversarial dual-agent debate — surfaces multiple hypotheses with evidence for each |
 
 ---
 
@@ -121,7 +122,7 @@ If the model can't point to evidence, it doesn't claim the bug. Period.
 
 ## AST Pre-Analysis
 
-Before any AI model sees the code, Unravel runs a **deterministic static analysis** in the browser using Acorn. This produces a verified context map:
+Before any AI model sees the code, Unravel runs a **deterministic static analysis** in the browser using `@babel/parser`. This produces a verified context map:
 
 ```
 Relevant Functions:
@@ -217,7 +218,7 @@ Three numbers define whether Unravel is working:
 | **TTI** | Time To Insight — how fast does the user *understand* the bug? | < 2 min |
 | **HR** | Hallucination Rate — did it reference code/variables/behavior that doesn't exist? | < 5% |
 
-These are measured against a growing benchmark suite of 20+ deliberately buggy programs with defined root causes.
+These are measured against a 10-bug benchmark suite of deliberately buggy programs with defined root causes, expanding post-launch.
 
 ---
 
@@ -227,13 +228,13 @@ These are measured against a growing benchmark suite of 20+ deliberately buggy p
 BYOK multi-provider support. SOTA models with extended thinking. 8-phase deterministic prompt. Anti-sycophancy guardrails. Evidence-backed confidence. Provider-specific prompt formatting. Concept extraction. Bug taxonomy. "Why AI Loops" analysis.
 
 ### Phase 2 — The Proof `IN PROGRESS`
-Client-side AST analysis with Acorn. Variable mutation chains, timing node detection, closure capture tracking. **The 10 Bug Benchmark:** measure Root Cause Accuracy (RCA) vs standard prompting to prove the system works before launch.
+Client-side AST analysis with `@babel/parser`. Variable mutation chains, timing node detection, closure capture tracking. **The 10 Bug Benchmark:** measure Root Cause Accuracy (RCA) with and without AST context to prove the system works before launch. Open source on completion.
 
 ### Phase 3 — The Demo `PLANNED`
-Extract `@unravel/core` shared engine. Build the **VS Code Extension** and **Live Bug Lens** so developers can see the bug highlighted right inside their editor.
+Extract `@unravel/core` shared engine. Build the **VS Code Extension** and **Live Bug Lens** so developers can see the bug highlighted right inside their editor — no copy-paste, no leaving the IDE.
 
 ### Phase 4 — Intelligence Layer `PLANNED`
-Function-level code slicing. Multi-agent pipeline (Router → Debugger → Explainer). Visual diff output. AI-simulated bug replay timeline.
+Function-level code slicing. **Adversarial multi-agent debate** — two agents independently diagnose the same bug, then reconcile. Disagreement surfaces multiple evidence-backed hypotheses instead of a confident wrong answer. Visual diff output. AI-simulated bug replay timeline.
 
 ### Phase 5 — The Breakthrough `PLANNED`
 WebContainers for live in-browser code execution. Real instrumented bug replay. Interactive D3.js dependency graph. Debug Journal ("What did I learn?"). CLI tool + OpenClaw integration. Desktop app.
@@ -257,7 +258,7 @@ Hover for details. Click to fix. Execution timeline in the gutter. Variable muta
 
 ```
 Chat debugging: read → remember → search → verify → fix  (5 steps)
-Live Bug Lens: see bug → click → fix                     (3 steps)
+Live Bug Lens:  see bug → click → fix                    (3 steps)
 ```
 
 Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
@@ -268,7 +269,7 @@ Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
 
 ```
 @unravel/core              ← shared engine (npm package)
-  ├── unravel-web          ← React app (live now)
+  ├── unravel-web          ← React app (working)
   ├── unravel-vscode       ← VS Code extension + Live Bug Lens
   ├── unravel-cli          ← terminal tool (CI/CD, OpenClaw)
   └── unravel-desktop      ← Electron app
@@ -276,7 +277,7 @@ Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
 
 | Platform | What It Does | Status |
 |----------|-------------|--------|
-| **Web App** | Paste code, describe bug, get structured report | ✅ Live |
+| **Web App** | Paste code, describe bug, get structured report | ✅ Working |
 | **VS Code Extension** | Right-click → debug. Live Bug Lens inline overlays | 🔜 Phase 3 |
 | **CLI** | `unravel analyze ./src --symptom "..."` | 🔜 Phase 5 |
 | **OpenClaw Skill** | AI agent calls Unravel as a debugging tool | 🔜 Phase 5 |
@@ -303,8 +304,8 @@ unravel-v3/
 ├── src/
 │   ├── App.jsx          Main application — 5-step UI + engine pipeline
 │   ├── config.js        Providers, taxonomy, prompts, output schema
-│   ├── index.css         Neo-brutalist design system
-│   └── main.jsx          Entry point
+│   ├── index.css        Neo-brutalist design system
+│   └── main.jsx         Entry point
 ├── index.html
 ├── vite.config.js
 └── package.json
