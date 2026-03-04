@@ -313,3 +313,7 @@ export const ENGINE_SCHEMA = {
     },
     required: ["needsMoreInfo"]
 };
+
+// --- Schema Instruction (for Claude / OpenAI inline prompt injection) ---
+// This mirrors ENGINE_SCHEMA so that changes to one are reflected in both.
+export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, whyAILooped: {pattern, explanation, loopSteps[]}, aiPrompt } }`;

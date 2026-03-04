@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import {
     PROVIDERS, BUG_TAXONOMY, LEVELS, LANGUAGES,
-    buildSystemPrompt, buildRouterPrompt, ENGINE_SCHEMA
+    buildSystemPrompt, buildRouterPrompt, ENGINE_SCHEMA, ENGINE_SCHEMA_INSTRUCTION
 } from './config.js';
 import { runFullAnalysis } from './analyzer/ast-engine.js';
 
@@ -99,6 +99,7 @@ export default function App() {
     const [additionalFiles, setAdditionalFiles] = useState([]);
     const [viewMode, setViewMode] = useState(null);
     const [copiedSection, setCopiedSection] = useState(null);
+    const [routerSelectedPaths, setRouterSelectedPaths] = useState([]);
 
     const dirInputRef = useRef(null);
 
@@ -161,17 +162,12 @@ export default function App() {
         } else if (provider === 'anthropic') {
             url = prov.endpoint;
             headers = prov.headers(apiKey);
-            // For Claude, we embed the JSON schema instruction in the prompt
-            const schemaInstruction = useSchema
-                ? '\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, whyAILooped: {pattern, explanation, loopSteps[]}, aiPrompt } }'
-                : '';
+            const schemaInstruction = useSchema ? ENGINE_SCHEMA_INSTRUCTION : '';
             body = prov.buildBody(model, systemPrompt, userPrompt + schemaInstruction, 32768);
         } else if (provider === 'openai') {
             url = prov.endpoint;
             headers = prov.headers(apiKey);
-            const schemaInstruction = useSchema
-                ? '\n\nReturn ONLY a raw JSON object (no markdown fences) matching the Unravel engine schema: { needsMoreInfo, missingFilesRequest?, report? }'
-                : '';
+            const schemaInstruction = useSchema ? ENGINE_SCHEMA_INSTRUCTION : '';
             body = prov.buildBody(model, systemPrompt, userPrompt + schemaInstruction);
         }
 
@@ -203,10 +199,15 @@ export default function App() {
                     const routerRaw = await callAPI('You are a file routing agent. Return JSON only.', routerPrompt, false);
                     const routerData = parseAIJson(routerRaw);
                     const selectedPaths = routerData?.filesToRead || filePaths.slice(0, 7);
+                    setRouterSelectedPaths(selectedPaths); // Persist for resume
                     setLoadingStage(`ROUTER: Selected ${selectedPaths.length} files...`);
                     codeFiles = await readSelectedFiles(selectedPaths);
                 } else {
-                    codeFiles = await readSelectedFiles(directoryFiles.slice(0, 5).map(f => f.webkitRelativePath));
+                    // Resume: reuse the router-selected paths from the first run
+                    const resumePaths = routerSelectedPaths.length > 0
+                        ? routerSelectedPaths
+                        : directoryFiles.slice(0, 7).map(f => f.webkitRelativePath);
+                    codeFiles = await readSelectedFiles(resumePaths);
                 }
             } else {
                 codeFiles = pastedFiles.filter(f => f.name.trim() && f.content.trim());
@@ -237,7 +238,7 @@ export default function App() {
             setLoadingStage('DEEP ENGINE: Reconstructing execution timeline and state invariants...');
             const systemPrompt = buildSystemPrompt(level, language, provider);
             const astBlock = astContext ? `${astContext}\n\n` : '';
-            const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${codeFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 4000)}`).join('\n\n')}\n\nUSER'S BUG REPORT:\n${userError || 'No specific error described. Analyze for any issues.'}`;
+            const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${codeFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 8000)}`).join('\n\n')}\n\nUSER'S BUG REPORT:\n${userError || 'No specific error described. Analyze for any issues.'}`;
 
             const raw = await callAPI(systemPrompt, enginePrompt, true);
             const result = parseAIJson(raw);
