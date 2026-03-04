@@ -4,6 +4,10 @@
     "description": "Deterministic AI debugging with inline bug overlays. Right-click → Debug This File.",
     "version": "0.1.0",
     "publisher": "unravel",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/EruditeCoder108/UnravelAI"
+    },
     "engines": {
         "vscode": "^1.85.0"
     },

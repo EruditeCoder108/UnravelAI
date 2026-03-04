@@ -57,15 +57,13 @@ Live Bug Lens:  right-click → see bug → fix               (3 steps)
 
 Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
 
-### Install Locally
+### Install
 
-```bash
-cd unravel-vscode
-npm install
-npm run build
-npm run package          # creates .vsix file
-# VS Code → Extensions → ⋯ → Install from VSIX
-```
+1. Download [`unravel-vscode-0.1.0.vsix`](https://github.com/EruditeCoder108/UnravelAI/releases) from Releases
+2. VS Code → Extensions (`Ctrl+Shift+X`) → `⋯` → **Install from VSIX...**
+3. Right-click any `.js` file → **"Unravel: Debug This File"**
+
+> See [full setup guide](#-how-to-use-the-vs-code-extension) below for details.
 
 ---
 
@@ -311,30 +309,90 @@ WebContainers for live in-browser code execution. Real instrumented bug replay. 
 
 ---
 
-## 🚀 Quick Start
+## 🚀 How to Use the VS Code Extension
 
-### Web App
+### Prerequisites
+
+- **VS Code**, **Cursor**, or **Windsurf**
+- An API key from one of: [Google AI Studio](https://aistudio.google.com/apikey) (free), [Anthropic](https://console.anthropic.com/), or [OpenAI](https://platform.openai.com/api-keys)
+
+### Option A — Download & Install (Recommended)
+
+1. Go to [**Releases**](https://github.com/EruditeCoder108/UnravelAI/releases) and download `unravel-vscode-0.1.0.vsix`
+2. Open VS Code → Extensions panel (`Ctrl+Shift+X`)
+3. Click `⋯` (top-right) → **Install from VSIX...** → select the downloaded file
+4. Done. Restart VS Code if prompted.
+
+### Option B — Build from Source
 
 ```bash
-cd unravel-v3
+git clone https://github.com/EruditeCoder108/UnravelAI.git
+cd UnravelAI/unravel-vscode
+npm install
+npm run build
+```
+
+Then press **F5** to launch the Extension Development Host for testing.
+
+### Using the Extension
+
+1. **Open any `.js` or `.ts` file** in VS Code
+2. **Right-click** anywhere in the editor
+3. Click **"Unravel: Debug This File"**
+4. **Enter your API key** (first time only — saved to settings, you won't be asked again)
+5. **Describe the bug** in one sentence, e.g. `Timer shows wrong value after pause/resume`
+6. Wait 10-30 seconds...
+
+### What You'll See
+
+After analysis completes, **four layers activate simultaneously**:
+
+| Layer | What You See |
+|-------|-------------|
+| **Red squiggly underlines** | Bug lines get error/warning underlines in the editor |
+| **Inline overlays** | `🔴 ROOT CAUSE: STATE_MUTATION` appears after the buggy line |
+| **Hover tooltips** | Hover any red line → tooltip with fix, confidence, and evidence |
+| **Sidebar report** | Full HTML report opens in a panel beside your code |
+
+### Settings
+
+Open Settings (`Ctrl+,`) → search "unravel":
+
+| Setting | Default | Options |
+|---------|---------|---------|
+| `unravel.apiKey` | *(empty)* | Your API key |
+| `unravel.provider` | `google` | `google`, `anthropic`, `openai` |
+| `unravel.model` | `gemini-2.5-flash` | Any model from your provider |
+
+> 🔒 Keys are stored locally in VS Code `settings.json`. Never sent anywhere except the API provider.
+
+### Works in Cursor & Windsurf
+
+The extension works everywhere VS Code extensions run. Same steps.
+
+---
+
+## 🌐 How to Use the Web App
+
+### Run Locally
+
+```bash
+cd UnravelAI/unravel-v3
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Enter your API key. Paste buggy code. Describe the symptom. Run the engine.
+Open `http://localhost:3000`. Or use the live version on Netlify.
 
-### VS Code Extension
+### Three Ways to Input Code
 
-```bash
-cd unravel-vscode
-npm install
-npm run build
-npm run package
-```
+| Tab | How It Works |
+|-----|-------------|
+| **Folder Upload** | Upload a project folder. AI router selects relevant files automatically. |
+| **Raw Paste** | Paste code blocks manually with filenames. |
+| **GitHub Import** | Paste a public repo URL → files are fetched automatically. |
 
-Install the generated `.vsix` in VS Code → Extensions → ⋯ → Install from VSIX.
-
-Right-click any `.js` / `.ts` file → **"Unravel: Debug This File"**.
+Enter your API key → describe the bug → run the engine → choose your output view.
 
 ---
 
