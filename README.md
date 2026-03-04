@@ -1,14 +1,17 @@
-# UNRAVEL
-
-### The Deterministic Debug Engine
-
-> AI Code Generation is solved. AI Code **Understanding** is not.
-> Every AI tool can write code. None of them can reliably explain why it broke.
-> **Unravel fixes that.**
+<div align="center">
+  <img src="./logo.png" alt="Unravel Logo" width="120" />
+  <h1>UNRAVEL</h1>
+  <h3>The Deterministic Debug Engine</h3>
+  <p>
+    <em>AI Code Generation is solved. AI Code <b>Understanding</b> is not.</em><br/>
+    <em>Every AI tool can write code. None of them can reliably explain why it broke.</em><br/>
+    <b>Unravel fixes that.</b>
+  </p>
+</div>
 
 ---
 
-## The Problem
+## 💥 The Problem
 
 You paste buggy code into ChatGPT. It says *"try adding a null check."* You do. It breaks something else. You paste again. It says *"ah, try wrapping it in a try-catch."* Three hours later, you've applied 14 patches and the original bug is still there.
 
@@ -20,11 +23,11 @@ Unravel doesn't guess.
 
 ---
 
-## How It Works
+## ⚙️ How It Works
 
 Unravel runs your code through an **8-phase deterministic pipeline** — the same systematic process a senior engineer uses, but faster:
 
-```
+```text
 Phase 1  INGEST          Read all code. Build complete mental model. No theories yet.
 Phase 2  TRACK STATE     Map every variable: where declared, where read, where mutated.
 Phase 3  SIMULATE        Mentally execute the user's exact sequence of actions.
@@ -39,49 +42,46 @@ Every phase builds on the last. The model cannot skip to conclusions.
 
 ---
 
-## Architecture
+## 🏗 Architecture
 
-```
-                    User Code + Bug Symptom
-                           |
-                           v
-              ┌────────────────────────┐
-              |    AST ANALYZER        |   Browser-side, instant, free
-              |    ─────────────────   |
-              |    Mutation chains     |   "duration" written at L69, L86
-              |    Timing nodes        |   setInterval → tick()
-              |    Closure captures    |   tick() captures duration
-              |    Call graph           |   start() → setInterval → tick()
-              └──────────┬─────────────┘
-                         |
-                         v
-              ┌────────────────────────┐
-              |    ROUTER AGENT        |   Cheap model (Flash / Haiku)
-              |    ─────────────────   |
-              |    Selects relevant    |
-              |    function SLICES     |   47 files → 14 functions (~350 lines)
-              └──────────┬─────────────┘
-                         |
-                         v
-              ┌────────────────────────┐
-              |    DEEP DEBUGGER       |   SOTA model (Claude Opus 4.6)
-              |    ─────────────────   |
-              |    8-phase pipeline    |   64K extended thinking tokens
-              |    Anti-Sycophancy     |   Evidence or reject — no invented bugs
-              |    Can PAUSE           |   Requests missing files mid-analysis
-              └──────────┬─────────────┘
-                         |
-                         v
-              ┌────────────────────────┐
-              |    EXPLAINER           |   Matched to user's level
-              |    ─────────────────   |
-              |    Concept extraction  |   What to learn from this bug
-              |    Real-world analogy  |   Explained like a friend, not docs
-              |    Learning path       |   5-15 min progressive modules
-              └──────────┬─────────────┘
-                         |
-                         v
-                  Structured Report
+```mermaid
+graph TD
+    classDef user fill:#050505,stroke:#ccff00,stroke-width:2px,color:#fff
+    classDef browser fill:#111,stroke:#00ffff,stroke-width:2px,color:#fff
+    classDef agent fill:#111,stroke:#ff00ff,stroke-width:2px,color:#fff
+    classDef sota fill:#111,stroke:#ccff00,stroke-width:3px,color:#fff
+    classDef output fill:#0a0a0a,stroke:#333,stroke-width:2px,color:#ccc
+
+    U[User Code + Bug Symptom]:::user --> A
+
+    subgraph Browser Layer [Instant & Free]
+        A(AST ANALYZER\nAcorn Parser):::browser
+        A -.->|Extracts Mutation Chains| A
+        A -.->|Finds Timing Nodes| A
+        A -.->|Detects Closure Captures| A
+    end
+
+    A --> R
+
+    subgraph Intelligence Layer [Multi-Agent]
+        R(ROUTER AGENT\nFlash / Haiku):::agent
+        R -.->|Provides Function Slices| D
+        D{DEEP DEBUGGER\nOpus 4.6 / GPT 5.3}:::sota
+        D -.->|8-Phase Pipeline| D
+        D -.->|Anti-Sycophancy Limits| D
+        D -->|Requests Missing Files| U
+        D --> E(EXPLAINER\nSonnet 4.6):::agent
+        E -.->|Concept Extraction| E
+    end
+
+    E --> O
+
+    subgraph Final Output
+        O[Structured Multi-View Report]:::output
+        O -.->|Root Cause + State Table| O
+        O -.->|Timeline + Visual Diff| O
+        O -.->|AI Fix Prompt + Learning Path| O
+    end
 ```
 
 ---
