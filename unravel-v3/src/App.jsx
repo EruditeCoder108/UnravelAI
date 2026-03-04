@@ -4,7 +4,8 @@ import {
     Plus, Globe2, TerminalSquare, UploadCloud, Activity, Copy, Check,
     BrainCircuit, User, FolderTree, FileCode, Network, PauseCircle,
     Clock, Database, AlertOctagon, GitMerge, BookOpen, RefreshCw,
-    ShieldAlert, Lightbulb, Key, ChevronRight, Baby, Palette, Book, Code, MessageSquare, Languages
+    ShieldAlert, Lightbulb, Key, ChevronRight, Baby, Palette, Book, Code, MessageSquare, Languages,
+    Github, X, Link
 } from 'lucide-react';
 import {
     PROVIDERS, BUG_TAXONOMY, LEVELS, LANGUAGES,
@@ -59,6 +60,9 @@ export default function App() {
     const [inputType, setInputType] = useState('paste');
     const [pastedFiles, setPastedFiles] = useState([{ name: '', content: '' }]);
     const [directoryFiles, setDirectoryFiles] = useState([]);
+    const [githubUrl, setGithubUrl] = useState('');
+    const [githubLoading, setGithubLoading] = useState(false);
+    const [githubError, setGithubError] = useState('');
     const [userError, setUserError] = useState('');
 
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -100,20 +104,107 @@ export default function App() {
         const blacklist = ['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '__pycache__'];
         const clean = files.filter(f => {
             const path = f.webkitRelativePath || f.name;
-            return !blacklist.some(d => path.includes(`/${d}/`) || path.startsWith(`${d}/`))
+            return !blacklist.some(d => path.includes(`/${d}/`) || path.includes(`\\${d}\\`) || path.startsWith(`${d}/`))
                 && validExts.some(ext => path.endsWith(ext))
                 && f.size < 500000;
         });
-        setDirectoryFiles(clean);
+        // Append new files, skip duplicates by path
+        setDirectoryFiles(prev => {
+            const existingPaths = new Set(prev.map(f => f.webkitRelativePath || f.name));
+            const newFiles = clean.filter(f => !existingPaths.has(f.webkitRelativePath || f.name));
+            return [...prev, ...newFiles];
+        });
+    };
+
+    const removeDirectoryFile = (index) => {
+        setDirectoryFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const fetchGitHubRepo = async () => {
+        setGithubError('');
+        setGithubLoading(true);
+        try {
+            // Parse GitHub URL → owner/repo
+            const urlObj = new URL(githubUrl.trim());
+            const parts = urlObj.pathname.replace(/^\//, '').replace(/\/$/, '').split('/');
+            if (parts.length < 2) throw new Error('URL must be github.com/owner/repo');
+            const [owner, repo] = parts;
+            const branch = parts[3] || 'main'; // /tree/branch support
+
+            // Fetch the repo tree
+            const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
+            if (!treeRes.ok) {
+                if (treeRes.status === 404) throw new Error('Repo not found. Is it public?');
+                throw new Error(`GitHub API error: ${treeRes.status}`);
+            }
+            const treeData = await treeRes.json();
+
+            // Filter files
+            const validExts = ['.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.py', '.md', '.vue', '.svelte'];
+            const blacklist = ['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '__pycache__', 'package-lock.json', 'yarn.lock'];
+            const candidates = (treeData.tree || []).filter(f =>
+                f.type === 'blob'
+                && f.size < 500000
+                && validExts.some(ext => f.path.endsWith(ext))
+                && !blacklist.some(d => f.path.includes(`${d}/`) || f.path === d)
+            ).slice(0, 50); // Cap at 50 files
+
+            if (candidates.length === 0) throw new Error('No valid source files found in repo.');
+
+            // Fetch file contents in parallel (batches of 10)
+            const fetched = [];
+            for (let i = 0; i < candidates.length; i += 10) {
+                const batch = candidates.slice(i, i + 10);
+                const results = await Promise.all(batch.map(async (f) => {
+                    try {
+                        const rawRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${f.path}`);
+                        if (!rawRes.ok) return null;
+                        const content = await rawRes.text();
+                        return { name: `${repo}/${f.path}`, content, webkitRelativePath: `${repo}/${f.path}` };
+                    } catch { return null; }
+                }));
+                fetched.push(...results.filter(Boolean));
+            }
+
+            if (fetched.length === 0) throw new Error('Could not fetch any files.');
+
+            // Convert to File-like objects for compatibility with directoryFiles
+            const fileObjects = fetched.map(f => ({
+                name: f.name,
+                webkitRelativePath: f.webkitRelativePath,
+                size: f.content.length,
+                _content: f.content, // pre-loaded content
+                text: () => Promise.resolve(f.content), // mimic File.text()
+            }));
+
+            // Append to directoryFiles
+            setDirectoryFiles(prev => {
+                const existingPaths = new Set(prev.map(f => f.webkitRelativePath || f.name));
+                const newFiles = fileObjects.filter(f => !existingPaths.has(f.webkitRelativePath));
+                return [...prev, ...newFiles];
+            });
+            setInputType('upload'); // Switch to upload tab to show files
+        } catch (err) {
+            setGithubError(err.message);
+        } finally {
+            setGithubLoading(false);
+        }
     };
 
     const readSelectedFiles = async (paths) => {
         const toRead = directoryFiles.filter(f => paths.includes(f.webkitRelativePath));
-        return Promise.all(toRead.map(file => new Promise(resolve => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve({ name: file.webkitRelativePath, content: e.target.result });
-            reader.readAsText(file);
-        })));
+        return Promise.all(toRead.map(file => {
+            // GitHub-fetched files have pre-loaded _content
+            if (file._content) {
+                return Promise.resolve({ name: file.webkitRelativePath, content: file._content });
+            }
+            // Browser-uploaded File objects use FileReader
+            return new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve({ name: file.webkitRelativePath, content: e.target.result });
+                reader.readAsText(file);
+            });
+        }));
     };
 
     // ═══ THE ENGINE ═══════════════════════════════════════
@@ -127,8 +218,8 @@ export default function App() {
             let codeFiles = [];
             let projectContext = '';
 
-            // ── Gather files (UI-specific: paste vs upload) ──
-            if (inputType === 'upload') {
+            // ── Gather files (UI-specific: paste vs upload/github) ──
+            if (inputType === 'upload' || inputType === 'github') {
                 if (directoryFiles.length === 0) throw new Error('Upload a project folder first.');
                 setLoadingStage('ROUTER AGENT: Mapping directory tree...');
                 const filePaths = directoryFiles.map(f => f.webkitRelativePath);
@@ -208,7 +299,8 @@ export default function App() {
 
     const canExecute = apiKey.trim() && (
         (inputType === 'upload' && directoryFiles.length > 0) ||
-        (inputType === 'paste' && pastedFiles.some(f => f.name.trim() && f.content.trim()))
+        (inputType === 'paste' && pastedFiles.some(f => f.name.trim() && f.content.trim())) ||
+        (inputType === 'github' && directoryFiles.length > 0)
     );
 
     const prov = PROVIDERS[provider];
@@ -367,6 +459,9 @@ export default function App() {
                                 <button style={{ ...S.tabBtn(inputType === 'paste'), borderLeft: '2px solid #333' }} onClick={() => setInputType('paste')}>
                                     <FileCode size={14} /> Raw Paste
                                 </button>
+                                <button style={{ ...S.tabBtn(inputType === 'github'), borderLeft: '2px solid #333' }} onClick={() => setInputType('github')}>
+                                    <Github size={14} /> GitHub Import
+                                </button>
                             </div>
 
                             {inputType === 'upload' && (
@@ -379,13 +474,97 @@ export default function App() {
                                         style={{ border: '2px dashed #555', background: '#0a0a0a', padding: 48, textAlign: 'center', cursor: 'pointer', transition: 'border-color 0.15s' }}>
                                         <UploadCloud size={40} color="#555" style={{ margin: '0 auto 12px' }} />
                                         <p style={{ fontFamily: "'JetBrains Mono',monospace", color: '#aaa', fontSize: 15, fontWeight: 700, textTransform: 'uppercase' }}>
-                                            Upload Project Folder
+                                            {directoryFiles.length > 0 ? 'Add More Files' : 'Upload Project Folder'}
                                         </p>
                                         <input type="file" webkitdirectory="true" directory="true" multiple ref={dirInputRef} onChange={handleDirectoryUpload} style={{ display: 'none' }} />
                                     </div>
                                     {directoryFiles.length > 0 && (
-                                        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: '#ccff00', border: '1px solid #ccff00', padding: 12, marginTop: 12, background: '#ccff0008' }}>
-                                            <CheckSquare size={16} style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle' }} /> Mapped {directoryFiles.length} files. Ready.
+                                        <div style={{ marginTop: 12, border: '1px solid #333', background: '#0a0a0a' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #333', background: '#111' }}>
+                                                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#ccff00', fontWeight: 700 }}>
+                                                    <CheckSquare size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
+                                                    {directoryFiles.length} FILE{directoryFiles.length !== 1 ? 'S' : ''} READY
+                                                </span>
+                                                <button onClick={() => setDirectoryFiles([])} style={{ background: 'none', border: '1px solid #555', color: '#888', fontSize: 10, fontFamily: "'JetBrains Mono',monospace", padding: '3px 8px', cursor: 'pointer', textTransform: 'uppercase' }}>
+                                                    Clear All
+                                                </button>
+                                            </div>
+                                            <div style={{ maxHeight: 240, overflowY: 'auto', padding: '4px 0' }}>
+                                                {directoryFiles.map((f, idx) => (
+                                                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: idx < directoryFiles.length - 1 ? '1px solid #222' : 'none' }}>
+                                                        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>
+                                                            <FileCode size={12} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle', color: '#555' }} />
+                                                            {f.webkitRelativePath || f.name}
+                                                        </span>
+                                                        <button onClick={() => removeDirectoryFile(idx)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center' }}
+                                                            onMouseEnter={e => e.target.style.color = '#ff003c'}
+                                                            onMouseLeave={e => e.target.style.color = '#555'}>
+                                                            <X size={14} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {inputType === 'github' && (
+                                <div>
+                                    <div style={{ background: '#ff00ff18', borderLeft: '4px solid #ff00ff', padding: 14, fontFamily: "'JetBrains Mono',monospace", color: '#ff00ff', fontSize: 13, marginBottom: 16 }}>
+                                        <strong style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Github size={14} /> PUBLIC REPOS ONLY</strong>
+                                        <span style={{ color: '#aaa' }}>Paste a GitHub repo URL. Files are fetched directly — no auth needed.</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <div style={{ position: 'relative', flex: 1 }}>
+                                            <Link size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#555' }} />
+                                            <input
+                                                type="text"
+                                                style={{ ...S.input, paddingLeft: 34, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}
+                                                placeholder="https://github.com/user/repo"
+                                                value={githubUrl}
+                                                onChange={(e) => setGithubUrl(e.target.value)}
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={fetchGitHubRepo}
+                                            disabled={!githubUrl.trim() || githubLoading}
+                                            style={{ ...S.btnPrimary, width: 'auto', padding: '11px 24px', fontSize: 13, opacity: githubUrl.trim() && !githubLoading ? 1 : 0.4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            {githubLoading ? <Loader2 size={14} className="animate-spin" /> : <Github size={14} />}
+                                            {githubLoading ? 'FETCHING...' : 'FETCH'}
+                                        </button>
+                                    </div>
+                                    {githubError && (
+                                        <div style={{ background: '#ff003c18', border: '1px solid #ff003c44', padding: 10, color: '#fca5a5', fontSize: 12, marginTop: 10, fontFamily: "'JetBrains Mono',monospace" }}>
+                                            ⚠️ {githubError}
+                                        </div>
+                                    )}
+                                    {directoryFiles.length > 0 && (
+                                        <div style={{ marginTop: 12, border: '1px solid #333', background: '#0a0a0a' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #333', background: '#111' }}>
+                                                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#ccff00', fontWeight: 700 }}>
+                                                    <CheckSquare size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
+                                                    {directoryFiles.length} FILE{directoryFiles.length !== 1 ? 'S' : ''} FETCHED
+                                                </span>
+                                                <button onClick={() => setDirectoryFiles([])} style={{ background: 'none', border: '1px solid #555', color: '#888', fontSize: 10, fontFamily: "'JetBrains Mono',monospace", padding: '3px 8px', cursor: 'pointer', textTransform: 'uppercase' }}>
+                                                    Clear All
+                                                </button>
+                                            </div>
+                                            <div style={{ maxHeight: 240, overflowY: 'auto', padding: '4px 0' }}>
+                                                {directoryFiles.map((f, idx) => (
+                                                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: idx < directoryFiles.length - 1 ? '1px solid #222' : 'none' }}>
+                                                        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>
+                                                            <FileCode size={12} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle', color: '#555' }} />
+                                                            {f.webkitRelativePath || f.name}
+                                                        </span>
+                                                        <button onClick={() => removeDirectoryFile(idx)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center' }}
+                                                            onMouseEnter={e => e.target.style.color = '#ff003c'}
+                                                            onMouseLeave={e => e.target.style.color = '#555'}>
+                                                            <X size={14} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
                                 </div>

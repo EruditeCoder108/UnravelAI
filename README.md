@@ -7,6 +7,11 @@
     <em>Every AI tool can write code. None of them can reliably explain why it broke.</em><br/>
     <b>Unravel fixes that.</b>
   </p>
+  <p>
+    <a href="#-quick-start"><img alt="Get Started" src="https://img.shields.io/badge/Get_Started-ccff00?style=for-the-badge&logo=rocket&logoColor=black" /></a>
+    <a href="#-vs-code-extension--live-bug-lens"><img alt="VS Code" src="https://img.shields.io/badge/VS_Code_Extension-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white" /></a>
+    <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" /></a>
+  </p>
 </div>
 
 ---
@@ -21,7 +26,46 @@ The reason it happens: current AI tools **pattern-match symptoms**. They never t
 
 Unravel doesn't guess.
 
-> **v1 Launch Scope:** Unravel currently supports **JavaScript and TypeScript** only. The AST pre-analysis relies on `@babel/parser`. Support for Python and other languages is planned for future phases.
+> **Language Support:** JavaScript and TypeScript only (AST pre-analysis uses `@babel/parser`). Python and other languages planned for future phases.
+
+---
+
+## ⚡ VS Code Extension — Live Bug Lens
+
+The feature that changes everything. Bugs appear **directly in the code editor** — no copy-paste, no leaving the IDE.
+
+```javascript
+function pause(){
+    clearInterval(interval)
+    interval = null
+    duration = remaining   // 🔴 ROOT CAUSE: STATE_MUTATION
+                           //    duration should remain constant
+}
+```
+
+**Right-click → "Unravel: Debug This File"** and the engine:
+
+1. 🔍 **Resolves imports** — automatically pulls in dependent files (2 levels deep)
+2. 🌳 **AST pre-analysis** — deterministic variable mutation chains, closures, timing nodes
+3. 🧠 **AI diagnosis** — 8-phase pipeline with anti-sycophancy guards
+4. ✨ **Inline results** — red squiggly underlines, `🔴 ROOT CAUSE` overlays, hover tooltips, sidebar report
+
+```
+Chat debugging: read → remember → search → verify → fix  (5 steps)
+Live Bug Lens:  right-click → see bug → fix               (3 steps)
+```
+
+Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
+
+### Install Locally
+
+```bash
+cd unravel-vscode
+npm install
+npm run build
+npm run package          # creates .vsix file
+# VS Code → Extensions → ⋯ → Install from VSIX
+```
 
 ---
 
@@ -91,7 +135,7 @@ graph TD
 ## What Makes It Different
 
 |   | ChatGPT / Copilot | Unravel |
-|---|-------------------|---------|
+|---|-------------------|---------| 
 | **Analysis Method** | Pattern match the symptom, guess a fix | 8-phase deterministic pipeline with state tracking |
 | **Context Handling** | Dumps entire files into context | Function-level AST slicing — only relevant code reaches the model |
 | **Hallucination** | Invents plausible-sounding bugs freely | Anti-Sycophancy guards: every claim must cite exact line + code evidence |
@@ -100,7 +144,6 @@ graph TD
 | **Teaching** | "Here's the fix, good luck" | Concept extraction: what broke, why, and how to never do it again |
 | **AI Awareness** | No self-reflection | "Why AI Loops" — explains exactly why other AI tools fail on this bug |
 | **Bug Classification** | Free-text description | Formal 12-category taxonomy with structured metadata |
-| **Uncertain Bugs** | Picks one answer, confidently wrong | Adversarial dual-agent debate — surfaces multiple hypotheses with evidence for each |
 
 ---
 
@@ -124,7 +167,7 @@ If the model can't point to evidence, it doesn't claim the bug. Period.
 
 ## AST Pre-Analysis
 
-Before any AI model sees the code, Unravel runs a **deterministic static analysis** in the browser using `@babel/parser`. This produces a verified context map:
+Before any AI model sees the code, Unravel runs a **deterministic static analysis** using `@babel/parser`. This produces a verified context map:
 
 ```
 Relevant Functions:
@@ -145,18 +188,6 @@ Closure Captures:
 ```
 
 This is injected into the prompt as **verified ground truth**. The AI cannot hallucinate about what variables exist or where they're mutated — the AST already told it.
-
-### The Impact of AST Context (Benchmark)
-
-We measured Root Cause Analysis (RCA) accuracy across a suite of 10 complex frontend bugs (stale closures, race conditions, react rendering loops) using Gemini 2.5 Flash, with and without AST pre-analysis.
-
-| Bug Category | Baseline RCA | AST-Enhanced RCA |
-|---|---|---|
-| `STALE_CLOSURE` (setInterval) | ❌ Failed | **1.0** (Exact Match) |
-| `STATE_MUTATION` (Timer) | ❌ Failed | **1.0** (Exact Match) |
-| `RACE_CONDITION` (Fetch) | 0.5 (Partial) | *Model Parsing Failed* |
-
-*Note: Benchmark tooling is available in `benchmarks/runner.js`. The structured output demands of Unravel's 8-phase pipeline are rigorous; weaker models frequently fail to produce valid JSON without AST scaffolding.*
 
 ---
 
@@ -179,13 +210,11 @@ Every diagnosis is classified into one of 12 formal categories:
 | `MEMORY_LEAK` | Resources not released, accumulate over time |
 | `INFINITE_LOOP` | Recursive or cyclic behavior creates runaway effect |
 
-This enables pattern matching across bugs, consistent concept extraction, and eventually a searchable bug pattern database.
-
 ---
 
 ## Output
 
-Unravel doesn't just say "here's the fix." It produces a structured report with multiple views:
+Unravel produces a structured report with multiple views:
 
 ### For Humans
 - Plain-language explanation of what broke and why
@@ -218,7 +247,7 @@ Unravel doesn't just say "here's the fix." It produces a structured report with 
 | **Google** | Gemini 3.1 Pro Preview, Gemini 3 Flash, Gemini 2.5 Flash | Supported |
 | **OpenAI** | GPT 5.3 Instant | Supported |
 
-**BYOK** (Bring Your Own Key) — your API keys are stored locally in localStorage and sent only to the provider's API endpoint. No intermediary server. No data collection.
+**BYOK** (Bring Your Own Key) — your API keys are stored locally and sent only to the provider's API endpoint. No intermediary server. No data collection.
 
 ---
 
@@ -231,8 +260,6 @@ Three numbers define whether Unravel is working:
 | **RCA** | Root Cause Accuracy — did it find the *real* bug, not a plausible guess? | 85%+ |
 | **TTI** | Time To Insight — how fast does the user *understand* the bug? | < 2 min |
 | **HR** | Hallucination Rate — did it reference code/variables/behavior that doesn't exist? | < 5% |
-
-These are measured against a 10-bug benchmark suite of deliberately buggy programs with defined root causes, expanding post-launch.
 
 ### Benchmark Results
 
@@ -254,8 +281,8 @@ BYOK multi-provider support. SOTA models with extended thinking. 8-phase determi
 ### Phase 2 — The Proof `COMPLETE`
 Client-side AST analysis with `@babel/parser`. Variable mutation chains, timing node detection, closure capture tracking. 10-bug benchmark suite with `benchmarks/runner.js`. Pipeline tested end-to-end with Gemini 2.5 Flash.
 
-### Phase 3 — Core Engine Extraction `COMPLETE`
-Extracted shared engine into `src/core/` — `orchestrate()`, `callProvider()`, barrel exports. Zero React dependencies. Ready for **VS Code Extension** and **Live Bug Lens**.
+### Phase 3 — Core Engine + VS Code Extension `COMPLETE`
+Extracted shared engine into `src/core/` — `orchestrate()`, `callProvider()`, barrel exports. Zero React dependencies. Built the **VS Code Extension** with Live Bug Lens: inline overlays, diagnostics, hover tooltips, and sidebar report panel.
 
 ### Phase 4 — Intelligence Layer `PLANNED`
 Function-level code slicing. **Adversarial multi-agent debate** — two agents independently diagnose the same bug, then reconcile. Disagreement surfaces multiple evidence-backed hypotheses instead of a confident wrong answer. Visual diff output. AI-simulated bug replay timeline.
@@ -265,51 +292,28 @@ WebContainers for live in-browser code execution. Real instrumented bug replay. 
 
 ---
 
-## ⚡ Live Bug Lens (Coming Next)
-
-The feature that changes everything. Instead of reading a report, bugs appear **directly in the code editor**.
-
-```javascript
-function pause(){
-    clearInterval(interval)
-    interval = null
-    duration = remaining   // 🔴 ROOT CAUSE: STATE_MUTATION
-                           //    duration should remain constant
-}
-```
-
-Hover for details. Click to fix. Execution timeline in the gutter. Variable mutation tree in the sidebar.
+##  Multi-Platform
 
 ```
-Chat debugging: read → remember → search → verify → fix  (5 steps)
-Live Bug Lens:  see bug → click → fix                    (3 steps)
-```
-
-Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
-
----
-
-## 🔌 Multi-Platform
-
-```
-@unravel/core              ← shared engine (npm package)
-  ├── unravel-web          ← React app (working)
+@unravel/core              ← shared engine
+  ├── unravel-v3           ← React web app
   ├── unravel-vscode       ← VS Code extension + Live Bug Lens
-  ├── unravel-cli          ← terminal tool (CI/CD, OpenClaw)
+  ├── unravel-cli          ← terminal tool (CI/CD)
   └── unravel-desktop      ← Electron app
 ```
 
 | Platform | What It Does | Status |
 |----------|-------------|--------|
 | **Web App** | Paste code, describe bug, get structured report | ✅ Live on Netlify |
-| **VS Code Extension** | Right-click → debug. Live Bug Lens inline overlays | 🔜 Next |
+| **VS Code Extension** | Right-click → debug. Inline overlays, hover, sidebar | ✅ Working |
 | **CLI** | `unravel analyze ./src --symptom "..."` | 🔜 Phase 5 |
-| **OpenClaw Skill** | AI agent calls Unravel as a debugging tool | 🔜 Phase 5 |
 | **Desktop App** | Drag-and-drop folders, native file access | 🔜 Phase 5 |
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
+
+### Web App
 
 ```bash
 cd unravel-v3
@@ -319,30 +323,52 @@ npm run dev
 
 Open `http://localhost:3000`. Enter your API key. Paste buggy code. Describe the symptom. Run the engine.
 
+### VS Code Extension
+
+```bash
+cd unravel-vscode
+npm install
+npm run build
+npm run package
+```
+
+Install the generated `.vsix` in VS Code → Extensions → ⋯ → Install from VSIX.
+
+Right-click any `.js` / `.ts` file → **"Unravel: Debug This File"**.
+
 ---
 
 ## Project Structure
 
 ```
-unravel-v3/
-├── src/
-│   ├── core/            Shared engine (zero React dependencies)
-│   │   ├── index.js     Barrel export for all core modules
-│   │   ├── config.js    Providers, taxonomy, prompts, output schema
-│   │   ├── ast-engine.js  @babel/parser AST pre-analysis
-│   │   ├── parse-json.js  Robust LLM JSON parser
-│   │   ├── provider.js    API caller with retry logic
-│   │   └── orchestrate.js Full analysis pipeline
-│   ├── App.jsx          5-step UI + engine integration
-│   ├── index.css        Neo-brutalist design system
-│   └── main.jsx         Entry point
-├── benchmarks/
-│   ├── bugs/            10 intentional bugs with ground truth
-│   ├── runner.js        Benchmark runner (RCA + HR scoring)
-│   └── results.json     Saved benchmark results
-├── index.html
-├── vite.config.js
-└── package.json
+UnravelAI/
+├── unravel-v3/                  Web application
+│   ├── src/
+│   │   ├── core/                Shared engine (zero React dependencies)
+│   │   │   ├── index.js         Barrel export for all core modules
+│   │   │   ├── config.js        Providers, taxonomy, prompts, output schema
+│   │   │   ├── ast-engine.js    @babel/parser AST pre-analysis
+│   │   │   ├── parse-json.js    Robust LLM JSON parser
+│   │   │   ├── provider.js      API caller with retry logic
+│   │   │   └── orchestrate.js   Full analysis pipeline
+│   │   ├── App.jsx              5-step UI + engine integration
+│   │   ├── index.css            Neo-brutalist design system
+│   │   └── main.jsx             Entry point
+│   └── benchmarks/
+│       ├── bugs/                10 intentional bugs with ground truth
+│       ├── runner.js            Benchmark runner (RCA + HR scoring)
+│       └── results.json         Saved benchmark results
+│
+└── unravel-vscode/              VS Code extension
+    ├── src/
+    │   ├── extension.js         Command registration + orchestration
+    │   ├── imports.js           Import resolution (depth 2)
+    │   ├── diagnostics.js       Red squiggly underlines
+    │   ├── decorations.js       Inline 🔴 ROOT CAUSE overlays
+    │   ├── hover.js             Tooltip with fix + confidence
+    │   ├── sidebar.js           Full HTML report panel
+    │   └── core/                Engine (copied from unravel-v3)
+    └── out/extension.js         Bundled output (esbuild)
 ```
 
 ---
