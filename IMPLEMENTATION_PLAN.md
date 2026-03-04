@@ -230,7 +230,11 @@ Same content, different wrapper per provider. Models respond significantly bette
 
 **Goal:** Add deterministic pre-analysis. Prove with numbers that it works. Open source.
 
-**Rule for this phase:** No multi-agent work. No UI changes. Pure engine + validation.
+**Rule for this phase:** No multi-agent work. No UI changes (except the prerequisite). Pure engine + validation.
+
+#### 2.0 — UI Prerequisites (Week 1)
+
+Capture the user's coding level (Beginner / Vibe Coder / Developer) via a dropdown on the input screen. This is required because the Phase 1 Explainer agent already expects this context to adapt its teaching output.
 
 #### 2.1 — AST Pre-Analysis (Weeks 1–2)
 
@@ -344,12 +348,17 @@ RCA Score = total points / 10
 ```
 
 **Hallucination Detection:**
-After each run, cross-reference AI output against actual file:
-- Does AI reference a variable that doesn't exist in the code?
-- Does AI cite a line that doesn't contain what it claims?
-- Does AI describe behavior the code cannot produce?
+After each run, cross-reference AI output against actual file context using a dedicated scoring function:
 
+```javascript
+function scoreHallucinations(aiOutput, astGroundTruth) {
+  // every variable AI mentions → check if it exists in AST
+  // every line number AI cites → check if it contains what AI claims
+  // returns: { hallucinated: N, total: N, rate: % }
+}
 ```
+
+```text
 HR = hallucinated_claims / total_claims_in_output
 ```
 
@@ -369,6 +378,7 @@ Standard prompting     |   ??%     |       ??%
 ```
 
 3. Push to GitHub. Open source under MIT.
+   - **Launch Scope:** v1 is strictly JavaScript and TypeScript only. Python and other languages are post-Phase 4.
 4. Write one honest technical post: *"Why AI tools keep failing to fix your bugs — and what deterministic analysis looks like."*
 
 **The delta between "standard prompting" and "+ AST pre-analysis" is the entire technical story of Unravel.**
@@ -379,7 +389,7 @@ Standard prompting     |   ??%     |       ??%
 
 **Goal:** Take Unravel from a website to the place developers actually live — VS Code.
 
-**Trigger:** Start Phase 3 within 4 weeks of Phase 2 launch. Don't wait for user requests.
+**Timeline:** Weeks 4–8 (Immediately following Phase 2 launch).
 
 #### 3.1 — Core Engine Extraction
 
@@ -468,6 +478,13 @@ vscode.languages.registerHoverProvider('*', {
 ```
 
 Works in VS Code, Cursor, Windsurf — anywhere VS Code extensions run.
+
+#### 3.3 — Missing Files Request UI
+
+The architecture explicitly shows the Deep Debugger can PAUSE and request missing files. In the UI, this manifests as an interactive diagnostic loop:
+- A modal appears listing the specific files requested by the AI and *why* it needs them.
+- User can provide the files or decline.
+- Analysis pipeline automatically resumes once files are provided.
 
 **Phase 3 verification:**
 - Right-click debug works end to end?
@@ -566,6 +583,10 @@ The Debugger agent generates a step-by-step execution trace with approximate var
 ```
 
 > Note: This is AI-simulated, not real execution. Values are approximations. Phase 5 replaces this with actual instrumented execution via WebContainers.
+
+#### 4.5 — 20+ Bug Benchmark Expansion
+
+Expand the 10-bug benchmark proxy from Phase 2 into a comprehensive 20+ bug suite. This establishes continuous tracking of RCA and HR metrics across new model versions and prompt updates post-launch.
 
 **Phase 4 verification:**
 - Multi-agent pipeline vs single-call: measure RCA delta on the 10-bug benchmark
@@ -675,6 +696,13 @@ Path 2 — Custom Skill: skills/unravel/ directory with SKILL.md + analyze.js
 
 ---
 
+### Phase 6 — "The Database" (Future) 📋 PLANNED
+
+#### 6.1 — Bug Pattern Database
+As users debug projects, build a growing database of patterns. Eventually enable multi-project pattern matching to detect common bugs *before* the full LLM analysis even needs to run.
+
+---
+
 ## Summary Timeline
 
 ```
@@ -717,6 +745,9 @@ PHASE 5 "The Breakthrough"     📋 PLANNED — Month 5+
 ├── CLI Tool
 ├── OpenClaw Agent integration
 └── Desktop App (Electron)
+
+PHASE 6 "The Database"         📋 PLANNED — Future
+└── Bug Pattern Database
 ```
 
 ---
