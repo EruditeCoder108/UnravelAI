@@ -10,6 +10,7 @@ import {
     PROVIDERS, BUG_TAXONOMY, LEVELS, LANGUAGES,
     buildSystemPrompt, buildRouterPrompt, ENGINE_SCHEMA
 } from './config.js';
+import { runFullAnalysis } from './analyzer/ast-engine.js';
 
 // ─── Helpers ────────────────────────────────────────────
 const fetchWithRetry = async (url, options, retries = 4) => {
@@ -217,10 +218,26 @@ export default function App() {
                 codeFiles = [...codeFiles, ...additionalFiles.filter(f => f.name && f.content)];
             }
 
+            // AST Pre-Analysis: extract verified ground truth before LLM sees the code
+            setLoadingStage('AST ANALYZER: Extracting variable mutations, closures, timing nodes...');
+            const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
+            let astContext = '';
+            if (jsFiles.length > 0) {
+                const combinedCode = jsFiles.map(f => f.content).join('\n\n');
+                try {
+                    const analysis = runFullAnalysis(combinedCode);
+                    astContext = analysis.formatted;
+                    console.log('[AST] Verified context extracted:', astContext);
+                } catch (astErr) {
+                    console.warn('[AST] Analysis failed, proceeding without:', astErr.message);
+                }
+            }
+
             // Core engine call
             setLoadingStage('DEEP ENGINE: Reconstructing execution timeline and state invariants...');
             const systemPrompt = buildSystemPrompt(level, language, provider);
-            const enginePrompt = `${projectContext}\n\nFILES PROVIDED:\n${codeFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 4000)}`).join('\n\n')}\n\nUSER'S BUG REPORT:\n${userError || 'No specific error described. Analyze for any issues.'}`;
+            const astBlock = astContext ? `${astContext}\n\n` : '';
+            const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${codeFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 4000)}`).join('\n\n')}\n\nUSER'S BUG REPORT:\n${userError || 'No specific error described. Analyze for any issues.'}`;
 
             const raw = await callAPI(systemPrompt, enginePrompt, true);
             const result = parseAIJson(raw);
