@@ -1,0 +1,284 @@
+{
+  "timestamp": "2026-03-04T10:59:44.580Z",
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "summary": {
+    "baselineRCA": "15%",
+    "enhancedRCA": "20%",
+    "rcaDelta": "+5%",
+    "baselineHR": "0.8%",
+    "enhancedHR": "0.0%"
+  },
+  "bugs": [
+    {
+      "id": "stale_closure_interval",
+      "category": "STALE_CLOSURE",
+      "difficulty": "medium",
+      "baseline": {
+        "rca": {
+          "score": 1,
+          "reason": "Exact match: correct variable, line, and category"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 15,
+          "rate": 0
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 1,
+          "reason": "Exact match: correct variable, line, and category"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 13,
+          "rate": 0
+        }
+      }
+    },
+    {
+      "id": "timer_state_mutation",
+      "category": "STATE_MUTATION",
+      "difficulty": "medium",
+      "baseline": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 1,
+          "reason": "Match: correct variable + category/line + cause description"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 8,
+          "rate": 0
+        }
+      }
+    },
+    {
+      "id": "parallel_fetch_race",
+      "category": "RACE_CONDITION",
+      "difficulty": "hard",
+      "baseline": {
+        "rca": {
+          "score": 0.5,
+          "reason": "Partial: correct variable, some cause understanding"
+        },
+        "hr": {
+          "hallucinated": 1,
+          "total": 12,
+          "rate": 0.08333333333333333
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      }
+    },
+    {
+      "id": "missing_cleanup_leak",
+      "category": "EVENT_LIFECYCLE",
+      "difficulty": "medium",
+      "baseline": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      }
+    },
+    {
+      "id": "missing_await",
+      "category": "ASYNC_ORDERING",
+      "difficulty": "easy",
+      "baseline": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      }
+    },
+    {
+      "id": "type_coercion_calc",
+      "category": "TYPE_COERCION",
+      "difficulty": "easy",
+      "baseline": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      }
+    },
+    {
+      "id": "timer_drift",
+      "category": "TEMPORAL_LOGIC",
+      "difficulty": "hard",
+      "baseline": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      }
+    },
+    {
+      "id": "stale_prop_drilling",
+      "category": "DATA_FLOW",
+      "difficulty": "medium",
+      "baseline": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      }
+    },
+    {
+      "id": "reference_equality_render",
+      "category": "UI_LOGIC",
+      "difficulty": "hard",
+      "baseline": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      }
+    },
+    {
+      "id": "stale_closure_effect_deps",
+      "category": "STALE_CLOSURE",
+      "difficulty": "medium",
+      "baseline": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      },
+      "enhanced": {
+        "rca": {
+          "score": 0,
+          "reason": "No report produced"
+        },
+        "hr": {
+          "hallucinated": 0,
+          "total": 0,
+          "rate": 0
+        }
+      }
+    }
+  ]
+}

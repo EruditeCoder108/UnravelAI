@@ -133,7 +133,9 @@ async function callUnravel(code, symptom, systemPrompt) {
     if (PROVIDER === 'anthropic') {
         return data.content?.map(c => c.text).join('') || '';
     } else if (PROVIDER === 'google') {
-        return data.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
+        // Gemini 2.5 Flash returns 'thought' parts alongside 'text' parts — filter for text only
+        const parts = data.candidates?.[0]?.content?.parts || [];
+        return parts.filter(p => p.text != null).map(p => p.text).join('') || '';
     } else if (PROVIDER === 'openai') {
         return data.choices?.[0]?.message?.content || '';
     }
@@ -159,13 +161,24 @@ function parseAIJson(text) {
 // Miss    = AI suggests plausible but wrong cause = 0.0
 // ═══════════════════════════════════════════════════
 
+// Universal coercion: model may return strings, objects, arrays, or numbers
+// for any field. This normalizes everything to a searchable string.
+function toStr(val) {
+    if (val == null) return '';
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+    if (Array.isArray(val)) return val.map(toStr).join(' ');
+    if (typeof val === 'object') return JSON.stringify(val);
+    return String(val);
+}
+
 function scoreRCA(aiResult, bug) {
     if (!aiResult?.report) return { score: 0, reason: 'No report produced' };
 
     const report = aiResult.report;
-    const rootCause = (report.rootCause || '').toLowerCase();
-    const codeLocation = (report.codeLocation || '').toLowerCase();
-    const bugType = (report.bugType || '').toUpperCase();
+    const rootCause = toStr(report.rootCause).toLowerCase();
+    const codeLocation = toStr(report.codeLocation).toLowerCase();
+    const bugType = toStr(report.bugType).toUpperCase();
 
     const trueVar = bug.trueVariable.toLowerCase();
     const trueCause = bug.trueRootCause.toLowerCase();
@@ -199,7 +212,7 @@ function scoreRCA(aiResult, bug) {
         return { score: 0.5, reason: 'Partial: found the area but missed the root cause' };
     }
 
-    return { score: 0, reason: `Miss: AI said "${report.rootCause?.slice(0, 80)}..."` };
+    return { score: 0, reason: `Miss: AI said "${toStr(report.rootCause).slice(0, 80)}..."` };
 }
 
 // ═══════════════════════════════════════════════════
@@ -219,7 +232,7 @@ function scoreHallucinations(aiResult, bugCode) {
     if (report.variableState && Array.isArray(report.variableState)) {
         for (const vs of report.variableState) {
             totalClaims++;
-            const varName = vs.variable?.toLowerCase();
+            const varName = toStr(vs.variable || vs.name || vs).toLowerCase();
             if (varName && !bugCode.toLowerCase().includes(varName)) {
                 hallucinatedClaims++;
             }
@@ -229,7 +242,8 @@ function scoreHallucinations(aiResult, bugCode) {
     // Check evidence claims for line references
     if (report.evidence && Array.isArray(report.evidence)) {
         for (const ev of report.evidence) {
-            const lineRefs = ev.match(/line\s+(\d+)/gi) || [];
+            const evStr = toStr(ev);
+            const lineRefs = evStr.match(/line\s+(\d+)/gi) || [];
             for (const ref of lineRefs) {
                 totalClaims++;
                 const lineNum = parseInt(ref.replace(/line\s+/i, ''));
@@ -241,10 +255,11 @@ function scoreHallucinations(aiResult, bugCode) {
     }
 
     // Check root cause for variable references
-    if (report.rootCause) {
+    const rootCauseStr = toStr(report.rootCause);
+    if (rootCauseStr) {
         const varPattern = /`(\w+)`/g;
         let match;
-        while ((match = varPattern.exec(report.rootCause)) !== null) {
+        while ((match = varPattern.exec(rootCauseStr)) !== null) {
             totalClaims++;
             if (!bugCode.includes(match[1])) {
                 hallucinatedClaims++;
@@ -253,9 +268,10 @@ function scoreHallucinations(aiResult, bugCode) {
     }
 
     // Check code location
-    if (report.codeLocation) {
+    const codeLocStr = toStr(report.codeLocation);
+    if (codeLocStr) {
         totalClaims++;
-        const lineRef = report.codeLocation.match(/line\s+(\d+)/i);
+        const lineRef = codeLocStr.match(/line\s+(\d+)/i) || codeLocStr.match(/(\d+)/);
         if (lineRef) {
             const lineNum = parseInt(lineRef[1]);
             if (lineNum < 1 || lineNum > codeLines.length) {
@@ -287,54 +303,68 @@ async function run() {
     const results = [];
 
     for (const bug of bugs) {
-        console.log(`\n━━━ Bug: ${bug.id} (${bug.bugCategory}) ━━━`);
-        console.log(`  Symptom: ${bug.userSymptom.slice(0, 80)}...`);
-
-        const systemPrompt = buildSystemPrompt('intermediate', 'english', PROVIDER);
-
-        // ── Run 1: WITHOUT AST context ──
-        console.log('  📊 Run 1: WITHOUT AST context...');
-        let baselineResult = null;
-        let baselineRaw = '';
         try {
-            baselineRaw = await callUnravel(bug.code, bug.userSymptom, systemPrompt);
-            baselineResult = parseAIJson(baselineRaw);
-        } catch (err) {
-            console.log(`  ❌ Baseline failed: ${err.message}`);
+            console.log(`\n━━━ Bug: ${bug.id} (${bug.bugCategory}) ━━━`);
+            console.log(`  Symptom: ${bug.userSymptom.slice(0, 80)}...`);
+
+            const systemPrompt = buildSystemPrompt('intermediate', 'english', PROVIDER);
+
+            // ── Run 1: WITHOUT AST context ──
+            console.log('  📊 Run 1: WITHOUT AST context...');
+            let baselineResult = null;
+            let baselineRaw = '';
+            try {
+                baselineRaw = await callUnravel(bug.code, bug.userSymptom, systemPrompt);
+                baselineResult = parseAIJson(baselineRaw);
+                if (!baselineResult) console.log('  ⚠️ Baseline: Could not parse JSON from response');
+            } catch (err) {
+                console.log(`  ❌ Baseline failed: ${err.message}`);
+            }
+
+            // ── Run 2: WITH AST context ──
+            console.log('  📊 Run 2: WITH AST context...');
+            let enhancedResult = null;
+            let enhancedRaw = '';
+            try {
+                const analysis = runFullAnalysis(bug.code);
+                const astPrompt = analysis.formatted;
+                const codeWithAST = `${astPrompt}\n\n${bug.code}`;
+                enhancedRaw = await callUnravel(codeWithAST, bug.userSymptom, systemPrompt);
+                enhancedResult = parseAIJson(enhancedRaw);
+                if (!enhancedResult) console.log('  ⚠️ Enhanced: Could not parse JSON from response');
+            } catch (err) {
+                console.log(`  ❌ Enhanced failed: ${err.message}`);
+            }
+
+            // ── Score both ──
+            const baselineRCA = scoreRCA(baselineResult, bug);
+            const enhancedRCA = scoreRCA(enhancedResult, bug);
+            const baselineHR = scoreHallucinations(baselineResult, bug.code);
+            const enhancedHR = scoreHallucinations(enhancedResult, bug.code);
+
+            console.log(`  Baseline:  RCA=${baselineRCA.score} (${baselineRCA.reason})`);
+            console.log(`  Enhanced:  RCA=${enhancedRCA.score} (${enhancedRCA.reason})`);
+            console.log(`  Baseline HR: ${(baselineHR.rate * 100).toFixed(1)}% (${baselineHR.hallucinated}/${baselineHR.total})`);
+            console.log(`  Enhanced HR: ${(enhancedHR.rate * 100).toFixed(1)}% (${enhancedHR.hallucinated}/${enhancedHR.total})`);
+
+            results.push({
+                id: bug.id,
+                category: bug.bugCategory,
+                difficulty: bug.difficulty,
+                baseline: { rca: baselineRCA, hr: baselineHR },
+                enhanced: { rca: enhancedRCA, hr: enhancedHR },
+            });
+
+        } catch (outerErr) {
+            console.log(`  ❌ Bug ${bug.id} crashed entirely: ${outerErr.message}`);
+            results.push({
+                id: bug.id,
+                category: bug.bugCategory,
+                difficulty: bug.difficulty,
+                baseline: { rca: { score: 0, reason: 'Crash' }, hr: { hallucinated: 0, total: 0, rate: 0 } },
+                enhanced: { rca: { score: 0, reason: 'Crash' }, hr: { hallucinated: 0, total: 0, rate: 0 } },
+            });
         }
-
-        // ── Run 2: WITH AST context ──
-        console.log('  📊 Run 2: WITH AST context...');
-        let enhancedResult = null;
-        let enhancedRaw = '';
-        try {
-            const analysis = runFullAnalysis(bug.code);
-            const astPrompt = analysis.formatted;
-            const codeWithAST = `${astPrompt}\n\n${bug.code}`;
-            enhancedRaw = await callUnravel(codeWithAST, bug.userSymptom, systemPrompt);
-            enhancedResult = parseAIJson(enhancedRaw);
-        } catch (err) {
-            console.log(`  ❌ Enhanced failed: ${err.message}`);
-        }
-
-        // ── Score both ──
-        const baselineRCA = scoreRCA(baselineResult, bug);
-        const enhancedRCA = scoreRCA(enhancedResult, bug);
-        const baselineHR = scoreHallucinations(baselineResult, bug.code);
-        const enhancedHR = scoreHallucinations(enhancedResult, bug.code);
-
-        console.log(`  Baseline:  RCA=${baselineRCA.score} (${baselineRCA.reason})`);
-        console.log(`  Enhanced:  RCA=${enhancedRCA.score} (${enhancedRCA.reason})`);
-        console.log(`  Baseline HR: ${(baselineHR.rate * 100).toFixed(1)}% (${baselineHR.hallucinated}/${baselineHR.total})`);
-        console.log(`  Enhanced HR: ${(enhancedHR.rate * 100).toFixed(1)}% (${enhancedHR.hallucinated}/${enhancedHR.total})`);
-
-        results.push({
-            id: bug.id,
-            category: bug.bugCategory,
-            difficulty: bug.difficulty,
-            baseline: { rca: baselineRCA, hr: baselineHR },
-            enhanced: { rca: enhancedRCA, hr: enhancedHR },
-        });
 
         // Rate limit: wait between bugs
         if (bugs.indexOf(bug) < bugs.length - 1) {
