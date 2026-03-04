@@ -35,24 +35,28 @@ export const PROVIDERS = {
     google: {
         name: 'Gemini (Google)',
         models: {
-            flash25: { id: 'gemini-2.5-flash-preview-05-20', label: 'Gemini 2.5 Flash', tier: 'Fast' },
+            flash25: { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'Fast' },
             flash3: { id: 'gemini-3-flash', label: 'Gemini 3 Flash', tier: 'Fast' },
-            pro3: { id: 'gemini-3-pro', label: 'Gemini 3 Pro', tier: 'SOTA' },
             pro31: { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview', tier: 'SOTA' },
         },
         defaultModel: 'pro31',
         endpoint: (key, model) =>
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
         headers: () => ({ 'Content-Type': 'application/json' }),
-        buildBody: (model, systemPrompt, userPrompt, thinkingBudget = 32768) => ({
-            contents: [{ parts: [{ text: userPrompt }] }],
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            generationConfig: {
-                responseMimeType: 'application/json',
-                maxOutputTokens: 16000,
-                thinkingConfig: { thinkingBudget: thinkingBudget },
-            },
-        }),
+        buildBody: (model, systemPrompt, userPrompt, thinkingBudget = 32768) => {
+            // Gemini 2.5 Flash caps thinking at 24576; clamp accordingly
+            const maxBudget = model.includes('2.5-flash') ? 24576 : thinkingBudget;
+            const budget = Math.min(thinkingBudget, maxBudget);
+            return {
+                contents: [{ parts: [{ text: userPrompt }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: 'application/json',
+                    maxOutputTokens: 16000,
+                    thinkingConfig: { thinkingBudget: budget },
+                },
+            };
+        },
         parseResponse: (data) => {
             return data.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text).join('') || '';
         },
