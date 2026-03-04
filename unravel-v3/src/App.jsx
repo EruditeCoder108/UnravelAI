@@ -8,30 +8,11 @@ import {
 } from 'lucide-react';
 import {
     PROVIDERS, BUG_TAXONOMY, LEVELS, LANGUAGES,
-    buildSystemPrompt, buildRouterPrompt, ENGINE_SCHEMA, ENGINE_SCHEMA_INSTRUCTION
-} from './config.js';
-import { runFullAnalysis } from './analyzer/ast-engine.js';
-import { parseAIJson } from './utils/parse-json.js';
+    buildSystemPrompt, buildRouterPrompt, ENGINE_SCHEMA, ENGINE_SCHEMA_INSTRUCTION,
+    callProvider, orchestrate, parseAIJson,
+} from './core/index.js';
 
 // ─── Helpers ────────────────────────────────────────────
-const fetchWithRetry = async (url, options, retries = 4) => {
-    let delay = 1500;
-    for (let i = 0; i < retries; i++) {
-        try {
-            const response = await fetch(url, options);
-            if (!response.ok) {
-                if (response.status === 429 || response.status >= 500) throw new Error(`HTTP ${response.status}`);
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.error?.message || `API Error: ${response.status}`);
-            }
-            return await response.json();
-        } catch (error) {
-            if (i === retries - 1) throw error;
-            await new Promise(r => setTimeout(r, delay));
-            delay *= 2;
-        }
-    }
-};
 
 
 
@@ -135,36 +116,6 @@ export default function App() {
         })));
     };
 
-    // --- Build API call for current provider ---
-    const callAPI = async (systemPrompt, userPrompt, useSchema = false) => {
-        const prov = PROVIDERS[provider];
-        if (!prov) throw new Error('Invalid provider');
-
-        let url, headers, body;
-
-        if (provider === 'google') {
-            url = prov.endpoint(apiKey, model);
-            headers = prov.headers();
-            body = prov.buildBody(model, systemPrompt, userPrompt, 32768);
-            if (useSchema) {
-                body.generationConfig.responseSchema = ENGINE_SCHEMA;
-            }
-        } else if (provider === 'anthropic') {
-            url = prov.endpoint;
-            headers = prov.headers(apiKey);
-            const schemaInstruction = useSchema ? ENGINE_SCHEMA_INSTRUCTION : '';
-            body = prov.buildBody(model, systemPrompt, userPrompt + schemaInstruction, 32768);
-        } else if (provider === 'openai') {
-            url = prov.endpoint;
-            headers = prov.headers(apiKey);
-            const schemaInstruction = useSchema ? ENGINE_SCHEMA_INSTRUCTION : '';
-            body = prov.buildBody(model, systemPrompt, userPrompt + schemaInstruction);
-        }
-
-        const data = await fetchWithRetry(url, { method: 'POST', headers, body: JSON.stringify(body) });
-        return prov.parseResponse(data);
-    };
-
     // ═══ THE ENGINE ═══════════════════════════════════════
     const executeAnalysis = async (resumeWithExtra = false) => {
         setIsAnalyzing(true);
@@ -176,7 +127,7 @@ export default function App() {
             let codeFiles = [];
             let projectContext = '';
 
-            // Gather files
+            // ── Gather files (UI-specific: paste vs upload) ──
             if (inputType === 'upload') {
                 if (directoryFiles.length === 0) throw new Error('Upload a project folder first.');
                 setLoadingStage('ROUTER AGENT: Mapping directory tree...');
@@ -184,12 +135,17 @@ export default function App() {
                 projectContext = `Project tree: ${filePaths.length} files total.`;
 
                 if (!resumeWithExtra) {
-                    // Router pass
+                    // Router pass — uses callProvider directly (not orchestrate)
                     const routerPrompt = buildRouterPrompt(filePaths, userError);
-                    const routerRaw = await callAPI('You are a file routing agent. Return JSON only.', routerPrompt, false);
+                    const routerRaw = await callProvider({
+                        provider, apiKey, model,
+                        systemPrompt: 'You are a file routing agent. Return JSON only.',
+                        userPrompt: routerPrompt,
+                        useSchema: false,
+                    });
                     const routerData = parseAIJson(routerRaw);
                     const selectedPaths = routerData?.filesToRead || filePaths.slice(0, 7);
-                    setRouterSelectedPaths(selectedPaths); // Persist for resume
+                    setRouterSelectedPaths(selectedPaths);
                     setLoadingStage(`ROUTER: Selected ${selectedPaths.length} files...`);
                     codeFiles = await readSelectedFiles(selectedPaths);
                 } else {
@@ -209,40 +165,30 @@ export default function App() {
                 codeFiles = [...codeFiles, ...additionalFiles.filter(f => f.name && f.content)];
             }
 
-            // AST Pre-Analysis: extract verified ground truth before LLM sees the code
-            setLoadingStage('AST ANALYZER: Extracting variable mutations, closures, timing nodes...');
-            const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
-            let astContext = '';
-            if (jsFiles.length > 0) {
-                const combinedCode = jsFiles.map(f => f.content).join('\n\n');
-                try {
-                    const analysis = runFullAnalysis(combinedCode);
-                    astContext = analysis.formatted;
-                    console.log('[AST] Verified context extracted:', astContext);
-                } catch (astErr) {
-                    console.warn('[AST] Analysis failed, proceeding without:', astErr.message);
-                }
-            }
+            // ── Run the core engine pipeline via orchestrate() ──
+            const result = await orchestrate(codeFiles, userError, {
+                provider,
+                apiKey,
+                model,
+                level,
+                language,
+                projectContext,
+                onProgress: (stage) => setLoadingStage(stage),
+                onMissingFiles: async (request) => {
+                    // Show the missing files UI
+                    setMissingFileRequest(request);
+                    setAdditionalFiles((request.filesNeeded || []).map(f => ({ name: f, content: '' })));
+                    setStep(3.5);
+                    // Return null — the user will click "Resume" which calls executeAnalysis(true)
+                    return null;
+                },
+            });
 
-            // Core engine call
-            setLoadingStage('DEEP ENGINE: Reconstructing execution timeline and state invariants...');
-            const systemPrompt = buildSystemPrompt(level, language, provider);
-            const astBlock = astContext ? `${astContext}\n\n` : '';
-            const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${codeFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 8000)}`).join('\n\n')}\n\nUSER'S BUG REPORT:\n${userError || 'No specific error described. Analyze for any issues.'}`;
-
-            const raw = await callAPI(systemPrompt, enginePrompt, true);
-            const result = parseAIJson(raw);
-
-            if (!result) throw new Error('Engine failed to produce structured output. Try again.');
-
-            if (result.needsMoreInfo && result.missingFilesRequest) {
-                setMissingFileRequest(result.missingFilesRequest);
-                setAdditionalFiles((result.missingFilesRequest.filesNeeded || []).map(f => ({ name: f, content: '' })));
-                setStep(3.5);
-            } else if (result.report) {
+            // If orchestrate returned with a report, show it
+            if (result?.report) {
                 setReport(result.report);
                 setStep(4);
-            } else {
+            } else if (!result?.needsMoreInfo) {
                 throw new Error('Unexpected engine response format.');
             }
 

@@ -1,0 +1,71 @@
+{
+    "name": "unravel-vscode",
+    "displayName": "Unravel — Live Bug Lens",
+    "description": "Deterministic AI debugging with inline bug overlays. Right-click → Debug This File.",
+    "version": "0.1.0",
+    "publisher": "unravel",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Debuggers",
+        "Programming Languages"
+    ],
+    "activationEvents": [],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "unravel.debugFile",
+                "title": "Unravel: Debug This File"
+            }
+        ],
+        "menus": {
+            "editor/context": [
+                {
+                    "command": "unravel.debugFile",
+                    "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact",
+                    "group": "navigation"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "Unravel",
+            "properties": {
+                "unravel.apiKey": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Your API key for the AI provider (Gemini, Claude, or OpenAI)."
+                },
+                "unravel.provider": {
+                    "type": "string",
+                    "enum": [
+                        "google",
+                        "anthropic",
+                        "openai"
+                    ],
+                    "default": "google",
+                    "description": "AI provider to use for analysis."
+                },
+                "unravel.model": {
+                    "type": "string",
+                    "default": "gemini-2.5-flash",
+                    "description": "Model ID to use for analysis."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "build": "node esbuild.js",
+        "watch": "node esbuild.js --watch",
+        "package": "npx -y @vscode/vsce package --no-dependencies"
+    },
+    "devDependencies": {
+        "esbuild": "^0.20.0",
+        "@vscode/vsce": "^2.22.0"
+    },
+    "dependencies": {
+        "@babel/parser": "^7.24.0",
+        "@babel/traverse": "^7.24.0"
+    }
+}

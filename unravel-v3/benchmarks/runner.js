@@ -23,9 +23,9 @@ const __dirname = dirname(__filename);
 
 // ── Dynamic Imports (ESM) ──────────────────────────
 // We import the AST engine and config from the app source
-const { runFullAnalysis } = await import(pathToFileURL(join(__dirname, '..', 'src', 'analyzer', 'ast-engine.js')).href);
-const { buildSystemPrompt, ENGINE_SCHEMA_INSTRUCTION } = await import(pathToFileURL(join(__dirname, '..', 'src', 'config.js')).href);
-const { parseAIJson } = await import(pathToFileURL(join(__dirname, '..', 'src', 'utils', 'parse-json.js')).href);
+const { runFullAnalysis } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'ast-engine.js')).href);
+const { buildSystemPrompt, ENGINE_SCHEMA_INSTRUCTION } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'config.js')).href);
+const { parseAIJson } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'parse-json.js')).href);
 
 // ── CLI Args ────────────────────────────────────────
 const args = process.argv.slice(2);

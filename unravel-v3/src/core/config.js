@@ -8,8 +8,9 @@ export const PROVIDERS = {
     anthropic: {
         name: 'Claude (Anthropic)',
         models: {
-            opus: { id: 'claude-opus-4-6-20260301', label: 'Claude Opus 4.6', tier: 'SOTA' },
-            sonnet: { id: 'claude-sonnet-4-6-20260301', label: 'Claude Sonnet 4.6', tier: 'SOTA' },
+            opus: { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', tier: 'SOTA' },
+            sonnet: { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', tier: 'SOTA' },
+            haiku: { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'Fast' },
         },
         defaultModel: 'sonnet',
         endpoint: 'https://api.anthropic.com/v1/messages',
@@ -18,10 +19,12 @@ export const PROVIDERS = {
             'x-api-key': key,
             'anthropic-version': '2023-06-01',
         }),
-        buildBody: (model, systemPrompt, userPrompt, thinkingBudget = 32768) => ({
+        // Claude 4.6 uses adaptive thinking with effort levels (low/medium/high/max)
+        // budget_tokens is deprecated — effort replaces it
+        buildBody: (model, systemPrompt, userPrompt) => ({
             model: model,
             max_tokens: 16000,
-            thinking: { type: 'enabled', budget_tokens: thinkingBudget },
+            thinking: { type: 'enabled', effort: 'high' },
             system: systemPrompt,
             messages: [{ role: 'user', content: userPrompt }],
         }),
@@ -36,24 +39,27 @@ export const PROVIDERS = {
         name: 'Gemini (Google)',
         models: {
             flash25: { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'Fast' },
-            flash3: { id: 'gemini-3-flash', label: 'Gemini 3 Flash', tier: 'Fast' },
+            flash3: { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash', tier: 'Fast' },
             pro31: { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview', tier: 'SOTA' },
         },
         defaultModel: 'pro31',
         endpoint: (key, model) =>
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
         headers: () => ({ 'Content-Type': 'application/json' }),
-        buildBody: (model, systemPrompt, userPrompt, thinkingBudget = 32768) => {
-            // Gemini 2.5 Flash caps thinking at 24576; clamp accordingly
-            const maxBudget = model.includes('2.5-flash') ? 24576 : thinkingBudget;
-            const budget = Math.min(thinkingBudget, maxBudget);
+        buildBody: (model, systemPrompt, userPrompt) => {
+            // Gemini 2.5 uses thinkingBudget (number, max 24576 for Flash)
+            // Gemini 3+ uses thinkingLevel (string: minimal/low/medium/high)
+            const isGemini3 = model.includes('gemini-3');
+            const thinkingConfig = isGemini3
+                ? { thinkingLevel: 'high' }
+                : { thinkingBudget: 24576 };
             return {
                 contents: [{ parts: [{ text: userPrompt }] }],
                 systemInstruction: { parts: [{ text: systemPrompt }] },
                 generationConfig: {
                     responseMimeType: 'application/json',
-                    maxOutputTokens: 16000,
-                    thinkingConfig: { thinkingBudget: budget },
+                    maxOutputTokens: isGemini3 ? 65536 : 16000,
+                    thinkingConfig,
                 },
             };
         },
@@ -65,9 +71,9 @@ export const PROVIDERS = {
     openai: {
         name: 'OpenAI',
         models: {
-            gpt5: { id: 'gpt-5.3', label: 'GPT 5.3', tier: 'SOTA' },
+            gpt53: { id: 'gpt-5.3-instant', label: 'GPT 5.3 Instant', tier: 'SOTA' },
         },
-        defaultModel: 'gpt5',
+        defaultModel: 'gpt53',
         endpoint: 'https://api.openai.com/v1/chat/completions',
         headers: (key) => ({
             'Content-Type': 'application/json',
@@ -75,7 +81,7 @@ export const PROVIDERS = {
         }),
         buildBody: (model, systemPrompt, userPrompt) => ({
             model: model,
-            max_tokens: 16000,
+            max_completion_tokens: 16000,
             reasoning: { effort: 'high' },
             messages: [
                 { role: 'system', content: systemPrompt },

@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Build output (generated)
+out/
+
+# Package output
+*.vsix
+
+# OS
+.DS_Store
+Thumbs.db

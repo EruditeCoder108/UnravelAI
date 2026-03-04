@@ -214,9 +214,9 @@ Unravel doesn't just say "here's the fix." It produces a structured report with 
 
 | Provider | Models | Tier |
 |----------|--------|------|
-| **Anthropic** | Claude Opus 4.6, Claude Sonnet 4.6 | Recommended |
-| **Google** | Gemini 3.1 Pro Preview, Gemini 3 Pro, Gemini 3 Flash, Gemini 2.5 Flash | Supported |
-| **OpenAI** | GPT 5.3 | Supported |
+| **Anthropic** | Claude Opus 4.6, Claude Sonnet 4.6, Claude Haiku 4.5 | Recommended |
+| **Google** | Gemini 3.1 Pro Preview, Gemini 3 Flash, Gemini 2.5 Flash | Supported |
+| **OpenAI** | GPT 5.3 Instant | Supported |
 
 **BYOK** (Bring Your Own Key) — your API keys are stored locally in localStorage and sent only to the provider's API endpoint. No intermediary server. No data collection.
 
@@ -234,6 +234,16 @@ Three numbers define whether Unravel is working:
 
 These are measured against a 10-bug benchmark suite of deliberately buggy programs with defined root causes, expanding post-launch.
 
+### Benchmark Results
+
+| Configuration | RCA Score | Hallucination Rate |
+|---|---|---|
+| Standard prompting (no pipeline) | _pending_ | _pending_ |
+| + 8-phase deterministic pipeline | _pending_ | _pending_ |
+| + AST pre-analysis context | _pending_ | _pending_ |
+
+> Run `node benchmarks/runner.js --provider google --model gemini-2.5-flash --key YOUR_KEY` to generate these numbers. Results are saved to `benchmarks/results.json`.
+
 ---
 
 ## Roadmap
@@ -241,11 +251,11 @@ These are measured against a 10-bug benchmark suite of deliberately buggy progra
 ### Phase 1 — Deep Thinking `COMPLETE`
 BYOK multi-provider support. SOTA models with extended thinking. 8-phase deterministic prompt. Anti-sycophancy guardrails. Evidence-backed confidence. Provider-specific prompt formatting. Concept extraction. Bug taxonomy. "Why AI Loops" analysis.
 
-### Phase 2 — The Proof `IN PROGRESS`
-Client-side AST analysis with `@babel/parser`. Variable mutation chains, timing node detection, closure capture tracking. **The 10 Bug Benchmark:** measure Root Cause Accuracy (RCA) with and without AST context to prove the system works before launch. Open source on completion.
+### Phase 2 — The Proof `COMPLETE`
+Client-side AST analysis with `@babel/parser`. Variable mutation chains, timing node detection, closure capture tracking. 10-bug benchmark suite with `benchmarks/runner.js`. Pipeline tested end-to-end with Gemini 2.5 Flash.
 
-### Phase 3 — The Demo `PLANNED`
-Extract `@unravel/core` shared engine. Build the **VS Code Extension** and **Live Bug Lens** so developers can see the bug highlighted right inside their editor — no copy-paste, no leaving the IDE.
+### Phase 3 — Core Engine Extraction `COMPLETE`
+Extracted shared engine into `src/core/` — `orchestrate()`, `callProvider()`, barrel exports. Zero React dependencies. Ready for **VS Code Extension** and **Live Bug Lens**.
 
 ### Phase 4 — Intelligence Layer `PLANNED`
 Function-level code slicing. **Adversarial multi-agent debate** — two agents independently diagnose the same bug, then reconcile. Disagreement surfaces multiple evidence-backed hypotheses instead of a confident wrong answer. Visual diff output. AI-simulated bug replay timeline.
@@ -255,7 +265,7 @@ WebContainers for live in-browser code execution. Real instrumented bug replay. 
 
 ---
 
-## ⚡ Live Bug Lens (Coming in Phase 3)
+## ⚡ Live Bug Lens (Coming Next)
 
 The feature that changes everything. Instead of reading a report, bugs appear **directly in the code editor**.
 
@@ -291,8 +301,8 @@ Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
 
 | Platform | What It Does | Status |
 |----------|-------------|--------|
-| **Web App** | Paste code, describe bug, get structured report | ✅ Working |
-| **VS Code Extension** | Right-click → debug. Live Bug Lens inline overlays | 🔜 Phase 3 |
+| **Web App** | Paste code, describe bug, get structured report | ✅ Live on Netlify |
+| **VS Code Extension** | Right-click → debug. Live Bug Lens inline overlays | 🔜 Next |
 | **CLI** | `unravel analyze ./src --symptom "..."` | 🔜 Phase 5 |
 | **OpenClaw Skill** | AI agent calls Unravel as a debugging tool | 🔜 Phase 5 |
 | **Desktop App** | Drag-and-drop folders, native file access | 🔜 Phase 5 |
@@ -316,10 +326,20 @@ Open `http://localhost:3000`. Enter your API key. Paste buggy code. Describe the
 ```
 unravel-v3/
 ├── src/
-│   ├── App.jsx          Main application — 5-step UI + engine pipeline
-│   ├── config.js        Providers, taxonomy, prompts, output schema
+│   ├── core/            Shared engine (zero React dependencies)
+│   │   ├── index.js     Barrel export for all core modules
+│   │   ├── config.js    Providers, taxonomy, prompts, output schema
+│   │   ├── ast-engine.js  @babel/parser AST pre-analysis
+│   │   ├── parse-json.js  Robust LLM JSON parser
+│   │   ├── provider.js    API caller with retry logic
+│   │   └── orchestrate.js Full analysis pipeline
+│   ├── App.jsx          5-step UI + engine integration
 │   ├── index.css        Neo-brutalist design system
 │   └── main.jsx         Entry point
+├── benchmarks/
+│   ├── bugs/            10 intentional bugs with ground truth
+│   ├── runner.js        Benchmark runner (RCA + HR scoring)
+│   └── results.json     Saved benchmark results
 ├── index.html
 ├── vite.config.js
 └── package.json
