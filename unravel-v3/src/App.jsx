@@ -219,7 +219,7 @@ export default function App() {
 
             // Core engine call
             setLoadingStage('DEEP ENGINE: Reconstructing execution timeline and state invariants...');
-            const systemPrompt = buildSystemPrompt(level, language);
+            const systemPrompt = buildSystemPrompt(level, language, provider);
             const enginePrompt = `${projectContext}\n\nFILES PROVIDED:\n${codeFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 4000)}`).join('\n\n')}\n\nUSER'S BUG REPORT:\n${userError || 'No specific error described. Analyze for any issues.'}`;
 
             const raw = await callAPI(systemPrompt, enginePrompt, true);
