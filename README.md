@@ -224,16 +224,63 @@ These are measured against a growing benchmark suite of 20+ deliberately buggy p
 ## Roadmap
 
 ### Phase 1 — Deep Thinking `COMPLETE`
-BYOK multi-provider support. SOTA models with extended thinking. 8-phase deterministic prompt. Anti-sycophancy guardrails. Evidence-backed confidence. Concept extraction. Bug taxonomy. "Why AI Loops" analysis.
+BYOK multi-provider support. SOTA models with extended thinking. 8-phase deterministic prompt. Anti-sycophancy guardrails. Evidence-backed confidence. Provider-specific prompt formatting (XML for Claude, markdown for Gemini, delimiters for GPT). Concept extraction. Bug taxonomy. "Why AI Loops" analysis.
 
 ### Phase 2 — Intelligence Layer `IN PROGRESS`
 Client-side AST analysis with Acorn. Variable mutation chains, timing node detection, closure capture tracking. Function-level code slicing. Multi-agent pipeline (Router → Debugger → Explainer). Visual diff output. AI-simulated bug replay timeline.
 
 ### Phase 3 — Measurement `PLANNED`
-20+ bug benchmark suite with defined root causes. Automated RCA scoring. Hallucination detection by cross-referencing AI claims against AST ground truth. Metrics dashboard tracking accuracy across model and prompt versions.
+20+ bug benchmark suite with defined root causes. Automated RCA scoring. Hallucination detection by cross-referencing AI claims against AST ground truth. Metrics dashboard.
 
 ### Phase 4 — The Breakthrough `PLANNED`
-WebContainers for live in-browser code execution. Real instrumented bug replay with actual variable values. Interactive D3.js dependency graph visualization. Progressive learning path system. Growing bug pattern database.
+WebContainers for live in-browser code execution. Real instrumented bug replay with actual variable values. Interactive D3.js dependency graph. Progressive learning path system. Bug pattern database.
+
+### Phase 5 — Everywhere `PLANNED`
+Extract `@unravel/core` shared engine. VS Code extension with **Live Bug Lens**. CLI tool for CI/CD. OpenClaw agent integration. Electron desktop app.
+
+---
+
+## ⚡ Live Bug Lens (Coming in Phase 5)
+
+The feature that changes everything. Instead of reading a report, bugs appear **directly in the code editor**.
+
+```javascript
+function pause(){
+    clearInterval(interval)
+    interval = null
+    duration = remaining   // 🔴 ROOT CAUSE: STATE_MUTATION
+                           //    duration should remain constant
+}
+```
+
+Hover for details. Click to fix. Execution timeline in the gutter. Variable mutation tree in the sidebar.
+
+```
+Chat debugging: read → remember → search → verify → fix  (5 steps)
+Live Bug Lens: see bug → click → fix                     (3 steps)
+```
+
+Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
+
+---
+
+## 🔌 Multi-Platform
+
+```
+@unravel/core              ← shared engine (npm package)
+  ├── unravel-web          ← React app (live now)
+  ├── unravel-vscode       ← VS Code extension + Live Bug Lens
+  ├── unravel-cli          ← terminal tool (CI/CD, OpenClaw)
+  └── unravel-desktop      ← Electron app
+```
+
+| Platform | What It Does | Status |
+|----------|-------------|--------|
+| **Web App** | Paste code, describe bug, get structured report | ✅ Live |
+| **VS Code Extension** | Right-click → debug. Live Bug Lens inline overlays | 🔜 Phase 5 |
+| **CLI** | `unravel analyze ./src --symptom "..."` | 🔜 Phase 5 |
+| **OpenClaw Skill** | AI agent calls Unravel as a debugging tool | 🔜 Phase 5 |
+| **Desktop App** | Drag-and-drop folders, native file access | 🔜 Phase 5 |
 
 ---
 
