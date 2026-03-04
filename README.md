@@ -9,6 +9,8 @@ Unravel is not another AI wrapper. It's a **structured debugging pipeline** that
 | Feature | ChatGPT / Copilot | **Unravel** |
 |---------|-------------------|-------------|
 | Bug analysis | Pattern match → guess | 8-phase deterministic pipeline |
+| Context Window | Full files (hallucination risk) | **Function-level slices** via AST parsing |
+| "Sycophancy" | Often invents bugs to please user | **Anti-Sycophancy guards** (evidence or reject) |
 | Confidence | "I think..." | Evidence-backed with verified/uncertain split |
 | Teaching | Fix the code | Teach the **concept** behind the bug |
 | AI Loop Analysis | N/A | Explains **why AI tools keep failing** on this bug |
@@ -19,9 +21,11 @@ Unravel is not another AI wrapper. It's a **structured debugging pipeline** that
 ```
 User Code + Symptom
        ↓
-[Router Agent] → selects relevant files
+[AST Analyzer] → extracts mutations, timing nodes, closures
        ↓
-[Deep Engine] → 8-phase analysis with extended thinking
+[Router Agent] → selects only relevant function slices
+       ↓
+[Deep Engine] → 8-phase analysis with strict Anti-Sycophancy rules
        ↓
 [Structured Report]
   ├── Root Cause + Evidence
@@ -75,8 +79,8 @@ unravel-v3/          ← The current production version
 
 ## Roadmap
 
-- **Phase 1** ✅ Deep Thinking (BYOK, SOTA models, extended thinking, concept extraction)
-- **Phase 2** 🔜 Intelligence Layer (AST analysis, multi-agent pipeline, visual diffs)
+- **Phase 1** ✅ Deep Thinking (BYOK, SOTA models, 8-phase prompt, Anti-Sycophancy rules)
+- **Phase 2** 🔜 Intelligence Layer (AST mutation mapping, dynamic function slicing, multi-agent router)
 - **Phase 3** 🔜 Measurement (benchmark suite, RCA scoring, hallucination detection)
 - **Phase 4** 🔜 Breakthrough (WebContainers, live bug replay, learning paths)
 
