@@ -11,6 +11,7 @@ import {
     buildSystemPrompt, buildRouterPrompt, ENGINE_SCHEMA, ENGINE_SCHEMA_INSTRUCTION
 } from './config.js';
 import { runFullAnalysis } from './analyzer/ast-engine.js';
+import { parseAIJson } from './utils/parse-json.js';
 
 // ─── Helpers ────────────────────────────────────────────
 const fetchWithRetry = async (url, options, retries = 4) => {
@@ -32,18 +33,7 @@ const fetchWithRetry = async (url, options, retries = 4) => {
     }
 };
 
-const parseAIJson = (text) => {
-    if (!text) return null;
-    try { return JSON.parse(text); } catch { }
-    try {
-        const clean = text.replace(/^```(?:json)?\n?/gi, '').replace(/\n?```$/g, '').trim();
-        return JSON.parse(clean);
-    } catch { }
-    // Try to find JSON object in text
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) try { return JSON.parse(match[0]); } catch { }
-    return null;
-};
+
 
 const displayConfidence = (val) => {
     if (val == null) return 0;

@@ -25,6 +25,7 @@ const __dirname = dirname(__filename);
 // We import the AST engine and config from the app source
 const { runFullAnalysis } = await import(pathToFileURL(join(__dirname, '..', 'src', 'analyzer', 'ast-engine.js')).href);
 const { buildSystemPrompt, ENGINE_SCHEMA_INSTRUCTION } = await import(pathToFileURL(join(__dirname, '..', 'src', 'config.js')).href);
+const { parseAIJson } = await import(pathToFileURL(join(__dirname, '..', 'src', 'utils', 'parse-json.js')).href);
 
 // ── CLI Args ────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -141,18 +142,7 @@ async function callUnravel(code, symptom, systemPrompt) {
     }
 }
 
-// ── Parse AI JSON ───────────────────────────────────
-function parseAIJson(text) {
-    if (!text) return null;
-    try { return JSON.parse(text); } catch { }
-    try {
-        const clean = text.replace(/^```(?:json)?\n?/gi, '').replace(/\n?```$/g, '').trim();
-        return JSON.parse(clean);
-    } catch { }
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) try { return JSON.parse(match[0]); } catch { }
-    return null;
-}
+
 
 // ═══════════════════════════════════════════════════
 // RCA SCORING

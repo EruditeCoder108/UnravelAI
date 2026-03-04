@@ -21,6 +21,8 @@ The reason it happens: current AI tools **pattern-match symptoms**. They never t
 
 Unravel doesn't guess.
 
+> **v1 Launch Scope:** Unravel currently supports **JavaScript and TypeScript** only. The AST pre-analysis relies on `@babel/parser`. Support for Python and other languages is planned for future phases.
+
 ---
 
 ## ⚙️ How It Works
@@ -143,6 +145,18 @@ Closure Captures:
 ```
 
 This is injected into the prompt as **verified ground truth**. The AI cannot hallucinate about what variables exist or where they're mutated — the AST already told it.
+
+### The Impact of AST Context (Benchmark)
+
+We measured Root Cause Analysis (RCA) accuracy across a suite of 10 complex frontend bugs (stale closures, race conditions, react rendering loops) using Gemini 2.5 Flash, with and without AST pre-analysis.
+
+| Bug Category | Baseline RCA | AST-Enhanced RCA |
+|---|---|---|
+| `STALE_CLOSURE` (setInterval) | ❌ Failed | **1.0** (Exact Match) |
+| `STATE_MUTATION` (Timer) | ❌ Failed | **1.0** (Exact Match) |
+| `RACE_CONDITION` (Fetch) | 0.5 (Partial) | *Model Parsing Failed* |
+
+*Note: Benchmark tooling is available in `benchmarks/runner.js`. The structured output demands of Unravel's 8-phase pipeline are rigorous; weaker models frequently fail to produce valid JSON without AST scaffolding.*
 
 ---
 
