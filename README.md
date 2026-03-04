@@ -1,10 +1,10 @@
 <div align="center">
   <img src="./logo.png" alt="Unravel Logo" width="120" />
   <h1>UNRAVEL</h1>
-  <h3>The Deterministic Debug Engine</h3>
+  <p><strong>Most AI tools can write code. Unravel is built to explain why that code broke.</strong></p>
+  <h3>The Deterministic Debug Engine for AI-Generated Code</h3>
   <p>
     <em>AI Code Generation is solved. AI Code <b>Understanding</b> is not.</em><br/>
-    <em>Every AI tool can write code. None of them can reliably explain why it broke.</em><br/>
     <b>Unravel fixes that.</b>
   </p>
   <p>
@@ -18,15 +18,70 @@
 
 ## 💥 The Problem
 
-You paste buggy code into ChatGPT. It says *"try adding a null check."* You do. It breaks something else. You paste again. It says *"ah, try wrapping it in a try-catch."* Three hours later, you've applied 14 patches and the original bug is still there.
+You paste your code into ChatGPT.
 
-This is the **AI debugging loop** — and every developer has been stuck in it.
+It suggests a fix.
 
-The reason it happens: current AI tools **pattern-match symptoms**. They never trace root causes. They never track variable mutations. They never simulate execution flow. They just *guess* — confidently.
+You try it.
 
-Unravel doesn't guess.
+Now something else breaks.
+
+So you paste the new error.
+
+It suggests another fix.
+
+Three hours later you've applied 14 patches and the original bug is still there.
+
+Welcome to the **AI debugging loop**.
+
+It happens because most AI coding tools don't actually understand your program.
+
+They don't track variable mutations.  
+They don't simulate execution.  
+They don't follow state across files.
+
+They pattern-match symptoms and guess fixes.
+
+Sometimes the guess works.
+
+Often it doesn't.
+
+**Unravel breaks that loop.**
 
 > **Language Support:** JavaScript and TypeScript only (AST pre-analysis uses `@babel/parser`). Python and other languages planned for future phases.
+
+---
+
+## ⚡ A Real Example
+
+Buggy code:
+
+```javascript
+function pause(){
+    clearInterval(interval)
+    interval = null
+    duration = remaining
+}
+```
+
+The bug:
+
+🔴 **ROOT CAUSE: STATE_MUTATION**
+
+`duration` should remain constant.  
+Mutating it causes the timer to drift after pause/resume.
+
+Minimal fix:
+
+```javascript
+function pause(){
+    clearInterval(interval)
+    interval = null
+    remaining = duration
+}
+```
+
+This is the level of precision Unravel brings to your editor.
 
 ---
 
@@ -134,18 +189,20 @@ graph TD
 
 |   | ChatGPT / Copilot | Unravel |
 |---|-------------------|---------| 
-| **Analysis Method** | Pattern match the symptom, guess a fix | 8-phase deterministic pipeline with state tracking |
-| **Context Handling** | Dumps entire files into context | Function-level AST slicing — only relevant code reaches the model |
-| **Hallucination** | Invents plausible-sounding bugs freely | Anti-Sycophancy guards: every claim must cite exact line + code evidence |
-| **Confidence** | "I think the issue might be..." | Evidence-backed: lists what was verified and what remains uncertain |
-| **Fix Quality** | Rewrites the entire file | Minimal surgical fix — smallest change that resolves the root cause |
-| **Teaching** | "Here's the fix, good luck" | Concept extraction: what broke, why, and how to never do it again |
-| **AI Awareness** | No self-reflection | "Why AI Loops" — explains exactly why other AI tools fail on this bug |
-| **Bug Classification** | Free-text description | Formal 12-category taxonomy with structured metadata |
+| **Analysis Method** | Symptom-based guessing | 8-phase deterministic pipeline |
+| **Context Handling** | File-level context dumps | Function-level AST slicing |
+| **Hallucination** | Frequent "plausible" invention | Anti-Sycophancy guards (proof required) |
+| **Confidence** | Confidently wrong / Generic | Evidence-backed (Verified vs Uncertain) |
+| **Fix Quality** | Full-file rewrites | Minimal surgical fix |
+| **Teaching** | "Here is the code" | Concept extraction & learning paths |
+| **AI Awareness** | Zero self-reflection | "Why AI Loops" loop analysis |
+| **Bug Classification** | Free-text | Formal 12-category taxonomy |
 
 ---
 
-## Anti-Sycophancy Engine
+# 🧠 How Unravel Actually Finds Bugs
+
+## ⚙️ How It Worksi-Sycophancy Engine
 
 Most AI tools have a fatal flaw: they will **invent bugs that don't exist** just to appear helpful. If you say "I think the error is on line 10," they'll agree — even if line 10 is perfectly fine.
 
@@ -428,6 +485,16 @@ UnravelAI/
     │   └── core/                Engine (copied from unravel-v3)
     └── out/extension.js         Bundled output (esbuild)
 ```
+
+---
+
+## The Goal
+
+Debugging shouldn't feel like guessing.
+
+If AI can generate code, it should also help us **understand it.**
+
+Unravel exists to make that possible.
 
 ---
 
