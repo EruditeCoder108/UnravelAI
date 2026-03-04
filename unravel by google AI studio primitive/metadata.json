@@ -1,0 +1,5 @@
+{
+  "name": "Unravel",
+  "description": "A tool to help non-technical people understand and fix their AI-generated code in plain Hindi, English, or Hinglish.",
+  "requestFramePermissions": []
+}
