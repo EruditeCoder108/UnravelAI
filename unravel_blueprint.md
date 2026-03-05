@@ -745,9 +745,25 @@ console.log(result.report.minimalFix);
 
 ---
 
-# 16. Future Roadmap — Phases 4 through 7
+# 16. Future Roadmap
+
+## Phase 3.5: Pre-Publish Hardening (Complete)
+
+**Goal:** Fix concrete gaps discovered during benchmark verification to prevent silent misses or degraded analysis on real user code.
+
+- **3.5.1 — Object Property Mutation Detection in AST:** The `extractMutationChains` function now catches property mutations (`task.status = newStatus`) on objects inside arrays.
+- **3.5.2 — Input Completeness Check:** Before the pipeline runs, every uploaded file is checked for truncation signals (missing HTML closing tags, unclosed JS/TS braces, suspicious CSS size). Truncated files surface a top-level warning banner.
 
 ## Phase 4: Intelligence Layer (Planned)
+
+**Goal:** Adversarial multi-agent debate. Variable Trace UI. Code diff. Symptom-independent static analysis.
+**Trigger:** First reports of confident-but-wrong diagnoses from real users. Do not build speculatively.
+
+### 4.0 — Pipeline Hardening
+- **Symptom-Independent AST Scan:** A second AST pass that runs completely independent of the symptom to flag suspicious patterns (like objects inside arrays, direct DOM references).
+- **Hypothesis Elimination Scoring:** Explicitly show reasoning for eliminating each hypothesis ("Hypothesis 2 eliminated: AST confirms...").
+- **Symptom Contradiction Check:** Check if the user symptom contradicts AST facts during Phase 1 INGEST.
+- **Multi-Symptom Mode (Deep Scan):** Optional mode to run pipeline 3 times with 3 different symptom framings, then merge the findings.
 
 ### 4.1 — Adversarial Multi-Agent Debate
 

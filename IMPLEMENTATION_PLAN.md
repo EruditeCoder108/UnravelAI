@@ -417,9 +417,67 @@ These were in the original Phase 3 plan but not built. They're presentation laye
 
 ---
 
+### Phase 3.5 — "Pre-Publish Hardening" 📋 REQUIRED BEFORE PUBLISHING
+
+**Goal:** Fix the two concrete gaps discovered during Bug 8 benchmark verification. These are engine-level issues that will cause silent misses or degraded analysis on real user code.
+
+**Trigger:** Now. These must be done before any public benchmark claims are published.
+
+**What the Bug 8 verification revealed:**
+
+| What Works | What's Brittle |
+|------------|---------------|
+| 9-phase pipeline forces depth standalone prompting can't match | Symptom description heavily influences which hypotheses get generated |
+| AST mutation chains catch what pattern matching misses | Input truncation silently degrades analysis quality |
+| AI loop analysis is unique — nobody else produces it | Hypothesis elimination doesn't always kill cleanly |
+| Uncertainty flagging works — the HTML truncation case proved it | `task.status = newStatus` property mutation wasn't caught by AST |
+| Output structure is consistent across bug types | |
+
+#### 3.5.1 — Object Property Mutation Detection in AST ⏱️ 2–3 hours
+
+**Priority: #1. Most impactful engine improvement.**
+
+The `extractMutationChains` function catches array-level mutations (`push`, `splice`, direct assignment) correctly. It missed `task.status = newStatus` — a property mutation on an object inside an array. This is the most common state mutation bug pattern in modern JavaScript (React `useState`, Redux reducers, Zustand stores).
+
+**Implementation:** Detect `AssignmentExpression` nodes where the left-hand side is a `MemberExpression` and the object traces back to a variable that lives inside an array or state container.
+
+```
+// Currently caught:
+state.tasks.push(task)         ← method call on tracked array ✅
+state.tasks.splice(idx, 1)     ← method call on tracked array ✅
+state.tasks = [...state.tasks]  ← direct reassignment ✅
+
+// Currently missed:
+task.status = newStatus         ← property mutation on object inside array ❌
+state.tasks[0].done = true      ← nested property mutation ❌
+```
+
+**Test:** Re-run Bug 8 analysis after the fix. `moveTask`'s `task.status = newStatus` should now appear in the mutation chain output.
+
+#### 3.5.2 — Input Completeness Check ⏱️ 30 minutes
+
+**Priority: #2. Prevents silent context degradation.**
+
+Before the pipeline runs, check every uploaded file for truncation signals:
+- HTML without closing `</body>` or `</html>` tags
+- JS/TS with unclosed braces or abrupt ending
+- File size suspiciously small relative to import graph expectations
+
+**Action on detection:** Show a top-level banner on the entire report:
+
+```
+⚠️ One or more files may be incomplete. Analysis confidence reduced.
+```
+
+Right now the warning is buried in one evidence item. It must be top-level. A diagnosis built on incomplete context should carry a visible warning on the entire report.
+
+**Test:** Upload a truncated HTML file. Banner should appear before the report content.
+
+---
+
 ### Phase 4 — "Intelligence Layer" 📋 PLANNED
 
-**Goal:** Adversarial multi-agent debate. Variable Trace UI. Code diff.
+**Goal:** Adversarial multi-agent debate. Variable Trace UI. Code diff. Symptom-independent static analysis.
 
 **Trigger:** First reports of confident-but-wrong diagnoses from real users. Do not build speculatively.
 
@@ -546,25 +604,53 @@ The AST already has function call data, variable read/write locations, and impor
 
 Expand 10-bug suite to 20+ bugs. Include cross-file bugs and multi-component React bugs.
 
-#### 4.6 — Context Completeness Validation
+#### 4.6 — Symptom-Independent AST Scan ⏱️ 1–2 hours
 
-**Motivation:** Bug 8 Run 2 produced an uncertain finding regarding missing HTML elements because the input `index.html` file was truncated during ingestion. The model correctly identified the AST-to-DOM mismatch and appropriately flagged its uncertainty, behaving exactly as designed by Rule 7. However, the pipeline itself should detect incomplete input before running the analysis engine.
+Currently the AST facts are injected but the pipeline reasons strictly toward the reported symptom. Add a second AST pass that runs completely independent of the symptom — flags everything suspicious regardless of what the user reported:
+- Mutation of objects inside arrays
+- `WeakRef` usage patterns
+- Direct DOM references that might not exist
+- Async operations without error handling
 
-**Implementation:** Add a pre-analysis validation step that detects truncated input files before the model reasons from them.
+This becomes a separate **"Static Warnings"** section in the report. These aren't necessarily bugs — they're code smells worth knowing about. Key risk: noise. Needs a severity threshold or it'll dump 50 warnings on a 5-file project.
 
-Detection signals:
-- HTML ending mid-section (missing closing tags like `</body>`, `</html>`)
-- Large file but only partial AST parsed (byte count vs parsed node count mismatch)
+#### 4.7 — Hypothesis Elimination Scoring ⏱️ 2 hours
 
-**Action on detection:**
-- If a file appears truncated, warn the user *before* running the pipeline.
-- A diagnosis built on incomplete context must carry a visible global warning on the entire generated report, not just localized to single evidence items.
+Right now hypotheses are generated and the surviving one is reported. Add explicit elimination reasoning to the output — not just "hypothesis 2 eliminated" but:
+
+```
+Hypothesis 2 eliminated: AST confirms scheduleUpdate is called in all
+four mutation functions — missing emit is not possible.
+```
+
+Forces the model to show its elimination work, not just its conclusion. Makes confident-wrong outputs harder to produce. Makes the output auditable.
+
+#### 4.8 — Symptom Contradiction Check ⏱️ 1 hour
+
+Add a rule in Phase 1 (INGEST) that checks: does the symptom description contradict anything the AST already knows?
+
+Example: user says "event isn't firing" but AST shows `addEventListener` is correctly wired. Flag the contradiction before the 9-phase reasoning continues.
+
+This implements Anti-Sycophancy Rule 2 at the pipeline level, not just the prompt level. Implemented inside Phase 1 rather than as a separate "Phase 0" to avoid an extra LLM call — the model already reads everything during INGEST.
+
+#### 4.9 — Multi-Symptom Mode ⏱️ 2 hours
+
+The Bug 8 second run proved that a broader symptom unlocks more bugs. Add an optional **"Deep Scan"** mode where Unravel runs the pipeline three times with three different symptom framings derived from the same code:
+- "UI not updating"
+- "Performance issues"
+- "Data inconsistency"
+
+Then merges the findings. Catches layered bugs that single-symptom analysis misses.
+
+**Key implementation concern:** Merging three pipeline outputs requires deduplication logic for findings that appear in multiple framings. 3x cost — opt-in only.
 
 **Phase 4 verification:**
 - Multi-agent RCA delta vs single-agent > 10%? If not, reassess complexity cost
 - Agent B produces genuinely independent hypotheses (test on 5 known bugs)
 - Agent C cannot propose new hypotheses (constraint working)
 - Variable Trace renders correctly and line jumps work
+- Hypothesis elimination scoring produces auditable reasoning on 5 test bugs
+- Symptom contradiction check fires on at least 1 known contradictory case
 
 ---
 
@@ -709,19 +795,23 @@ POST /analyze
 ## Where We Are Right Now
 
 ```
-PHASE 1 ✅  Web app, 8-phase pipeline, SOTA models, anti-sycophancy
-PHASE 2 ✅  AST pre-analysis, 10-bug dev proxy, open source
-            ⏳ Preliminary Flash run done (15→20% RCA, 0% HR)
-            ⏳ Full Opus/Pro benchmark still pending
-PHASE 3 ✅  Core engine extracted, VS Code / Cursor / Windsurf extension working end-to-end
-            ✅ Web app UX: file list, remove, append, GitHub import
-            ⏳ Advanced decorations (🟠🟡🔵) deferred to Phase 4
-            ⏳ Clickable sidebar tree deferred to Phase 4
-            ⏳ [Apply Fix] button deferred to Phase 4
-PHASE 4 📋  Hypothesis elimination + adversarial debate + Variable Trace
-PHASE 5 📋  Instrumented execution (iframe first, then WebContainers)
-PHASE 6 📋  Pattern database
-PHASE 7 📋  50-bug credibility benchmark — the number that opens doors
+PHASE 1   ✅  Web app, 8-phase pipeline, SOTA models, anti-sycophancy
+PHASE 2   ✅  AST pre-analysis, 10-bug dev proxy, open source
+              ⏳ Preliminary Flash run done (15→20% RCA, 0% HR)
+              ⏳ Full Opus/Pro benchmark still pending
+PHASE 3   ✅  Core engine extracted, VS Code / Cursor / Windsurf extension working end-to-end
+              ✅ Web app UX: file list, remove, append, GitHub import
+              ⏳ Advanced decorations (🟠🟡🔵) deferred to Phase 4
+              ⏳ Clickable sidebar tree deferred to Phase 4
+              ⏳ [Apply Fix] button deferred to Phase 4
+PHASE 3.5 📋  Pre-publish hardening (object property mutation + input completeness)
+              ⏱️ ~3 hours total — MUST complete before benchmark is published
+PHASE 4   📋  Hypothesis elimination + adversarial debate + Variable Trace
+              + Symptom-independent AST, elimination scoring, contradiction check,
+                multi-symptom mode
+PHASE 5   📋  Instrumented execution (iframe first, then WebContainers)
+PHASE 6   📋  Pattern database
+PHASE 7   📋  50-bug credibility benchmark — the number that opens doors
 ```
 
 **What exists and works right now:**
@@ -731,10 +821,12 @@ PHASE 7 📋  50-bug credibility benchmark — the number that opens doors
 - 10-bug development proxy with runner and preliminary results
 - README, LICENSE, STORY.md — launch-ready
 
-**What's needed before Phase 4:**
-1. Full proxy benchmark run with Claude Opus or Gemini Pro (paid credits)
-2. Launch posts (Dev.to, Reddit, YouTube, LinkedIn)
-3. Get first real users and feedback
+**What's needed before publishing benchmark:**
+1. Phase 3.5.1 — Object property mutation detection in AST (~2-3 hours)
+2. Phase 3.5.2 — Input completeness check (~30 min)
+3. Full proxy benchmark run with Claude Opus or Gemini Pro (paid credits)
+4. Launch posts (Dev.to, Reddit, YouTube, LinkedIn)
+5. Get first real users and feedback
 
 ---
 

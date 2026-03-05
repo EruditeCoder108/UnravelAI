@@ -341,8 +341,11 @@ Client-side AST analysis with `@babel/parser`. Variable mutation chains, timing 
 ### Phase 3 — Core Engine + VS Code Extension `COMPLETE`
 Extracted shared engine into `src/core/` — `orchestrate()`, `callProvider()`, barrel exports. Zero React dependencies. Built the **VS Code Extension** with Live Bug Lens: inline overlays, diagnostics, hover tooltips, and sidebar report panel.
 
+### Phase 3.5 — Pre-Publish Hardening `COMPLETE`
+Object property mutation detection (`task.status = newStatus`) surgically added to AST. Input completeness validation added to detect silently truncated files (HTML, JS, CSS) before reasoning begins.
+
 ### Phase 4 — Intelligence Layer `PLANNED`
-Function-level code slicing. **Adversarial multi-agent debate** — two agents independently diagnose the same bug, then reconcile. Disagreement surfaces multiple evidence-backed hypotheses instead of a confident wrong answer. Visual diff output. AI-simulated bug replay timeline.
+Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom contradiction check, and multi-symptom mode. Function-level code slicing. **Adversarial multi-agent debate** — three agents independently diagnose the same bug and attack hypotheses. Variable Trace UI and Visual diff output.
 
 ### Phase 5 — The Breakthrough `PLANNED`
 WebContainers for live in-browser code execution. Real instrumented bug replay. Interactive D3.js dependency graph. Debug Journal ("What did I learn?"). CLI tool + OpenClaw integration. Desktop app.

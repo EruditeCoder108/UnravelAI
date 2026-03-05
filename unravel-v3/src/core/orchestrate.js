@@ -41,6 +41,13 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         throw new Error('Missing required options: provider, apiKey, model');
     }
 
+    // ── Phase 0: Input Completeness Check ──
+    const contextWarnings = checkFileCompleteness(codeFiles);
+    if (contextWarnings.length > 0) {
+        console.warn('[INPUT] Completeness warnings:', contextWarnings);
+        onProgress?.('⚠️ INPUT WARNING: Some files may be incomplete. Proceeding with reduced confidence...');
+    }
+
     // ── Phase 1: AST Pre-Analysis ──
     onProgress?.('AST ANALYZER: Extracting variable mutations, closures, timing nodes...');
     const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
@@ -54,6 +61,15 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         } catch (astErr) {
             console.warn('[AST] Analysis failed, proceeding without:', astErr.message);
         }
+    }
+
+    // Prepend input warnings to AST context so the model sees them
+    if (contextWarnings.length > 0) {
+        const warningBlock = '⚠️ INPUT COMPLETENESS WARNING\n'
+            + contextWarnings.map(w => `  - ${w}`).join('\n')
+            + '\nSome files may be truncated. Do NOT make assertions about missing elements '
+            + 'if the file appears incomplete. Flag any such claims as UNCERTAIN.\n\n';
+        astContext = warningBlock + astContext;
     }
 
     // ── Phase 2: Build Prompts ──
@@ -114,5 +130,51 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         }
     }
 
+    // Attach context warnings to result so UI can show a top-level banner
+    if (contextWarnings.length > 0) {
+        result.contextWarnings = contextWarnings;
+    }
+
     return result;
+}
+
+// ═══════════════════════════════════════════════════
+// Input Completeness Check
+// Detects truncated files before the pipeline reasons from them
+// ═══════════════════════════════════════════════════
+
+function checkFileCompleteness(codeFiles) {
+    const warnings = [];
+    for (const file of codeFiles) {
+        const content = file.content?.trim();
+        if (!content) continue;
+
+        // HTML: missing closing tags or suspiciously small
+        if (/\.html?$/i.test(file.name)) {
+            if (content.length < 50) {
+                warnings.push(`${file.name} is only ${content.length} bytes — likely truncated`);
+            } else if (!content.includes('</html>') && !content.includes('</body>')) {
+                warnings.push(`${file.name} may be truncated (missing </html> or </body>)`);
+            }
+        }
+
+        // JS/TS: unbalanced braces
+        if (/\.(js|jsx|ts|tsx)$/i.test(file.name)) {
+            const opens = (content.match(/{/g) || []).length;
+            const closes = (content.match(/}/g) || []).length;
+            if (opens > closes + 2) {
+                warnings.push(`${file.name} may be truncated (${opens - closes} unclosed braces)`);
+            }
+        }
+
+        // CSS: unbalanced braces
+        if (/\.css$/i.test(file.name)) {
+            const opens = (content.match(/{/g) || []).length;
+            const closes = (content.match(/}/g) || []).length;
+            if (opens > closes + 2) {
+                warnings.push(`${file.name} may be truncated (${opens - closes} unclosed braces)`);
+            }
+        }
+    }
+    return warnings;
 }

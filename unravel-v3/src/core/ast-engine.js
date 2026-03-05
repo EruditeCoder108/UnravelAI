@@ -91,9 +91,38 @@ function getEnclosingFunction(path) {
 }
 
 // ═══════════════════════════════════════════════════
+// HELPER: Build a dotted name from a MemberExpression AST node
+// task.status → "task.status"
+// state.tasks[0].done → "state.tasks[].done"
+// Depth-limited to 4 to avoid noise
+// ═══════════════════════════════════════════════════
+
+function getMemberExpressionName(node) {
+    const parts = [];
+    let current = node;
+    let depth = 0;
+    while (current.type === 'MemberExpression' && depth < 4) {
+        if (current.computed) {
+            parts.unshift('[]');
+        } else if (current.property.type === 'Identifier') {
+            parts.unshift(current.property.name);
+        }
+        current = current.object;
+        depth++;
+    }
+    if (current.type === 'Identifier') {
+        parts.unshift(current.name);
+    }
+    // Only return if we have at least obj.prop (2+ parts)
+    if (parts.length < 2) return null;
+    return parts.join('.').replace(/\.\[\]/g, '[]');
+}
+
+// ═══════════════════════════════════════════════════
 // FEATURE 1: Variable Mutation Chains
 // Walks AssignmentExpression and UpdateExpression nodes
 // Records: variable name, line, enclosing function, direction
+// Also tracks MemberExpression property mutations (obj.prop = value)
 // ═══════════════════════════════════════════════════
 
 export function extractMutationChains(ast) {
@@ -136,6 +165,16 @@ export function extractMutationChains(ast) {
                         mutations[name].writes.push({ fn, line });
                     }
                 });
+            }
+            // Track property mutations: obj.prop = value, arr[i].prop = value
+            if (left.type === 'MemberExpression') {
+                const name = getMemberExpressionName(left);
+                if (name) {
+                    const fn = getEnclosingFunction(path);
+                    const line = path.node.loc?.start?.line || 0;
+                    if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
+                    mutations[name].writes.push({ fn, line });
+                }
             }
         },
 
@@ -374,20 +413,39 @@ function formatAnalysis(mutations, closures, timing) {
         data.writes.some(w => w.fn !== '(module scope)')
     );
 
+    // Build set of root names for property mutation annotation
+    const allMutatedNames = mutatedVars.map(([name]) => name);
+
     if (mutatedVars.length > 0) {
         lines.push('Variable Mutation Chains:');
         for (const [name, data] of mutatedVars) {
+            // Check if this is a property mutation that shares a root with an array mutation
+            const isPropertyMutation = name.includes('.') || name.includes('[]');
+            const rootName = name.split(/[.\[]/)[0];
+            const hasRelatedArrayMutation = isPropertyMutation && allMutatedNames.some(
+                n => n !== name && (n === rootName || n.startsWith(rootName + '.'))
+            );
+
             lines.push(`  ${name}`);
             if (data.writes.length > 0) {
                 const writeStr = data.writes
                     .map(w => `${w.fn} L${w.line}`)
                     .join(', ');
-                lines.push(`    written: ${writeStr}`);
+                let annotation = '';
+                if (isPropertyMutation) {
+                    annotation = name.includes('[]')
+                        ? ' ← property mutation on array element'
+                        : ' ← property write';
+                }
+                lines.push(`    written: ${writeStr}${annotation}`);
             }
             if (data.reads.length > 0) {
                 // Deduplicate reads by function
                 const readFns = [...new Set(data.reads.map(r => `${r.fn} L${r.line}`))];
                 lines.push(`    read:    ${readFns.join(', ')}`);
+            }
+            if (hasRelatedArrayMutation) {
+                lines.push(`    note:    shares root with ${rootName} — both array and element mutations present`);
             }
         }
         lines.push('');
