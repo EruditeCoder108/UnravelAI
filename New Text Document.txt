@@ -1,14 +1,420 @@
-A Few Technical Suggestions for Refinement
-API Retry Logic: In your fetchWithRetry helper, you currently have this logic:
+Observed Symptom
+COPY
+The UI displays stale or incorrect unit buildable costs/availability. Unhandled promise rejections might appear in the browser console if `player.buildables()` fails.
 
-JavaScript
-if (!response.ok) {
-    if (response.status === 429 || response.status >= 500) throw new Error(`HTTP ${response.status}`);
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `API Error: ${response.status}`);
-}
-If the response is a 401 Unauthorized (e.g., the user pasted an invalid API key), it will throw the error, hit the catch block, wait 1.5 seconds, and retry. It will do this 4 times. You might want to explicitly catch 401 or 403 errors and bail out immediately without retrying, as those won't resolve on subsequent attempts.
+Reproduction Path
+The `ClientGameRunner` likely calls `tick()` on `UnitDisplay` very frequently (e.g., every game frame or game tick).
+During normal gameplay, `tick()` is called, which in turn calls `player.buildables()`, initiating an asynchronous operation (likely involving a Web Worker).
+While the first `player.buildables()` call is still pending, `tick()` is called again, initiating a second `player.buildables()` call.
+Due to varying asynchronous processing times, the second `player.buildables()` call might resolve and update `this.playerBuildables` first.
+Subsequently, the first (older) `player.buildables()` call resolves, and its `.then()` callback executes, overwriting `this.playerBuildables` with older, stale data.
+The UI `render()` method then uses this stale `this.playerBuildables` data, displaying incorrect unit costs or availability.
+Confidence Evidence
+COPY
+VERIFIED:
+Location: UnitDisplay.tick() line 74 (approx), Evidence: `player.buildables(undefined, BuildMenus.types).then((buildables) => { this.playerBuildables = buildables; });` This line initiates an asynchronous operation and updates `this.playerBuildables` directly upon resolution without checking if it's the latest request.
+Location: UnitDisplay.tick() line 74 (approx), Evidence: The `.then()` block lacks a corresponding `.catch()` block, meaning any promise rejection from `player.buildables()` will be unhandled.
+UNCERTAIN:
+The exact implementation of `player.buildables()` in `PlayerImpl.ts` was not provided, but its usage with `.then()` strongly implies an asynchronous operation, likely involving the `WorkerClient`.
+Concept To Learn
+COPY
+ASYNC_ORDERING, STATE_MUTATION
+Managing Asynchronous State Updates and Race Conditions
+In modern apps, data often comes from outside (APIs, web workers). If you don't handle these 'out-of-order' deliveries, your app can show old or wrong information, confusing users or leading to incorrect actions (like trying to build a unit that was just made unavailable). Unhandled errors can crash the app like a broken auto-rickshaw in traffic.
 
-File Upload Size Limits: In handleDirectoryUpload, you filter out files larger than 500,000 bytes (500KB). While good for preventing context bloat, you might want to add a UI warning so the user knows a specific file was silently ignored due to size limits.
+PATTERN TO AVOID:
+Directly assigning the result of an asynchronous operation to a state variable in a UI component without checking if it's still the *most relevant* or *latest* data, especially when the operation is triggered frequently. Also, neglecting error handling (`.catch()`) for Promises.
 
-Component Modularity: App.jsx is getting quite large (over 500 lines) because it houses the API logic, state management, and all the UI views. Extracting the SectionBlock and the different report views (Tech View, Code View, etc.) into their own separate component files would make the codebase much easier to maintain as you move into Phase 3 and Phase 4.
+💡 Imagine you're ordering sabzi (vegetables) from two different vendors via phone. First, you call Vendor A for potatoes. Then, a minute later, you call Vendor B for onions. Vendor B delivers very quickly. But then Vendor A, who was slow, delivers their potatoes *after* Vendor B. If you just put the last delivered sabzi in your basket, you might accidentally put old potatoes in after fresh onions, making your sabzi basket outdated. To avoid this, you'd need to put a 'latest order number' on your basket, and only accept deliveries that match your current latest order. For errors, imagine your auto-rickshaw breaks down; if you don't call the mechanic (`.catch()`), you'll just be stuck on the road!
+
+Real World Analogy
+COPY
+"Imagine you're ordering sabzi (vegetables) from two different vendors via phone. First, you call Vendor A for potatoes. Then, a minute later, you call Vendor B for onions. Vendor B delivers very quickly. But then Vendor A, who was slow, delivers their potatoes *after* Vendor B. If you just put the last delivered sabzi in your basket, you might accidentally put old potatoes in after fresh onions, making your sabzi basket outdated. To avoid this, you'd need to put a 'latest order number' on your basket, and only accept deliveries that match your current latest order. For errors, imagine your auto-rickshaw breaks down; if you don't call the mechanic (`.catch()`), you'll just be stuck on the road!"
+
+Why AI Keeps Breaking It
+COPY
+Typical AI tools would likely fall into a symptom-chasing loop focusing on the UI not updating correctly. They might suggest adding `this.requestUpdate()` calls in more places or trying `forceUpdate()`. They would struggle to understand the asynchronous nature of `player.buildables()` in the context of a frequently called `tick()` method and the potential for out-of-order promise resolutions. They might also suggest complex state management patterns if they identify 'stale state' but miss the simple counter solution for sequential updates.
+
+The AI Fix Loop
+1. User reports stale UI data for buildables.
+2. AI suggests adding `this.requestUpdate()` after `this.playerBuildables = buildables;`.
+3. User tries fix, reports issue still occurs because an older promise still overwrites later updates.
+4. AI suggests optimizing `render()` or debugging component lifecycle, not realizing the data itself is stale due to an async race.
+5. AI might suggest `forceUpdate()` which is a band-aid, not a fix for the underlying data race.
+6. AI might identify 'unhandled promise rejection' but fix it in isolation without considering the implications on the race condition.
+State Mutation Tracker
+COPY
+Variable	Meaning / Role	Where Mutated
+playerBuildables	List of buildable units and their costs for the current player.	OpenFrontIO/src/client/graphics/layers/UnitDisplay.ts:74 (inside .then() callback)
+_cities	Current count of cities owned by the player.	OpenFrontIO/src/client/graphics/layers/UnitDisplay.ts:79
+_lastBuildableRequestSeq	A counter to ensure only the result from the latest asynchronous request to `player.buildables()` is applied.	OpenFrontIO/src/client/graphics/layers/UnitDisplay.ts:New property, incremented at the start of tick() and upon player absence.
+Execution Timeline
+COPY
+T0
+`UnitDisplay.tick()` is called (e.g., by the game loop).
+
+T0
+`player.buildables()` is invoked, returning `PromiseA`.
+
+T0
+Synchronous state (`_cities`, etc.) is updated.
+
+T1 (T0 + small interval)
+`UnitDisplay.tick()` is called again (due to frequent game loop).
+
+T1
+`player.buildables()` is invoked again, returning `PromiseB` (newer request).
+
+T2 (T1 + variable delay)
+`PromiseB` resolves successfully, its `.then()` callback updates `this.playerBuildables` with fresh data.
+
+T2+
+The UI re-renders, showing data from `PromiseB`.
+
+T3 (T0 + longer variable delay)
+`PromiseA` resolves (this happens *after* `PromiseB`, making `PromiseA`'s data stale).
+
+T3
+`PromiseA`'s `.then()` callback executes, overwriting `this.playerBuildables` with stale data.
+
+T3+
+The UI re-renders again (or on next tick), now displaying the outdated data from `PromiseA`.
+
+Invariant Violations
+COPY
+The `playerBuildables` property MUST always reflect the data from the *most recent* successful `player.buildables()` request.
+All asynchronous calls to `player.buildables()` MUST have proper error handling to prevent unhandled promise rejections.
+The UI (`render()` method) MUST always reflect the current state of `playerBuildables` and synchronous unit counts (`_cities`, etc.).
+If the `player` object becomes null (e.g., player disconnects), `playerBuildables` should be reset to `null` to reflect that absence.
+The `tick()` method should reliably trigger UI updates for both synchronous and asynchronous state changes without causing visual glitches or stale data.
+Technical Root Cause
+COPY
+The `tick()` method in `UnitDisplay` (around line 74) makes asynchronous calls to `player.buildables()` without properly managing the order of resolutions or handling potential rejections. Since `tick()` is called frequently, multiple `buildables` promises can be pending. If a later request resolves *before* an earlier one, the earlier (stale) data will overwrite `this.playerBuildables`, leading to outdated UI. Additionally, the lack of a `.catch()` block means any promise rejection will go unhandled.
+
+Location: OpenFrontIO/src/client/graphics/layers/UnitDisplay.ts
+Alternative Hypotheses
+Hypothesis 1 (Race Condition with Stale Data): The `tick()` method repeatedly calls `player.buildables()` which returns a Promise. Without a mechanism to cancel or ignore older, slower-resolving promises, an earlier request's resolution could overwrite `this.playerBuildables` with stale data if a later request resolves first.
+Hypothesis 2 (Unhandled Promise Rejection): The `player.buildables().then(...)` call does not have a `.catch()` block. If the `player.buildables()` Promise rejects (e.g., due to a network error or internal processing error in the Web Worker), this rejection will be unhandled, leading to a console error and potential application instability.
+Hypothesis 3 (No Practical Race Condition/Bug): The `player.buildables()` method is synchronous or so fast that race conditions rarely occur, and errors are not expected. This hypothesis was eliminated because the architecture (client -> `PlayerView` -> `WorkerClient` -> Web Worker) strongly suggests asynchronous behavior with variable delays, making race conditions and rejections highly probable.
+Deterministic AI Fix Prompt
+COPY PROMPT
+Paste this directly into Cursor / Bolt / Copilot to apply the fix:
+
+In `OpenFrontIO/src/client/graphics/layers/UnitDisplay.ts`, modify the `UnitDisplay` class as follows:
+1. Add a new private property `_lastBuildableRequestSeq = 0;` to the class, outside of any methods.
+2. Update the `tick()` method:
+   - If `player` is `null`, ensure `this.playerBuildables` is set to `null` and `this.requestUpdate()` is called. Also, increment `_lastBuildableRequestSeq` to invalidate any pending promises.
+   - Inside the `tick()` method, before calling `player.buildables()`, create a local variable `const currentRequestSeq = ++this._lastBuildableRequestSeq;`.
+   - Modify the `.then()` block of `player.buildables()` to only update `this.playerBuildables` and call `this.requestUpdate()` if `currentRequestSeq === this._lastBuildableRequestSeq`. This ensures only the latest data is used.
+   - Add a `.catch()` block to `player.buildables()` to handle errors. Log the error to the console and, if `currentRequestSeq === this._lastBuildableRequestSeq`, set `this.playerBuildables` to `null` (or an appropriate error state) and call `this.requestUpdate()`.
+   - Ensure that after the synchronous updates for `_cities`, `_factories`, etc., `this.requestUpdate()` is called only if any of those synchronous properties have actually changed. This handles updates for immediately available data separately from the asynchronously loaded `playerBuildables`.
+
+This fix addresses both the race condition for stale data and unhandled promise rejections.
+Minimal Code Fix
+COPY
+File: OpenFrontIO/src/client/graphics/layers/UnitDisplay.ts
+```typescript
+// OpenFrontIO/src/client/graphics/layers/UnitDisplay.ts
+
+import { html, LitElement } from "lit";
+import { customElement } from "lit/decorators.js";
+import { EventBus } from "../../../core/EventBus";
+import {
+  BuildableUnit,
+  BuildMenus,
+  Gold,
+  PlayerBuildableUnitType,
+  UnitType,
+} from "../../../core/game/Game";
+import { GameView } from "../../../core/game/GameView";
+import {
+  GhostStructureChangedEvent,
+  ToggleStructureEvent,
+} from "../../InputHandler";
+import { renderNumber, translateText } from "../../Utils";
+import { UIState } from "../UIState";
+import { Layer } from "./Layer";
+import warshipIcon from "/images/BattleshipIconWhite.svg?url";
+import cityIcon from "/images/CityIconWhite.svg?url";
+import factoryIcon from "/images/FactoryIconWhite.svg?url";
+import goldCoinIcon from "/images/GoldCoinIcon.svg?url";
+import mirvIcon from "/images/MIRVIcon.svg?url";
+import missileSiloIcon from "/images/MissileSiloIconWhite.svg?url";
+import hydrogenBombIcon from "/images/MushroomCloudIconWhite.svg?url";
+import atomBombIcon from "/images/NukeIconWhite.svg?url";
+import portIcon from "/images/PortIcon.svg?url";
+import samLauncherIcon from "/images/SamLauncherIconWhite.svg?url";
+import defensePostIcon from "/images/ShieldIconWhite.svg?url";
+
+@customElement("unit-display")
+export class UnitDisplay extends LitElement implements Layer {
+  public game: GameView;
+  public eventBus: EventBus;
+  public uiState: UIState;
+  private playerBuildables: BuildableUnit[] | null = null;
+  private _lastBuildableRequestSeq = 0; // NEW: Track the sequence of requests
+  private keybinds: Record<string, { value: string; key: string }> = {};
+  private _cities = 0;
+  private _warships = 0;
+  private _factories = 0;
+  private _missileSilo = 0;
+  private _port = 0;
+  private _defensePost = 0;
+  private _samLauncher = 0;
+  private allDisabled = false;
+  private _hoveredUnit: PlayerBuildableUnitType | null = null;
+
+  createRenderRoot() {
+    return this;
+  }
+
+  init() {
+    const config = this.game.config();
+
+    const savedKeybinds = localStorage.getItem("settings.keybinds");
+    if (savedKeybinds) {
+      try {
+        this.keybinds = JSON.parse(savedKeybinds);
+      } catch (e) {
+        console.warn("Invalid keybinds JSON:", e);
+      }
+    }
+
+    this.allDisabled = BuildMenus.types.every((u) => config.isUnitDisabled(u));
+    this.requestUpdate();
+  }
+
+  private cost(item: UnitType): Gold {
+    for (const bu of this.playerBuildables ?? []) {
+      if (bu.type === item) {
+        return bu.cost;
+      }
+    }
+    return 0n;
+  }
+
+  private canBuild(item: UnitType): boolean {
+    if (this.game?.config().isUnitDisabled(item)) return false;
+    const player = this.game?.myPlayer();
+    switch (item) {
+      case UnitType.AtomBomb:
+      case UnitType.HydrogenBomb:
+      case UnitType.MIRV:
+        return (
+          this.cost(item) <= (player?.gold() ?? 0n) &&
+          (player?.units(UnitType.MissileSilo).length ?? 0) > 0
+        );
+      case UnitType.Warship:
+        return (
+          this.cost(item) <= (player?.gold() ?? 0n) &&
+          (player?.units(UnitType.Port).length ?? 0) > 0
+        );
+      default:
+        return this.cost(item) <= (player?.gold() ?? 0n);
+    }
+  }
+
+  tick() {
+    const player = this.game?.myPlayer();
+    if (!player) {
+      // If player is null, clear buildables and invalidate any pending requests.
+      if (this.playerBuildables !== null) {
+        this.playerBuildables = null;
+        this.requestUpdate(); // Trigger re-render to reflect player absence
+      }
+      this._lastBuildableRequestSeq++; // Increment to ignore any previous pending promises
+      return;
+    }
+
+    // Increment the sequence number for this new request
+    const currentRequestSeq = ++this._lastBuildableRequestSeq;
+
+    player.buildables(undefined, BuildMenus.types)
+        .then((buildables) => {
+            // Only update if this promise corresponds to the very last request issued
+            if (currentRequestSeq === this._lastBuildableRequestSeq) {
+                this.playerBuildables = buildables;
+                this.requestUpdate(); // Request re-render for buildables change
+            }
+        })
+        .catch((error) => {
+            // NEW: Handle promise rejections
+            console.error("Error fetching buildables:", error);
+            // If the latest request failed, reflect it in UI
+            if (currentRequestSeq === this._lastBuildableRequestSeq) {
+                this.playerBuildables = null; // Clear or set to a default error state
+                this.requestUpdate(); // Trigger re-render to reflect error/empty state
+            }
+        });
+
+    // Synchronous updates for unit counts
+    const prevCities = this._cities;
+    const prevFactories = this._factories;
+    const prevMissileSilo = this._missileSilo;
+    const prevPort = this._port;
+    const prevDefensePost = this._defensePost;
+    const prevSamLauncher = this._samLauncher;
+    const prevWarships = this._warships;
+
+    this._cities = player.totalUnitLevels(UnitType.City);
+    this._missileSilo = player.totalUnitLevels(UnitType.MissileSilo);
+    this._port = player.totalUnitLevels(UnitType.Port);
+    this._defensePost = player.totalUnitLevels(UnitType.DefensePost);
+    this._samLauncher = player.totalUnitLevels(UnitType.SAMLauncher);
+    this._factories = player.totalUnitLevels(UnitType.Factory);
+    this._warships = player.totalUnitLevels(UnitType.Warship);
+
+    // Only call requestUpdate if any of the synchronous properties changed.
+    // LitElement efficiently handles multiple requestUpdate calls in the same microtask.
+    if (
+      prevCities !== this._cities ||
+      prevFactories !== this._factories ||
+      prevMissileSilo !== this._missileSilo ||
+      prevPort !== this._port ||
+      prevDefensePost !== this._defensePost ||
+      prevSamLauncher !== this._samLauncher ||
+      prevWarships !== this._warships
+    ) {
+      this.requestUpdate();
+    }
+  }
+
+  render() {
+    const myPlayer = this.game?.myPlayer();
+    if (
+      !this.game ||
+      !myPlayer ||
+      this.game.inSpawnPhase() ||
+      !myPlayer.isAlive()
+    ) {
+      return null;
+    }
+    if (this.allDisabled) {
+      return null;
+    }
+
+    return html`
+      <div
+        class="hidden min-[1200px]:flex fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[1100] 2xl:flex-row xl:flex-col min-[1200px]:flex-col 2xl:gap-5 xl:gap-2 min-[1200px]:gap-2 justify-center items-center"
+      >
+        <div class="bg-gray-800/70 backdrop-blur-xs rounded-lg p-0.5">
+          <div class="grid grid-rows-1 auto-cols-max grid-flow-col gap-1 w-fit">
+            ${this.renderUnitItem(
+              cityIcon,
+              this._cities,
+              UnitType.City,
+              "city",
+              this.keybinds["buildCity"]?.key ?? "1",
+            )}
+            ${this.renderUnitItem(
+              factoryIcon,
+              this._factories,
+              UnitType.Factory,
+              "factory",
+              this.keybinds["buildFactory"]?.key ?? "2",
+            )}
+            ${this.renderUnitItem(
+              portIcon,
+              this._port,
+              UnitType.Port,
+              "port",
+              this.keybinds["buildPort"]?.key ?? "3",
+            )}
+            ${this.renderUnitItem(
+              defensePostIcon,
+              this._defensePost,
+              UnitType.DefensePost,
+              "defense_post",
+              this.keybinds["buildDefensePost"]?.key ?? "4",
+            )}
+            ${this.renderUnitItem(
+              missileSiloIcon,
+              this._missileSilo,
+              UnitType.MissileSilo,
+              "missile_silo",
+              this.keybinds["buildMissileSilo"]?.key ?? "5",
+            )}
+            ${this.renderUnitItem(
+              samLauncherIcon,
+              this._samLauncher,
+              UnitType.SAMLauncher,
+              "sam_launcher",
+              this.keybinds["buildSamLauncher"]?.key ?? "6",
+            )}
+          </div>
+        </div>
+        <div class="bg-gray-800/70 backdrop-blur-xs rounded-lg p-0.5 w-fit">
+          <div class="grid grid-rows-1 auto-cols-max grid-flow-col gap-1">
+            ${this.renderUnitItem(
+              warshipIcon,
+              this._warships,
+              UnitType.Warship,
+              "warship",
+              this.keybinds["buildWarship"]?.key ?? "7",
+            )}
+            ${this.renderUnitItem(
+              atomBombIcon,
+              null,
+              UnitType.AtomBomb,
+              "atom_bomb",
+              this.keybinds["buildAtomBomb"]?.key ?? "8",
+            )}
+            ${this.renderUnitItem(
+              hydrogenBombIcon,
+              null,
+              UnitType.HydrogenBomb,
+              "hydrogen_bomb",
+              this.keybinds["buildHydrogenBomb"]?.key ?? "9",
+            )}
+            ${this.renderUnitItem(
+              mirvIcon,
+              null,
+              UnitType.MIRV,
+              "mirv",
+              this.keybinds["buildMIRV"]?.key ?? "0",
+            )}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderUnitItem(
+    icon: string,
+    number: number | null,
+    unitType: PlayerBuildableUnitType,
+    structureKey: string,
+    hotkey: string,
+  ) {
+    if (this.game.config().isUnitDisabled(unitType)) {
+      return html``;
+    }
+    const selected = this.uiState.ghostStructure === unitType;
+    const hovered = this._hoveredUnit === unitType;
+    const displayHotkey = hotkey
+      .replace("Digit", "")
+      .replace("Key", "")
+      .toUpperCase();
+
+    return html`
+      <div
+        class="flex flex-col items-center relative"
+        @mouseenter=${() => {
+          this._hoveredUnit = unitType;
+          this.requestUpdate();
+        }}
+        @mouseleave=${() => {
+          this._hoveredUnit = null;
+          this.requestUpdate();
+        }}
+      >
+        ${hovered
+          ? html`
+              <div
+                class="absolute -top-[250%] left-1/2 -translate-x-1/2 text-gray-200 text-center w-max text-xs bg-gray-800/90 backdrop-blur-xs rounded-sm p-1 z-20 shadow-lg pointer-events-none"
+              >
+                <div class="font-bold text-sm mb-1">
+                  ${transl
+```
+Why This Works
+The fix addresses the race condition by introducing `_lastBuildableRequestSeq`. Each call to `tick()` increments this sequence number and associates it with the new `player.buildables()` promise. When a promise resolves, its `.then()` callback checks if its `currentRequestSeq` matches the `_lastBuildableRequestSeq`. If they match, it means that this is the latest request, and its data can safely update `this.playerBuildables`. If they don't match, it means a newer request has already been made, and this resolving promise's data is now stale and should be ignored, preventing the overwrite. The `.catch()` block ensures that any errors from `player.buildables()` are caught and handled, preventing unhandled promise rejections, and reflecting the error state in the UI if it's the latest request to fail. Separate `this.requestUpdate()` calls for synchronous changes ensure the UI reflects all state changes appropriately.

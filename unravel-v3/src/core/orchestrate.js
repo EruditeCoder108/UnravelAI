@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════
 
 import { buildSystemPrompt } from './config.js';
-import { runFullAnalysis } from './ast-engine.js';
+import { runMultiFileAnalysis } from './ast-engine.js';
 import { parseAIJson } from './parse-json.js';
 import { callProvider } from './provider.js';
 
@@ -53,9 +53,8 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
     let astContext = '';
     if (jsFiles.length > 0) {
-        const combinedCode = jsFiles.map(f => f.content).join('\n\n');
         try {
-            const analysis = runFullAnalysis(combinedCode);
+            const analysis = runMultiFileAnalysis(jsFiles);
             astContext = analysis.formatted;
             console.log('[AST] Verified context extracted:', astContext);
         } catch (astErr) {

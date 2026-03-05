@@ -120,110 +120,101 @@ export default function App() {
         setDirectoryFiles(prev => prev.filter((_, i) => i !== index));
     };
 
-    const fetchGitHubRepo = async () => {
-        setGithubError('');
-        setGithubLoading(true);
-        try {
-            // Parse GitHub URL → owner/repo
-            const urlObj = new URL(githubUrl.trim());
-            const parts = urlObj.pathname.replace(/^\//, '').replace(/\/$/, '').split('/');
-            if (parts.length < 2) throw new Error('URL must be github.com/owner/repo');
-            const [owner, repo] = parts;
-            const branch = parts[3] || 'main'; // /tree/branch support
+    // ── GitHub: fetch repo tree, Router-select relevant files, download content ──
+    // This is called from executeAnalysis (not from a separate button)
+    // so the symptom (userError) is always available for the Router Agent.
+    const fetchGitHubFiles = async (symptom, onProgress) => {
+        // Parse GitHub URL → owner/repo
+        const urlObj = new URL(githubUrl.trim());
+        const parts = urlObj.pathname.replace(/^\//, '').replace(/\/$/, '').split('/');
+        if (parts.length < 2) throw new Error('URL must be github.com/owner/repo');
+        const [owner, repo] = parts;
+        const branch = parts[3] || 'main'; // /tree/branch support
 
-            // Fetch the repo tree
-            const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
-            if (!treeRes.ok) {
-                if (treeRes.status === 404) throw new Error('Repo not found. Is it public?');
-                throw new Error(`GitHub API error: ${treeRes.status}`);
-            }
-            const treeData = await treeRes.json();
+        onProgress?.('GITHUB: Fetching repository tree...');
 
-            // Filter files
-            const validExts = ['.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.py', '.md', '.vue', '.svelte'];
-            const blacklist = ['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '__pycache__', 'package-lock.json', 'yarn.lock'];
-            const allCandidates = (treeData.tree || []).filter(f =>
-                f.type === 'blob'
-                && f.size < 500000
-                && validExts.some(ext => f.path.endsWith(ext))
-                && !blacklist.some(d => f.path.includes(`${d}/`) || f.path === d)
-            );
-
-            if (allCandidates.length === 0) throw new Error('No valid source files found in repo.');
-
-            // ── Router-First: if many files, use Router Agent to pick relevant ones ──
-            let candidates = allCandidates;
-            if (allCandidates.length > 10 && apiKey && provider && model) {
-                try {
-                    const allPaths = allCandidates.map(f => `${repo}/${f.path}`);
-                    const routerPrompt = buildRouterPrompt(allPaths, userError);
-                    const routerRaw = await callProvider({
-                        provider, apiKey, model,
-                        systemPrompt: 'You are a file routing agent. Return JSON only.',
-                        userPrompt: routerPrompt,
-                        useSchema: false,
-                    });
-                    const routerData = parseAIJson(routerRaw);
-                    const selectedPaths = routerData?.filesToRead || [];
-                    if (selectedPaths.length > 0) {
-                        // Map Router-selected paths back to tree candidates
-                        const selectedSet = new Set(selectedPaths.map(p =>
-                            p.startsWith(`${repo}/`) ? p.slice(repo.length + 1) : p
-                        ));
-                        const filtered = allCandidates.filter(f => selectedSet.has(f.path));
-                        // Only use Router result if it found at least 2 files
-                        if (filtered.length >= 2) {
-                            candidates = filtered;
-                            console.log(`[ROUTER] Selected ${filtered.length} files from ${allCandidates.length} candidates`);
-                        }
-                    }
-                } catch (routerErr) {
-                    console.warn('[ROUTER] Failed, falling back to all candidates:', routerErr.message);
-                    // Fall through — use allCandidates as-is
-                }
-            }
-
-            // Cap at 50 files max
-            candidates = candidates.slice(0, 50);
-
-            // Fetch file contents in parallel (batches of 10)
-            const fetched = [];
-            for (let i = 0; i < candidates.length; i += 10) {
-                const batch = candidates.slice(i, i + 10);
-                const results = await Promise.all(batch.map(async (f) => {
-                    try {
-                        const rawRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${f.path}`);
-                        if (!rawRes.ok) return null;
-                        const content = await rawRes.text();
-                        return { name: `${repo}/${f.path}`, content, webkitRelativePath: `${repo}/${f.path}` };
-                    } catch { return null; }
-                }));
-                fetched.push(...results.filter(Boolean));
-            }
-
-            if (fetched.length === 0) throw new Error('Could not fetch any files.');
-
-            // Convert to File-like objects for compatibility with directoryFiles
-            const fileObjects = fetched.map(f => ({
-                name: f.name,
-                webkitRelativePath: f.webkitRelativePath,
-                size: f.content.length,
-                _content: f.content, // pre-loaded content
-                text: () => Promise.resolve(f.content), // mimic File.text()
-            }));
-
-            // Append to directoryFiles
-            setDirectoryFiles(prev => {
-                const existingPaths = new Set(prev.map(f => f.webkitRelativePath || f.name));
-                const newFiles = fileObjects.filter(f => !existingPaths.has(f.webkitRelativePath));
-                return [...prev, ...newFiles];
-            });
-            setInputType('upload'); // Switch to upload tab to show files
-        } catch (err) {
-            setGithubError(err.message);
-        } finally {
-            setGithubLoading(false);
+        // Fetch the repo tree
+        const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
+        if (!treeRes.ok) {
+            if (treeRes.status === 404) throw new Error('Repo not found. Is it public?');
+            throw new Error(`GitHub API error: ${treeRes.status}`);
         }
+        const treeData = await treeRes.json();
+
+        // Filter valid source files
+        const validExts = ['.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.py', '.md', '.vue', '.svelte'];
+        const blacklist = ['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '__pycache__', 'package-lock.json', 'yarn.lock'];
+        const allCandidates = (treeData.tree || []).filter(f =>
+            f.type === 'blob'
+            && f.size < 500000
+            && validExts.some(ext => f.path.endsWith(ext))
+            && !blacklist.some(d => f.path.includes(`${d}/`) || f.path === d)
+        );
+
+        if (allCandidates.length === 0) throw new Error('No valid source files found in repo.');
+
+        // ── Router Agent: pick relevant files using the symptom ──
+        let candidates = allCandidates;
+        if (allCandidates.length > 10 && apiKey && provider && model) {
+            try {
+                onProgress?.(`ROUTER AGENT: Selecting from ${allCandidates.length} files...`);
+                const allPaths = allCandidates.map(f => `${repo}/${f.path}`);
+                const routerPrompt = buildRouterPrompt(allPaths, symptom);
+                const routerRaw = await callProvider({
+                    provider, apiKey, model,
+                    systemPrompt: 'You are a file routing agent. Return JSON only.',
+                    userPrompt: routerPrompt,
+                    useSchema: false,
+                });
+                const routerData = parseAIJson(routerRaw);
+                const selectedPaths = routerData?.filesToRead || [];
+                if (selectedPaths.length > 0) {
+                    const selectedSet = new Set(selectedPaths.map(p =>
+                        p.startsWith(`${repo}/`) ? p.slice(repo.length + 1) : p
+                    ));
+                    const filtered = allCandidates.filter(f => selectedSet.has(f.path));
+                    if (filtered.length >= 2) {
+                        candidates = filtered;
+                        console.log(`[ROUTER] Selected ${filtered.length} files from ${allCandidates.length} candidates`);
+                    }
+                }
+            } catch (routerErr) {
+                console.warn('[ROUTER] Failed, falling back to all candidates:', routerErr.message);
+            }
+        }
+
+        // Cap at 50 files max
+        candidates = candidates.slice(0, 50);
+        onProgress?.(`GITHUB: Downloading ${candidates.length} files...`);
+
+        // Fetch file contents in parallel (batches of 10)
+        const fetched = [];
+        for (let i = 0; i < candidates.length; i += 10) {
+            const batch = candidates.slice(i, i + 10);
+            const results = await Promise.all(batch.map(async (f) => {
+                try {
+                    const rawRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${f.path}`);
+                    if (!rawRes.ok) return null;
+                    const content = await rawRes.text();
+                    return { name: `${repo}/${f.path}`, content, webkitRelativePath: `${repo}/${f.path}` };
+                } catch { return null; }
+            }));
+            fetched.push(...results.filter(Boolean));
+        }
+
+        if (fetched.length === 0) throw new Error('All file downloads failed.');
+
+        // Convert to File-like objects and update state for UI display
+        const fileObjects = fetched.map(f => ({
+            name: f.name,
+            webkitRelativePath: f.webkitRelativePath,
+            size: f.content.length,
+            _content: f.content,
+            text: () => Promise.resolve(f.content),
+        }));
+
+        setDirectoryFiles(fileObjects);
+        return fileObjects;
     };
 
     const readSelectedFiles = async (paths) => {
@@ -253,15 +244,32 @@ export default function App() {
             let codeFiles = [];
             let projectContext = '';
 
-            // ── Gather files (UI-specific: paste vs upload/github) ──
-            if (inputType === 'upload' || inputType === 'github') {
+            // ── Gather files ──
+            if (inputType === 'github') {
+                // GitHub mode: fetch + route + download in one flow
+                if (directoryFiles.length === 0 && !resumeWithExtra) {
+                    // First run — fetch from GitHub (Router uses symptom)
+                    if (!githubUrl.trim()) throw new Error('Enter a GitHub repository URL.');
+                    const ghFiles = await fetchGitHubFiles(userError, setLoadingStage);
+                    const filePaths = ghFiles.map(f => f.webkitRelativePath);
+                    setRouterSelectedPaths(filePaths);
+                    projectContext = `Project tree: GitHub repo, ${ghFiles.length} files selected.`;
+                    codeFiles = ghFiles.map(f => ({ name: f.webkitRelativePath, content: f._content }));
+                } else {
+                    // Resume or files already fetched
+                    const resumePaths = routerSelectedPaths.length > 0
+                        ? routerSelectedPaths
+                        : directoryFiles.slice(0, 7).map(f => f.webkitRelativePath);
+                    codeFiles = await readSelectedFiles(resumePaths);
+                    projectContext = `Project tree: ${directoryFiles.length} files total.`;
+                }
+            } else if (inputType === 'upload') {
                 if (directoryFiles.length === 0) throw new Error('Upload a project folder first.');
                 setLoadingStage('ROUTER AGENT: Mapping directory tree...');
                 const filePaths = directoryFiles.map(f => f.webkitRelativePath);
                 projectContext = `Project tree: ${filePaths.length} files total.`;
 
                 if (!resumeWithExtra) {
-                    // Router pass — uses callProvider directly (not orchestrate)
                     const routerPrompt = buildRouterPrompt(filePaths, userError);
                     const routerRaw = await callProvider({
                         provider, apiKey, model,
@@ -275,7 +283,6 @@ export default function App() {
                     setLoadingStage(`ROUTER: Selected ${selectedPaths.length} files...`);
                     codeFiles = await readSelectedFiles(selectedPaths);
                 } else {
-                    // Resume: reuse the router-selected paths from the first run
                     const resumePaths = routerSelectedPaths.length > 0
                         ? routerSelectedPaths
                         : directoryFiles.slice(0, 7).map(f => f.webkitRelativePath);
@@ -340,7 +347,7 @@ export default function App() {
     const canExecute = apiKey.trim() && (
         (inputType === 'upload' && directoryFiles.length > 0) ||
         (inputType === 'paste' && pastedFiles.some(f => f.name.trim() && f.content.trim())) ||
-        (inputType === 'github' && directoryFiles.length > 0)
+        (inputType === 'github' && githubUrl.trim())
     );
 
     const prov = PROVIDERS[provider];
@@ -566,13 +573,14 @@ export default function App() {
                                                 onChange={(e) => setGithubUrl(e.target.value)}
                                             />
                                         </div>
-                                        <button
-                                            onClick={fetchGitHubRepo}
-                                            disabled={!githubUrl.trim() || githubLoading}
-                                            style={{ ...S.btnPrimary, width: 'auto', padding: '11px 24px', fontSize: 13, opacity: githubUrl.trim() && !githubLoading ? 1 : 0.4, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            {githubLoading ? <Loader2 size={14} className="animate-spin" /> : <Github size={14} />}
-                                            {githubLoading ? 'FETCHING...' : 'FETCH'}
-                                        </button>
+                                        {githubUrl.trim() && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 0' }}>
+                                                <CheckSquare size={14} style={{ color: '#ccff00' }} />
+                                                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: '#888' }}>
+                                                    Repo will be fetched when you click Analyze
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                     {githubError && (
                                         <div style={{ background: '#ff003c18', border: '1px solid #ff003c44', padding: 10, color: '#fca5a5', fontSize: 12, marginTop: 10, fontFamily: "'JetBrains Mono',monospace" }}>

@@ -385,6 +385,90 @@ export function runFullAnalysis(code) {
 }
 
 // ═══════════════════════════════════════════════════
+// MULTI-FILE ANALYSIS: Parses each file independently
+// to avoid duplicate declaration errors when the same
+// identifier is imported/declared across files.
+// ═══════════════════════════════════════════════════
+
+export function runMultiFileAnalysis(files) {
+    const mergedMutations = {};
+    const mergedClosures = {};
+    const mergedTiming = [];
+    let totalParsed = 0;
+    let totalFailed = 0;
+    const failedFiles = [];
+
+    for (const file of files) {
+        const ast = parseCode(file.content);
+        if (!ast) {
+            totalFailed++;
+            failedFiles.push(file.name);
+            continue;
+        }
+        totalParsed++;
+
+        // Extract per-file analysis
+        const mutations = extractMutationChains(ast);
+        const closures = trackClosureCaptures(ast);
+        const timing = findTimingNodes(ast);
+
+        // Get short filename for prefixing (e.g. "UnitDisplay.ts")
+        const shortName = file.name.split(/[\\/]/).pop();
+
+        // Merge mutations — prefix variable names with filename for cross-file clarity
+        for (const [varName, data] of Object.entries(mutations)) {
+            const key = `${varName} [${shortName}]`;
+            if (!mergedMutations[key]) {
+                mergedMutations[key] = { writes: [], reads: [] };
+            }
+            mergedMutations[key].writes.push(...data.writes);
+            mergedMutations[key].reads.push(...data.reads);
+        }
+
+        // Merge closures
+        for (const [fnName, vars] of Object.entries(closures)) {
+            const key = `${fnName} [${shortName}]`;
+            if (!mergedClosures[key]) {
+                mergedClosures[key] = [];
+            }
+            // Deduplicate
+            for (const v of vars) {
+                if (!mergedClosures[key].includes(v)) {
+                    mergedClosures[key].push(v);
+                }
+            }
+        }
+
+        // Merge timing — annotate with source file
+        for (const t of timing) {
+            mergedTiming.push({ ...t, file: shortName });
+        }
+    }
+
+    // If all files failed, return a warning
+    if (totalParsed === 0) {
+        return {
+            raw: { mutations: {}, closures: {}, timingNodes: [] },
+            formatted: `⚠️ AST parse failed on all ${files.length} files — falling back to LLM-only analysis.`,
+        };
+    }
+
+    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming);
+
+    // Add header with parse stats
+    const header = `Files parsed: ${totalParsed}/${files.length}`;
+    const failNote = totalFailed > 0
+        ? ` (${totalFailed} failed: ${failedFiles.join(', ')})`
+        : '';
+    const fullFormatted = `${header}${failNote}\n\n${formatted}`;
+
+    return {
+        raw: { mutations: mergedMutations, closures: mergedClosures, timingNodes: mergedTiming },
+        formatted: fullFormatted,
+    };
+}
+
+// ═══════════════════════════════════════════════════
 // FORMAT: Turns raw analysis into the prompt string
 // ═══════════════════════════════════════════════════
 

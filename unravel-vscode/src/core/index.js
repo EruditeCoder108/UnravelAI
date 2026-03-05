@@ -16,7 +16,7 @@ export {
 } from './config.js';
 
 // AST pre-analysis engine
-export { runFullAnalysis } from './ast-engine.js';
+export { runFullAnalysis, runMultiFileAnalysis } from './ast-engine.js';
 
 // Robust AI JSON parser
 export { parseAIJson } from './parse-json.js';
