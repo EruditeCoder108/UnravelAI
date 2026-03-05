@@ -1,30 +1,53 @@
 # Unravel v3 — Master Implementation Plan
+*Last updated: Phase 3 complete. Phase 4 planned.*
 
 > **AI Code Generation = solved. AI Code Understanding = unsolved. Unravel solves understanding.**
 
 ---
 
-## North Star Metrics
+## What Unravel Is
 
-Three numbers define whether Unravel is working. Everything we build is measured against these.
+Most AI debugging tools pattern-match symptoms. They see "timer inaccurate" and suggest timer fixes. They never ask: where exactly did the data go wrong?
 
-| Metric | Definition | Target |
-|--------|-----------|--------|
-| **RCA** — Root Cause Accuracy | Did it find the *real* bug, not a plausible guess? | ≥ 85% on benchmark suite |
-| **TTI** — Time To Insight | How fast does the user *understand* the bug? | < 2 minutes |
-| **HR** — Hallucination Rate | Did it reference code, variables, or behavior that doesn't exist? | < 5% |
+Unravel answers that question deterministically. Before any AI sees your code, a static analysis pass extracts verified facts — every variable mutation, every closure capture, every async boundary. These facts are injected as ground truth. The AI cannot hallucinate about what doesn't exist. Then a structured 9-phase reasoning pipeline forces the model to trace the actual root cause, not guess at the nearest symptom.
+
+The result: exact file, exact line, exact variable, evidence, confidence score, and why other AI tools would have failed on this specific bug.
 
 ---
 
-## Architecture Overview
+## North Star Metrics
+
+Three numbers define whether Unravel is working. Everything is measured against these.
+
+| Metric | Definition | Target |
+|--------|-----------|--------|
+| **RCA** — Root Cause Accuracy | Did it find the real bug, not a plausible guess? | ≥ 85% on benchmark |
+| **TTI** — Time To Insight | How fast does the user understand the bug? | < 2 minutes |
+| **HR** — Hallucination Rate | Did it reference code or behavior that doesn't exist? | < 5% |
+
+---
+
+## Design Principles
+
+Every decision in Unravel flows from these five rules:
+
+1. **Deterministic facts before AI reasoning.** The AST pass runs first. The AI receives verified ground truth, not a blank canvas.
+2. **Evidence required for every claim.** No bug claim without exact line number + code fragment. No exceptions.
+3. **Eliminate wrong hypotheses, don't guess at right ones.** Generate multiple explanations, then kill the ones the evidence contradicts. The survivor is the diagnosis.
+4. **Never hide uncertainty.** "Uncertain" is better than "confident-wrong." If 2 of 3 hypotheses survive elimination, say so.
+5. **Optimize for developer understanding, not impressive output.** The goal is insight, not a longer report.
+
+---
+
+## System Architecture
 
 ```
 User Code + Bug Description
         │
         ▼
 ┌─────────────────────────────────────────┐
-│  LAYER 0: AST Analyzer (browser, free)  │
-│  @babel/parser — deterministic facts:   │
+│  LAYER 0: AST Analyzer (deterministic)  │
+│  @babel/parser — verified facts:        │
 │  • Variable mutation chains             │
 │  • Closure captures                     │
 │  • Timing nodes (setTimeout, etc.)      │
@@ -34,8 +57,7 @@ User Code + Bug Description
                ▼
 ┌─────────────────────────────────────────┐
 │  LAYER 1: Router Agent (Haiku/Flash)    │
-│  • Selects relevant files               │
-│  • Produces function-level code slices  │
+│  • Selects relevant files from project  │
 │  • Reduces 12,000 lines → ~350 lines    │
 └──────────────┬──────────────────────────┘
                │ Code Slices + AST Facts
@@ -47,27 +69,25 @@ User Code + Bug Description
 │  • Evidence-backed confidence score     │
 │  • Can PAUSE and request missing files  │
 └──────────────┬──────────────────────────┘
-               │ If confidence < 80%
+               │ If confidence < 80% → Phase 4
                ▼
 ┌─────────────────────────────────────────┐
 │  LAYER 2b: Skeptic Agent (Opus 4.6)     │
-│  • Sees ONLY the AST facts + code       │
-│  • FORBIDDEN from seeing Layer 2 output │
-│  • Approaches from completely different │
-│    angle — first principles only        │
+│  • Forbidden from seeing Layer 2 output │
+│  • Approaches from first principles     │
 └──────────────┬──────────────────────────┘
                │ Both hypotheses
                ▼
 ┌─────────────────────────────────────────┐
-│  LAYER 3: Reconciler                    │
-│  • Agreement → boosted confidence       │
-│  • Conflict → both hypotheses surfaced  │
-│    with evidence for each               │
+│  LAYER 2c: Adversarial Reviewer         │
+│  • Tries to DESTROY both hypotheses     │
+│  • Cannot propose a third hypothesis    │
+│  • Strongest surviving hypothesis wins  │
 └──────────────┬──────────────────────────┘
-               │ Final Diagnosis
+               │ Stress-tested diagnosis
                ▼
 ┌─────────────────────────────────────────┐
-│  LAYER 4: Explainer (Sonnet 4.6)        │
+│  LAYER 3: Explainer (Sonnet 4.6)        │
 │  • Adapts to user's coding level        │
 │  • Generates analogies + teaching path  │
 │  • Produces "Why AI looped" analysis    │
@@ -104,7 +124,7 @@ const BUG_TAXONOMY = {
 
 ## Anti-Sycophancy Guardrails
 
-Hardcoded into every prompt. The engine cannot override these.
+Hardcoded into every prompt. The model cannot override these.
 
 ```
 Rule 1: If the code is correct, say "No bug found." Do NOT invent problems.
@@ -116,90 +136,88 @@ Rule 5: Never describe code behavior that cannot be verified from provided files
 
 ---
 
+## 9-Phase Deterministic Pipeline
+
+The model is forced through these phases in order. It cannot skip to conclusions.
+
+```
+PHASE 1  INGEST            Read ALL provided code. Build complete mental model. No theories yet.
+PHASE 2  TRACK STATE       Map every variable: declared where, read where, mutated where.
+PHASE 3  SIMULATE +        Mentally execute the user's action sequence. Then generate 3
+         HYPOTHESIZE       candidate hypotheses for the root cause.
+PHASE 4  ELIMINATE         For each hypothesis, check against AST evidence. Kill the ones
+                           the evidence contradicts. If 2+ survive, mark as uncertain.
+PHASE 5  ROOT CAUSE        Confirm the surviving hypothesis. Exact file, line, variable, function.
+PHASE 6  MINIMAL FIX       Smallest surgical change. Do NOT rewrite the whole program.
+PHASE 7  AI LOOP           Why would ChatGPT/Cursor fail on this bug? What loop would they fall into?
+PHASE 8  CONCEPT           What programming concept does this bug teach?
+PHASE 9  INVARIANTS        What conditions MUST hold for correctness? Document for future prevention.
+```
+
+Phases 3–4 are the **Hypothesis Elimination Model** — the key architectural improvement over the original 8-phase pipeline. Instead of committing to a single explanation early (which leads to confident-wrong output), the model generates multiple candidates and eliminates the ones that don't survive evidence.
+
+---
+
+## Provider-Specific Formatting
+
+Same content, different wrapper per provider. Models respond better to their native format.
+
+| Provider | Format | Why |
+|----------|--------|-----|
+| Claude | XML tags | Trained on XML — parses `<instructions>`, `<rules>`, `<code>` with higher fidelity |
+| Gemini | Markdown | Google recommends headers, bold, bullet points for system instructions |
+| GPT | `###` + delimiters | OpenAI recommends section headers and triple-backtick delimiters |
+
+---
+
 ## Output Schema
 
 Every analysis produces the same structured JSON — consumed by all UI views and all platforms.
 
 ```json
 {
-  "bugCategory": "STATE_MUTATION",
-  "rootCause": {
-    "file": "script.js",
-    "line": 69,
-    "variable": "duration",
-    "function": "pause()",
-    "description": "duration is mutated here but must remain constant"
-  },
+  "bugType": "STATE_MUTATION",
   "confidence": 0.92,
+  "symptom": "Timer shows wrong value after pause/resume",
+  "reproduction": ["Start timer", "Let it run 10s", "Pause", "Reset — shows wrong value"],
   "evidence": [
-    "Mutation of `duration` confirmed at line 69 in pause()",
-    "Invariant violated: duration changed 1500 → 1487 during pause",
-    "Reproduction path verified: start → pause → resume triggers wrong elapsed"
+    "duration mutated at pause() line 69 — confirmed by AST",
+    "reset() reads duration at line 79 — gets wrong value",
+    "Reproduction path verified: start → pause → reset → wrong display"
   ],
-  "uncertainties": [
-    "Cannot verify visibilitychange behavior without runtime execution"
+  "uncertainties": ["Cannot verify visibilitychange behavior without runtime execution"],
+  "rootCause": "duration variable mutated in pause() at line 69.",
+  "codeLocation": "script.js line 69",
+  "minimalFix": "Remove `duration = remaining` from pause(). Add a separate `lastActiveRemaining` variable.",
+  "whyFixWorks": "Preserving duration as immutable config means reset() always returns to the correct original length.",
+  "variableState": [
+    { "variable": "duration", "meaning": "Total session length in seconds", "whereChanged": "pause() L69, setMode() L86" }
   ],
-  "minimalFix": {
-    "diff": "- duration = remaining\n+ lastActiveRemaining = remaining",
-    "explanation": "Remove the mutation. Track remaining separately."
+  "timeline": [
+    { "time": "T0", "event": "start() called — duration=1500, remaining=1500" },
+    { "time": "T0+10s", "event": "pause() called — duration mutated to 1490 ⚠️" },
+    { "time": "T0+15s", "event": "reset() called — remaining set to 1490, not 1500" }
+  ],
+  "invariants": ["duration must remain constant for the duration of a mode session"],
+  "hypotheses": ["Alternative: visibilitychange handler not updating startTimestamp"],
+  "conceptExtraction": {
+    "bugCategory": "STATE_MUTATION",
+    "concept": "Immutable Configuration Values",
+    "whyItMatters": "When a config variable gets mutated at runtime, all calculations using it break silently.",
+    "patternToAvoid": "Never reassign a variable representing a fixed session parameter inside a runtime function.",
+    "realWorldAnalogy": "Recipe mein sugar ki quantity ek baar decide hoti hai. Cooking ke beech mein change karne se dish kharab ho jaati hai."
   },
-  "bugReplay": [
-    { "step": 1, "fn": "start()", "state": { "duration": 1500, "remaining": 1500 } },
-    { "step": 2, "fn": "tick()",  "state": { "elapsed": 5, "remaining": 1495 } },
-    { "step": 3, "fn": "pause()", "state": { "duration": 1495, "note": "⚠️ BUG" } },
-    { "step": 4, "fn": "start()", "state": { "note": "wrong elapsed → timer jumps" } }
-  ],
   "whyAILooped": {
-    "pattern": "Symptom patch → new symptom → patch that → loop",
+    "pattern": "Symptom-chasing: AI focused on setInterval mechanism, not state management",
     "explanation": "AI never traced duration's lifecycle. Each error looked isolated.",
     "loopSteps": [
       "User: timer ends early → AI: adds remaining check → timer freezes",
       "User: timer freezes → AI: adds force-restart → timer double-counts"
     ]
   },
-  "conceptExtraction": {
-    "concept": "Immutable Configuration Values",
-    "whyItMatters": "When a config variable gets mutated at runtime, all calculations using it break silently.",
-    "patternToAvoid": "Never reassign a variable that represents a fixed session parameter inside a runtime function.",
-    "analogy": "Recipe mein sugar ki quantity ek baar decide hoti hai. Cooking ke beech mein change karne se dish kharab ho jaati hai."
-  },
-  "learningPath": [
-    { "topic": "What is state in a program?", "duration": "5 min" },
-    { "topic": "Why shared mutable variables are dangerous", "duration": "3 min" },
-    { "topic": "The single source of truth pattern", "duration": "5 min" },
-    { "topic": "Practice: refactor this function", "duration": "2 min" }
-  ]
+  "aiPrompt": "Fix the Pomodoro timer: preserve duration as immutable config. Add lastActiveRemaining for pause state."
 }
 ```
-
----
-
-## Prompt Architecture
-
-### 8-Phase Deterministic Pipeline
-
-The model is forced through these phases in order. It cannot skip to conclusions.
-
-```
-PHASE 1  INGEST       Read ALL provided code. Build complete mental model. No theories yet.
-PHASE 2  TRACK STATE  Map every variable: declared where, read where, mutated where.
-PHASE 3  SIMULATE     Mentally execute the user's exact action sequence step by step.
-PHASE 4  INVARIANTS   What conditions MUST hold for the program to be correct? Which are violated?
-PHASE 5  ROOT CAUSE   NOW identify the exact file, line, variable, and function.
-PHASE 6  MINIMAL FIX  Smallest surgical change. Do NOT rewrite the whole program.
-PHASE 7  AI LOOP      Why would ChatGPT/Cursor fail on this bug? What loop would they fall into?
-PHASE 8  CONCEPT      What programming concept does this bug teach?
-```
-
-### Provider-Specific Formatting
-
-Same content, different wrapper per provider. Models respond significantly better to their native format.
-
-| Provider | Format | Reason |
-|----------|--------|--------|
-| Claude | XML tags | Trained on XML — parses `<instructions>`, `<rules>`, `<code>` with higher fidelity |
-| Gemini | Markdown | Google recommends headers, bold, and bullet points for system instructions |
-| GPT | Markdown + Delimiters | OpenAI recommends `###` sections and triple-backtick delimiters |
 
 ---
 
@@ -211,68 +229,52 @@ Same content, different wrapper per provider. Models respond significantly bette
 
 **Goal:** Production-ready app with SOTA models, anti-sycophancy, and teaching output.
 
+**Built in:** 1 day.
+
 | Task | Status |
 |------|--------|
-| BYOK API key management (Anthropic / Google / OpenAI) | ✅ |
-| SOTA model integration: Opus 4.6, Sonnet 4.6, Gemini 3.x, GPT 5.3 | ✅ |
-| Extended thinking (64K tokens on Opus) | ✅ |
+| BYOK API key management — Anthropic / Google / OpenAI | ✅ |
+| SOTA models: Opus 4.6, Sonnet 4.6, Haiku 4.5, Gemini 2.5 Flash/Pro, GPT-5.3 | ✅ |
+| Extended thinking (high effort mode on Opus) | ✅ |
 | Provider-specific prompt formatting (XML / Markdown / Delimiters) | ✅ |
-| 8-phase deterministic reasoning prompt | ✅ |
-| Anti-sycophancy guardrails | ✅ |
+| 8-phase deterministic reasoning pipeline | ✅ |
+| Anti-sycophancy guardrails (5 rules) | ✅ |
 | Evidence-backed confidence output | ✅ |
 | Bug taxonomy (12-category enum) | ✅ |
 | Concept extraction ("what did this bug teach?") | ✅ |
 | "Why AI looped" analysis | ✅ |
+| User coding level selector (Vibe / Intermediate / Developer) | ✅ |
+| Output language selector (Hinglish / English / Hindi) | ✅ |
+| 5-step UI (Profile → Code Input → Loading → Output Menu → Report) | ✅ |
+| 4 report views (Human / Technical / Agent Prompt / Minimal Fix) | ✅ |
+| Missing files request loop (engine pauses and asks user) | ✅ |
+| Smart folder upload with router agent (selects relevant files) | ✅ |
 
 ---
 
-### Phase 2 — "The Proof" 📍 IN PROGRESS
+### Phase 2 — "The Proof" ✅ COMPLETE
 
-**Goal:** Add deterministic pre-analysis. Prove with numbers that it works. Open source.
+**Goal:** Add deterministic pre-analysis. Prove with numbers that it works.
 
-**Rule for this phase:** No multi-agent work. No UI changes (except the prerequisite). Pure engine + validation.
+**Built in:** Same day as Phase 1.
 
-#### 2.0 — UI Prerequisites (Week 1)
+#### 2.1 — AST Pre-Analysis ✅
 
-Capture the user's coding level (Beginner / Vibe Coder / Developer) via a dropdown on the input screen. This is required because the Phase 1 Explainer agent already expects this context to adapt its teaching output.
+`@babel/parser` + `@babel/traverse` static analysis pass that runs before any AI sees the code.
 
-#### 2.1 — AST Pre-Analysis (Weeks 1–2)
+Three extractors:
 
-Replace guesswork with verified facts injected before the LLM sees any code.
+**`extractMutationChains(code)`** — walks every AssignmentExpression and UpdateExpression. Records variable name, enclosing function, line number, read/write direction.
 
-**Parser:** Use `@babel/parser` (not Acorn). Handles JSX, TypeScript, and modern syntax natively.
+**`trackClosureCaptures(code)`** — walks function nodes, compares identifiers in inner scope against outer scope bindings via Babel's scope API. Flags stale closure candidates.
 
-```bash
-npm install @babel/parser @babel/traverse
-```
+**`findTimingNodes(code)`** — walks CallExpression nodes for setTimeout, setInterval, addEventListener, fetch, Promise chains. Maps every async boundary.
 
-Build these three functions in this order:
-
-**Function 1 — `extractMutationChains(code)`**
-Walk `AssignmentExpression` nodes. For each assignment, record:
-- Left-hand identifier name
-- Containing function name
-- Line number
-- Read/write direction
-
-**Function 2 — `trackClosureCaptures(code)`**
-Walk `FunctionDeclaration` and `ArrowFunctionExpression` nodes.
-Compare identifiers used inside against declarations in outer scopes.
-Flag any variable that is captured from outside the function.
-
-**Function 3 — `findTimingNodes(code)`**
-Walk `CallExpression` nodes where `callee.name` is:
-`setTimeout`, `setInterval`, `clearInterval`, `clearTimeout`,
-`addEventListener`, `removeEventListener`, `requestAnimationFrame`, `fetch`, `Promise`
-
-**AST Output (injected into prompt as verified ground truth):**
+Output injected into prompt as verified ground truth:
 
 ```
 VERIFIED STATIC ANALYSIS — deterministic, not hallucinated
 ══════════════════════════════════════════════════════════
-
-Relevant Functions:
-  start(), pause(), tick(), setMode()
 
 Variable Mutation Chains:
   duration
@@ -280,499 +282,450 @@ Variable Mutation Chains:
     read:    tick() L55, start() L42
 
 Async / Timing Nodes:
-  setInterval  → tick()    [L57]
+  setInterval → tick() [L57]
   addEventListener("visibilitychange") → handler() [L110]
 
 Closure Captures:
-  tick()    captures → duration, remaining, interval (module scope)
-  handler() captures → isPaused, interval (module scope)
+  tick() captures → duration, remaining, interval
 ```
 
-This is injected *before* the user's code in the prompt. The LLM cannot hallucinate about what variables exist or where they're mutated — the AST already told it.
+#### 2.2 — 10-Bug Development Proxy ✅
 
-#### 2.2 — The 10 Bug Benchmark (Week 2–3)
+> **Note:** This is a development proxy for internal validation — used to verify the engine works during development. It is NOT the public credibility benchmark. The full 50-bug credibility benchmark is Phase 7.
 
-10 deliberately buggy JS/React programs with defined root causes. These specific bug types are chosen to cover the most common patterns in vibe-coded projects.
+| # | Category | Description |
+|---|----------|-------------|
+| 1 | `STALE_CLOSURE` | setInterval capturing stale state |
+| 2 | `STATE_MUTATION` | Pomodoro duration overwrite |
+| 3 | `RACE_CONDITION` | Two parallel API fetches overriding state |
+| 4 | `EVENT_LIFECYCLE` | Missing cleanup in useEffect |
+| 5 | `ASYNC_ORDERING` | Missing await |
+| 6 | `TYPE_COERCION` | "5" + 3 implicit coercion |
+| 7 | `TEMPORAL_LOGIC` | Date.now() pausing issues |
+| 8 | `DATA_FLOW` | Props not updating downstream component |
+| 9 | `UI_LOGIC` | Object reference equality blocking React render |
+| 10 | `STALE_CLOSURE` | useEffect missing vital dependency |
 
-| # | Bug Category | Description | Difficulty |
-|---|-------------|-------------|-----------|
-| 1 | `STALE_CLOSURE` | setInterval capturing stale variable | Medium |
-| 2 | `STATE_MUTATION` | Config variable overwritten at runtime | Medium |
-| 3 | `RACE_CONDITION` | Two parallel fetches writing to same state | Hard |
-| 4 | `EVENT_LIFECYCLE` | Event listener added, never removed | Medium |
-| 5 | `ASYNC_ORDERING` | Value read before `await` resolves | Easy |
-| 6 | `TYPE_COERCION` | `"5" + 3` in a real calculation context | Easy |
-| 7 | `TEMPORAL_LOGIC` | `Date.now()` drift in countdown timer | Hard |
-| 8 | `DATA_FLOW` | Prop passed incorrectly between React components | Medium |
-| 9 | `UI_LOGIC` | Object reference equality blocks re-render | Hard |
-| 10 | `STALE_CLOSURE` | `useEffect` missing dependency (different shape than #1) | Medium |
+Runner runs each bug twice — without AST (baseline) and with AST (enhanced). Scores RCA and Hallucination Rate per run.
 
-Two stale closure bugs intentionally — it's the most common vibe-coded bug. Different shapes show Unravel handles both.
+**Preliminary run (Gemini 2.5 Flash, free tier):** Baseline 15% → Enhanced 20% RCA, 0.8% → 0.0% HR. Low RCA because Flash struggles with the structured JSON demands of the full 8-phase pipeline.
 
-**Each benchmark file includes:**
-```json
-{
-  "id": "timer_state_mutation",
-  "bugCategory": "STATE_MUTATION",
-  "userSymptom": "Timer becomes inaccurate after pause/resume",
-  "trueRootCause": "duration variable mutated in pause() at line 69",
-  "trueFile": "script.js",
-  "trueLine": 69,
-  "difficulty": "medium"
-}
-```
-
-**Test Runner (`benchmarks/runner.js`):**
-```javascript
-for (const bug of bugs) {
-  // Run 1: WITHOUT AST context
-  const baselineResult = await runUnravel(bug.code, bug.symptom, { ast: false });
-
-  // Run 2: WITH AST context injected
-  const enhancedResult = await runUnravel(bug.code, bug.symptom, { ast: true });
-
-  const baselineScore = scoreRCA(baselineResult, bug);
-  const enhancedScore = scoreRCA(enhancedResult, bug);
-
-  console.log(`Bug ${bug.id}: Baseline ${baselineScore} → Enhanced ${enhancedScore}`);
-}
-```
-
-**RCA Scoring:**
-```
-Match   = AI identifies exact variable + line = 1.0 point
-Partial = AI identifies right area, wrong specifics = 0.5 points
-Miss    = AI suggests plausible but wrong cause = 0 points
-
-RCA Score = total points / 10
-```
-
-**Hallucination Detection:**
-After each run, cross-reference AI output against actual file context using a dedicated scoring function:
-
-```javascript
-function scoreHallucinations(aiOutput, astGroundTruth) {
-  // every variable AI mentions → check if it exists in AST
-  // every line number AI cites → check if it contains what AI claims
-  // returns: { hallucinated: N, total: N, rate: % }
-}
-```
-
-```text
-HR = hallucinated_claims / total_claims_in_output
-```
-
-#### 2.3 — Open Source Launch
-
-Once benchmark numbers are in:
-
-1. Update README with actual measured RCA scores
-2. Publish results table:
+**Full proxy benchmark pending** — requires paid API run with Claude Opus or Gemini Pro.
 
 ```
 Configuration          | RCA Score | Hallucination Rate
 -----------------------|-----------|-------------------
-Standard prompting     |   ??%     |       ??%
-+ 8-phase pipeline     |   ??%     |       ??%
-+ AST pre-analysis     |   ??%     |       ??%   ← this is the headline number
+Gemini Flash (prelim)  |   20%     |       0.0%
+Claude Opus (pending)  |   ??%     |       ??%
 ```
 
-3. Push to GitHub. Open source under MIT.
-   - **Launch Scope:** v1 is strictly JavaScript and TypeScript only. Python and other languages are post-Phase 4.
-4. Write one honest technical post: *"Why AI tools keep failing to fix your bugs — and what deterministic analysis looks like."*
+The 10-bug proxy benchmark exists only to validate architectural improvements during development. Public claims rely exclusively on Phase 7’s extended benchmark.
 
-**The delta between "standard prompting" and "+ AST pre-analysis" is the entire technical story of Unravel.**
+#### 2.3 — Open Source Launch ✅
+
+- Web app deployed to Netlify
+- GitHub published under MIT
+- README with architecture, setup, benchmark section
+- Launch posts planned for Dev.to, LinkedIn, IndieHackers, Reddit, YouTube (not yet written)
 
 ---
 
-### Phase 3 — "The Demo" 📋 PLANNED
+### Phase 3 — "The Demo" ✅ COMPLETE
 
-**Goal:** Take Unravel from a website to the place developers actually live — VS Code.
+**Goal:** Extract the engine. Ship a VS Code / Cursor / Windsurf extension.
 
-**Timeline:** Weeks 4–8 (Immediately following Phase 2 launch).
+**Built in:** Same day.
 
-#### 3.1 — Core Engine Extraction
+#### 3.1 — Core Engine Extraction ✅
 
-Before building the extension, extract the pure JS engine into a standalone package.
+All engine logic extracted into `src/core/` with zero React dependencies.
 
 ```
-@unravel/core (zero DOM dependencies)
-├── buildSystemPrompt(level, language, provider)
-├── buildRouterPrompt(files, error)
-├── callAPI(provider, key, system, user)
-├── parseEngineResponse(raw)
-├── runASTAnalyzer(code)
-├── BUG_TAXONOMY
-└── ENGINE_SCHEMA
+src/core/
+├── index.js          ← barrel export
+├── config.js         ← providers, taxonomy, prompts, schema
+├── ast-engine.js     ← @babel/parser analysis
+├── parse-json.js     ← robust JSON parser
+├── provider.js       ← API calling + retry logic
+└── orchestrate.js    ← full pipeline as single async function
 ```
 
-This package is consumed by all platforms. Change the engine once, all platforms update.
+Single entry point: `orchestrate(codeFiles, symptom, options)`. Change the engine once, all platforms update.
 
-#### 3.2 — VS Code Extension + Live Bug Lens ⭐
+#### 3.2 — VS Code / Cursor / Windsurf Extension ✅
 
-**This is the viral moment.** A screenshot of a bug appearing inline in VS Code with a one-click fix is what gets shared.
+```
+unravel-vscode/
+├── package.json
+├── esbuild.js            ← ESM→CJS bundler
+├── src/
+│   ├── extension.js      ← activate(), command handler, status bar
+│   ├── imports.js        ← resolve ESM/CJS imports (depth 2)
+│   ├── diagnostics.js    ← red squiggly underlines on bug lines
+│   ├── decorations.js    ← inline 🔴 ROOT CAUSE overlay text
+│   ├── hover.js          ← tooltip with fix + confidence on hover
+│   ├── sidebar.js        ← full HTML report WebView panel
+│   └── core/
+└── out/extension.js      ← 1.6MB bundled output
+```
 
 **User flow:**
 ```
-1. Right-click anywhere → "Unravel: Debug This"
-2. Extension reads workspace files automatically (no copy-paste)
-3. Quick input: describe the bug in one sentence
-4. Live Bug Lens activates — decorations overlay on the code
-5. Side panel opens with full structured report
+Right-click .js/.ts file → "Unravel: Debug This File"
+  ↓ First time: API key prompt → saved to VS Code settings
+  ↓ "Describe the bug in one sentence"
+  ↓ Status bar: $(loading~spin) AST analyzing → calling AI → parsing
+  ↓ Results:
+    • Red squiggly on root cause line
+    • 🔴 ROOT CAUSE: STATE_MUTATION inline text
+    • Hover → fix + confidence + evidence
+    • Sidebar → full structured report
 ```
 
-**What the developer sees in the editor:**
-```javascript
-function pause(){
-    clearInterval(interval)
-    interval = null
-    duration = remaining   // 🔴 ROOT CAUSE: STATE_MUTATION
-                           //    duration must remain constant
-}
-```
+**Verified on:** Pomodoro timer bug. Confidence 1.0, both bugs identified, exact line numbers, full timeline.
 
-**Hover tooltip:**
-```
-🔴 Root Cause: STATE_MUTATION
-duration represents total session time.
-Mutating it here causes tick() to compute remaining incorrectly.
-Minimal Fix: remove this assignment.
-Confidence: 92% (3 evidence points)
-[Apply Fix]  [Show Full Report]
-```
+**Key implementation notes:**
+- VS Code lines are 0-indexed — line 69 in file = index 68 in API
+- `codeLocation` normalized to string before `.toLowerCase()` — model sometimes returns object
+- Context menu scoped to JS/TS only via `when` clause
+- Import resolution walks depth 2 only — prevents pulling in node_modules
 
-**Decoration color system:**
-```
-🔴 Root cause line         — the exact mutation causing the bug
-🟠 Contributing functions  — functions that interact with the bug
-🟡 Related variables       — other mutations in the chain
-🔵 Timeline markers        — gutter icons showing execution order
-```
+#### 3.3 — Web App UX Improvements ✅
 
-**Variable mutation tree (sidebar):**
-```
-duration
-├── declared: line 3
-├── written: pause() line 69  🔴 BUG
-├── written: setMode() line 86
-├── read: tick() line 55
-└── read: start() line 42
-```
-Each entry is clickable — jumps to that line.
+Added after Phase 3 core work:
 
-**Technical implementation (standard VS Code APIs):**
-```javascript
-// Root cause decoration
-const bugDeco = vscode.window.createTextEditorDecorationType({
-  backgroundColor: 'rgba(255,0,0,0.15)',
-  after: { contentText: ' 🔴 ROOT CAUSE', color: '#ff4444' }
-});
-editor.setDecorations(bugDeco, [{ range: bugRange }]);
+| Feature | What It Does |
+|---------|-------------|
+| File list with names | Every uploaded file shown by path with 📄 icon |
+| Remove files (✕) | Individual remove button per file + "Clear All" |
+| Upload appends | Re-uploading adds new files instead of replacing. Set-based dedup skips duplicates. |
+| GitHub Import tab | Paste a public repo URL → files fetched via GitHub API → added to workspace |
+| readSelectedFiles dual-mode | Handles both browser File objects (upload) and pre-loaded content (GitHub) |
 
-// Hover provider
-vscode.languages.registerHoverProvider('*', {
-  provideHover(doc, pos) {
-    if (isOnBugLine(pos)) return new vscode.Hover(bugMarkdown);
-  }
-});
-```
+#### 3.4 — Phase 3 Gaps (Deferred to Phase 4)
 
-Works in VS Code, Cursor, Windsurf — anywhere VS Code extensions run.
+These were in the original Phase 3 plan but not built. They're presentation layer features that depend on Variable Trace (Phase 4.2).
 
-#### 3.3 — Missing Files Request UI
-
-The architecture explicitly shows the Deep Debugger can PAUSE and request missing files. In the UI, this manifests as an interactive diagnostic loop:
-- A modal appears listing the specific files requested by the AI and *why* it needs them.
-- User can provide the files or decline.
-- Analysis pipeline automatically resumes once files are provided.
-
-**Phase 3 verification:**
-- Right-click debug works end to end?
-- Go-to-line from report jumps correctly?
-- Live Bug Lens decorations render with correct tooltips?
+| Feature | Status | Why Deferred |
+|---------|--------|--------------|
+| 🟠 Contributing functions decoration | ❌ | Only 🔴 root cause built. Multi-color requires Variable Trace data. |
+| 🟡 Related variables decoration | ❌ | Same — needs causal chain from Phase 4.2 |
+| 🔵 Timeline gutter markers | ❌ | Requires timeline data not yet surfaced in extension |
+| Clickable line jumps from sidebar | ❌ | Sidebar shows HTML report, not interactive tree |
+| [Apply Fix] button on hover | ❌ | Hover is info-only — applying diffs safely needs Phase 4.4 |
+| Variable mutation tree (sidebar) | ❌ | Moved to Phase 4.2 Variable Trace |
 
 ---
 
 ### Phase 4 — "Intelligence Layer" 📋 PLANNED
 
-**Goal:** Replace single-agent guessing with adversarial multi-agent debate. Add real visual diff and timeline UI.
+**Goal:** Adversarial multi-agent debate. Variable Trace UI. Code diff.
 
-**Trigger:** Start Phase 4 only after Phase 2 benchmark shows single-agent RCA has a measurable ceiling. If RCA is already ≥ 85% with Opus + AST context, assess whether multi-agent is worth the added complexity before committing.
+**Trigger:** First reports of confident-but-wrong diagnoses from real users. Do not build speculatively.
 
-#### 4.1 — Adversarial Multi-Agent Debate
+#### 4.1 — Hypothesis Elimination Model + Adversarial Debate
 
-The core insight: two agents that independently analyze the same problem, then reconcile, produce more accurate output than one confident agent. This turns uncertainty from a failure mode into a feature.
+**The pipeline upgrade.** Current Phase 3–5 in the 8-phase reasoning is: Simulate → Root Cause. This commits to a single explanation too early.
+
+**New flow:** Simulate → Generate 3 hypotheses → Eliminate using AST evidence → Confirm survivor.
+
+This prevents early commitment to wrong explanations. Makes uncertainty honest — if 2 of 3 hypotheses can't be eliminated, output says "uncertain" instead of confident-wrong.
+
+**Then, three agents stress-test the survivor:**
 
 ```
-                        AST Context + Code Slices
-                               │
-              ┌────────────────┴────────────────┐
-              ▼                                 ▼
-   Agent 1: The Detective             Agent 2: The Skeptic
-   (Opus 4.6, 64K thinking)           (Opus 4.6, 64K thinking)
-   Analyzes everything.               FORBIDDEN from seeing
-   Outputs hypothesis + confidence.   Agent 1's output.
-                                       Approaches first principles.
-              │                                 │
-              └────────────────┬────────────────┘
-                               ▼
-                    The Reconciler
-                         │
-          ┌──────────────┴──────────────┐
-          ▼                             ▼
-    They agree                    They disagree
-    → Boost confidence            → Surface both hypotheses:
-    → Single diagnosis            "Hypothesis A: stale closure L47
-                                   Hypothesis B: race condition L52
-                                   Evidence for each below."
-          │                             │
-          └──────────────┬──────────────┘
-                         ▼
-                  Explainer Agent
+              AST Context + Code
+                     │
+       ┌─────────────┴─────────────┐
+       ▼                           ▼
+Agent A: Detective         Agent B: Skeptic
+Full 8-phase analysis      FORBIDDEN from seeing
+with hypothesis             Agent A's output.
+elimination.               First principles only.
+       │                           │
+       └─────────────┬─────────────┘
+                     ▼
+         Agent C: Adversarial Reviewer
+
+         Job: Try to DESTROY both hypotheses.
+         Rules:
+         1. Cannot propose a third hypothesis.
+         2. Must attack each claim with specific evidence.
+         3. Hypothesis that survives attack wins.
+                     │
+         ┌───────────┴───────────┐
+         ▼                       ▼
+   Both survive            One broken
+   → Boost confidence      → Surviving hypothesis
+   → Single diagnosis        shown with attacker's
+                              evidence attached
 ```
 
-**Critical implementation rule:** Agent 2's prompt must explicitly begin with:
+**Why an attacker not a reconciler:** A reconciler looks for agreement. An attacker looks for holes. Hypotheses must survive scrutiny, not just agree with each other.
+
+**Agent B critical prompt rule:**
 ```
 You are analyzing this code fresh. You have NOT seen any prior analysis.
 Do not anchor to any previous hypothesis. Approach from first principles only.
 ```
 
-Without this, Agent 2 anchors to Agent 1's output and the adversarial value is lost.
+**Cost control:** Only activate multi-agent when single-agent confidence < 80%. Prevents 3x API cost on every analysis.
 
-#### 4.2 — Function-Level Code Slicing
+#### 4.2 — Variable Trace ("Where Did It Break?")
 
-Use the AST to trace dependencies and extract *only* the functions involved in the mutation chain.
+The killer feature. The AST engine already has this data. This is a presentation layer.
 
 ```
-Full project:  47 files, 12,000 lines
-After Router:   5 files,  2,400 lines
-After Slicing: 14 functions,  ~350 lines  ← this is what the LLM sees
+DURATION — complete lifecycle
+
+Line 1    declared     let duration = 25 * 60         ✓
+Line 55   read by      tick() — elapsed calculation   ✓
+Line 69   mutated by   pause() — duration = remaining 🔴 ROOT CAUSE
+Line 55   read by      tick() — gets wrong value      ← cascade begins
+Line 79   read by      reset() — resets to wrong val  ← cascade ends
 ```
 
-This eliminates context explosion on large projects and keeps LLM reasoning sharp.
+Each line clickable — jumps to that line in the editor.
 
-#### 4.3 — Visual Diff Output
+**Bug Timeline (companion view):**
 
-Replace "here's the entire fixed file" with a minimal surgical diff.
+```
+BUG TIMELINE
+
+T0       start()   duration=1500, remaining=1500
+T0+10s   tick()    elapsed=10, remaining=1490
+T0+10s   pause()   duration mutated: 1500→1490  🔴 mutation happens here
+T0+15s   reset()   remaining = duration = 1490 (wrong)
+T0+15s   render()  shows 24:50 instead of 25:00  ← symptom appears here
+```
+
+Developer sees: where it started, where it changed, where it manifested. This is how humans debug — causally.
+
+**VS Code integration:** Click the 🔴 overlay → Variable Trace panel opens in sidebar with clickable lifecycle lines.
+
+#### 4.3 — Function-Level Code Slicing + Router Hardening
+
+```
+Full project:   47 files, 12,000 lines
+After Router:    5 files,  2,400 lines
+After Slicing:  14 functions,  ~350 lines  ← what the LLM sees
+```
+
+**Known risk:** Router selects wrong files → AI reasons on incomplete context → wrong diagnosis.
+
+**Mitigation:** Triple graph tracing — intersect three graphs to select files deterministically:
+
+```
+1. Call Graph:   this function → calls these functions → in which files?
+2. Data Flow:    this variable → read/written by which functions → in which files?
+3. Import Graph: this file → imports which files → those import which?
+
+Intersection of all three = the exact subgraph the AI needs.
+Result: deterministic file selection, not probabilistic.
+```
+
+The AST already has function call data, variable read/write locations, and import paths. The router should use this as hard constraints, not just AI judgment.
+
+#### 4.4 — Visual Diff Output
 
 ```diff
  function pause(){
-     if(!interval) return
      clearInterval(interval)
      interval = null
--    duration = remaining    // ← THE BUG
+-    duration = remaining    ← BUG
  }
 
  function start(){
-     if(interval) return
      startTimestamp = Date.now()
-+    lastActiveRemaining = remaining  // ← THE FIX
++    lastActiveRemaining = remaining  ← FIX
      interval = setInterval(tick, 1000)
  }
 ```
 
-#### 4.4 — AI-Simulated Bug Replay
+#### 4.5 — Benchmark Expansion
 
-The Debugger agent generates a step-by-step execution trace with approximate variable values. Rendered as a clickable timeline in the UI. Each step expands to show variable state.
-
-```
-▶ Step 1: start()    duration=1500  remaining=1500  startTimestamp=1000
-▶ Step 2: tick()     elapsed=5      remaining=1495
-▶ Step 3: pause()    duration=1495  ← ⚠️ MUTATED (was 1500)
-▶ Step 4: start()    elapsed calculated from wrong base → timer jumps
-```
-
-> Note: This is AI-simulated, not real execution. Values are approximations. Phase 5 replaces this with actual instrumented execution via WebContainers.
-
-#### 4.5 — 20+ Bug Benchmark Expansion
-
-Expand the 10-bug benchmark proxy from Phase 2 into a comprehensive 20+ bug suite. This establishes continuous tracking of RCA and HR metrics across new model versions and prompt updates post-launch.
+Expand 10-bug suite to 20+ bugs. Include cross-file bugs and multi-component React bugs.
 
 **Phase 4 verification:**
-- Multi-agent pipeline vs single-call: measure RCA delta on the 10-bug benchmark
-- Visual diff renders correctly for all 10 benchmark bugs
-- Timeline renders without crashing on edge cases
+- Multi-agent RCA delta vs single-agent > 10%? If not, reassess complexity cost
+- Agent B produces genuinely independent hypotheses (test on 5 known bugs)
+- Agent C cannot propose new hypotheses (constraint working)
+- Variable Trace renders correctly and line jumps work
 
 ---
 
 ### Phase 5 — "The Breakthrough" 📋 PLANNED
 
-**Goal:** Real instrumented execution. Take Unravel to every platform developers use.
+**Trigger:** Real user base asking for it. Build nothing in this phase speculatively.
 
-**Trigger:** Start Phase 5 when you have a genuine user base asking for it. Do not build this in a vacuum.
+#### 5.1 — Instrumentation Without Execution (Intermediate Step)
 
-#### 5.1 — Real Instrumented Bug Replay (WebContainers)
-
-Replace AI-simulated replay with real execution. Every variable value is actual, not approximated.
+Before full WebContainers, do the simpler version first:
 
 ```
-1. Load user's project into WebContainer (in-browser Node.js)
-2. Instrument the code — inject logging at every mutation point
-3. Run the buggy code → capture actual variable values at each step
-4. Apply Unravel's fix automatically
+1. Inject logging at AST-identified mutation points
+2. Run in sandboxed iframe (not full WebContainer)
+3. Capture variable values at each step
+4. No security/resource concerns — just an iframe
+```
+
+**80% of the value, 20% of the risk.** This gives real variable values without the complexity of a full in-browser Node.js runtime.
+
+#### 5.2 — Full WebContainers
+
+**Trigger:** Only after 5.1 is proven and users specifically request real execution.
+
+```
+1. Load project into WebContainer (in-browser Node.js)
+2. Instrument code at every AST-identified mutation point
+3. Run buggy code → capture actual values at each step
+4. Apply fix automatically
 5. Run again → capture values post-fix
-6. Show before/after comparison with real data
+6. Show before/after with real data
 ```
 
-```
-BEFORE FIX (real execution):
-  pause() called → duration mutated: 1500 → 1495 ← actual value captured
+#### 5.3 — Interactive Dependency Graph (D3.js)
 
-AFTER FIX (real execution):
-  pause() called → duration unchanged: 1500 ✓ — actual value captured
-```
+Clickable function call graph with bug path highlighted in red.
 
-#### 5.2 — Interactive Dependency Graph (D3.js)
+#### 5.4 — Debug Journal
 
-Visualize the function call graph and variable mutation paths.
+Personal learning log. After each session, one-click saves the lesson to localStorage. After 5+ sessions, shows your recurring bug patterns.
 
 ```
-[start()] ──calls──► [tick()] ──reads──► duration
-    │                                        ▲
-    └──sets──► startTimestamp        ⚠️ MUTATED BY
-                                          │
-                                     [pause()]
-```
-
-Clickable nodes jump to that function. Bug path highlighted in red.
-
-#### 5.3 — Debug Journal
-
-After each session, one click generates a permanent personal takeaway.
-
-```
-Session: Pomodoro Timer Bug
-Lesson: Never mutate a variable that represents a fixed config value
-        inside a runtime function. Use a separate variable for changing state.
-Pattern: STATE_MUTATION → Immutable Config Values
-```
-
-Lessons accumulate in localStorage across sessions. After 5+ sessions:
-
-```
-📓 Your Debug Journal
-
-1. STATE_MUTATION — Never mutate config variables at runtime
-2. STALE_CLOSURE — Use refs for values inside intervals
-3. RACE_CONDITION — Never write shared state from parallel fetches
-4. EVENT_LIFECYCLE — Always clean up listeners in useEffect return
-5. TYPE_COERCION — Use === not == for mixed types
-
 🔥 Pattern: 3/5 of your bugs involve shared state.
    Learn about immutability and pure functions next.
 ```
 
-This turns Unravel from "fix my bug" into "make me a better developer."
-
-#### 5.4 — CLI Tool
+#### 5.5 — CLI Tool
 
 ```bash
 npm install -g @unravel/cli
 unravel analyze ./src --symptom "timer skips after pause" --output json
 ```
 
-Reads project files automatically. JSON output for CI/CD pipelines.
+#### 5.6 — Desktop App (Electron)
 
-#### 5.5 — Desktop App (Electron)
+Native file access. Drag-and-drop project folders.
 
-Standalone installable. Native file access. Drag-and-drop project folders.
-
-#### 5.6 — OpenClaw Agent Integration
-
-Unravel as a callable skill for autonomous AI agents.
-
+**Platform priority:**
 ```
-Path 1 — CLI Skill: OpenClaw calls `unravel analyze` as a shell tool
-Path 2 — Custom Skill: skills/unravel/ directory with SKILL.md + analyze.js
-```
-
-**Phase 5 platform priority:**
-```
-1. VS Code Extension (already shipped in Phase 3) ← category-defining
-2. CLI Tool                                        ← power users, CI/CD
-3. OpenClaw Integration                            ← agent ecosystem
-4. Desktop App                                     ← broadest audience
+1. VS Code / Cursor / Windsurf Extension  ← shipped ✅
+2. CLI Tool
+3. Agent Integration
+4. Desktop App
 ```
 
 ---
 
-### Phase 6 — "The Database" (Future) 📋 PLANNED
+### Phase 6 — "The Database" 📋 PLANNED (Future)
 
-#### 6.1 — Bug Pattern Database
-As users debug projects, build a growing database of patterns. Eventually enable multi-project pattern matching to detect common bugs *before* the full LLM analysis even needs to run.
-
----
-
-## Summary Timeline
+Bug pattern database built from real user sessions. Eventually enables pre-analysis pattern matching before full LLM analysis runs.
 
 ```
-PHASE 1 "Deep Thinking"       ✅ COMPLETE
-├── BYOK multi-provider (Anthropic / OpenAI / Google)
-├── SOTA models: Opus 4.6, Sonnet 4.6, Gemini 3.x, GPT 5.3
-├── Extended thinking (64K tokens)
-├── Provider-specific prompt formatting (XML / Markdown / Delimiters)
-├── 8-phase deterministic reasoning pipeline
-├── Anti-sycophancy guardrails (5 rules)
-├── Evidence-backed confidence output
-├── Bug taxonomy (12-category enum)
-├── Concept extraction
-└── "Why AI loops" analysis
-
-PHASE 2 "The Proof"            📍 IN PROGRESS — Weeks 1–3
-├── 2.1 AST Pre-Analysis (@babel/parser)
-│   ├── extractMutationChains(code)
-│   ├── trackClosureCaptures(code)
-│   └── findTimingNodes(code)
-├── 2.2 10-Bug Benchmark
-│   ├── 10 bugs with defined root causes (see taxonomy table)
-│   └── runner.js: RCA with/without AST context
-└── 2.3 Open Source Launch with proven RCA numbers
-
-PHASE 3 "The Demo"             📋 PLANNED — Weeks 4–8
-├── Extract @unravel/core shared engine (npm package)
-└── VS Code Extension + Live Bug Lens
-
-PHASE 4 "Intelligence Layer"   📋 PLANNED — Weeks 9–16
-├── Adversarial multi-agent debate (Detective + Skeptic + Reconciler)
-├── Function-level code slicing
-├── Visual diff output
-└── AI-simulated bug replay timeline
-
-PHASE 5 "The Breakthrough"     📋 PLANNED — Month 5+
-├── WebContainers live instrumented execution
-├── Interactive D3.js dependency graph
-├── Debug Journal + learning path system
-├── CLI Tool
-├── OpenClaw Agent integration
-└── Desktop App (Electron)
-
-PHASE 6 "The Database"         📋 PLANNED — Future
-└── Bug Pattern Database
+"I've seen this pattern 847 times. It's always STALE_CLOSURE. Confidence: 99%."
 ```
 
 ---
 
-## Verification Checkpoints
+### Phase 7 — "Extended Benchmark" 📋 PLANNED
 
-### Phase 2 (Critical Path)
-- Run `extractMutationChains()` on the Pomodoro timer bug. Does output match the expected context map?
-- Run all 10 benchmark bugs through runner.js. Do the without/with AST numbers show a statistically meaningful delta?
-- Is the hallucination rate below 10% before launch? (Target is < 5% — get to < 10% for v1 open source)
+**Goal:** Make RCA claims publicly credible and academically defensible.
 
-### Phase 3
-- Right-click debug works end to end in a fresh VS Code window?
-- Live Bug Lens decorations render correctly with hover tooltips?
-- Go-to-line from the report panel jumps to the correct line?
+**Trigger:** Start after Phase 4 multi-agent is live. The benchmark should test the full stack, not just the single-agent version.
 
-### Phase 4
-- Multi-agent pipeline RCA vs single-agent on the 10-bug benchmark: is the delta > 10%? If not, reassess whether the added complexity is worth it.
-- Does the Skeptic agent reliably produce independent hypotheses, or does it anchor to Agent 1? (Check by comparing outputs on 5 known bugs)
+**50 bugs minimum**, split across:
 
-### Phase 5
-- WebContainers: do captured variable values match the AI-simulated replay from Phase 4?
-- CLI: does `unravel analyze ./src` produce valid JSON output on the 10 benchmark bugs?
-- Debug Journal: does localStorage accumulation work correctly across 10+ sessions?
+| Category | Count | Why |
+|----------|-------|-----|
+| JavaScript (vanilla) | 10 | Baseline, easiest case |
+| React / state management | 10 | Most common vibe-coded stack |
+| Async / Promise / timing | 10 | Hardest category, most failures |
+| Node.js / backend | 10 | Different patterns from frontend |
+| Multi-file cross-component | 10 | Where router agent is tested hardest |
+
+Three difficulty levels per category: **Easy / Medium / Hard.** Hard bugs are the ones where single-agent analysis without AST context is most likely to fail — these prove the system.
+
+**What this phase produces:**
+
+1. **Published benchmark dataset** — open source, others can run it
+2. **Per-model RCA table:** Flash vs Sonnet vs Opus vs GPT — makes model dependence visible and honest
+3. **Per-category breakdown:** shows exactly where Unravel is strong and where it isn't
+4. **Version tracking:** run the same benchmark on every major release to catch regressions
+
+```
+Model               | JS    | React | Async | Node  | Multi | Total RCA | Avg TTI
+--------------------|-------|-------|-------|-------|-------|-----------|--------
+Gemini 2.5 Flash    | ??%   | ??%   | ??%   | ??%   | ??%   | ??%       | ??s
+Claude Sonnet 4.6   | ??%   | ??%   | ??%   | ??%   | ??%   | ??%       | ??s
+Claude Opus 4.6     | ??%   | ??%   | ??%   | ??%   | ??%   | ??%       | ??s
+GPT 5.3             | ??%   | ??%   | ??%   | ??%   | ??%   | ??%       | ??s
+```
+
+RCA alone is one number. RCA + TTI per category tells a story — async bugs take 2.5 minutes, JS bugs take 1.3 minutes. That’s useful data for users choosing a model.
+
+**"85% RCA on 50 bugs across 5 categories" is a conversation. "Cool VS Code extension" is not.**
 
 ---
 
-*Last updated: Phase 1 complete. Phase 2 in progress.*
+## The API Play (Future Vision)
+
+**Long-term: Unravel as a debugging engine for AI coding tools.**
+
+Target integrations: Cursor, Bolt, Lovable, Replit, Codeium, Claude Code, Gemini CLI, and others. These tools generate code at scale. When it breaks, they have no good answer.
+
+**"Debug with Unravel" API:**
+```
+POST /analyze
+{ files, symptom, options }
+→ structured diagnosis JSON
+```
+
+**Business model:** B2B per-call API. They pay per analysis.
+
+**Sequence:**
+1. Prove it works standalone first (Phases 1–4) ✅ in progress
+2. Fill the Phase 7 benchmark with real numbers
+3. Approach platforms with benchmark data
+4. "85% RCA across 50 bugs, 5 categories, 4 models" opens doors
+5. Enterprise pilot → integration partnership
+
+---
+
+## Where We Are Right Now
+
+```
+PHASE 1 ✅  Web app, 8-phase pipeline, SOTA models, anti-sycophancy
+PHASE 2 ✅  AST pre-analysis, 10-bug dev proxy, open source
+            ⏳ Preliminary Flash run done (15→20% RCA, 0% HR)
+            ⏳ Full Opus/Pro benchmark still pending
+PHASE 3 ✅  Core engine extracted, VS Code / Cursor / Windsurf extension working end-to-end
+            ✅ Web app UX: file list, remove, append, GitHub import
+            ⏳ Advanced decorations (🟠🟡🔵) deferred to Phase 4
+            ⏳ Clickable sidebar tree deferred to Phase 4
+            ⏳ [Apply Fix] button deferred to Phase 4
+PHASE 4 📋  Hypothesis elimination + adversarial debate + Variable Trace
+PHASE 5 📋  Instrumented execution (iframe first, then WebContainers)
+PHASE 6 📋  Pattern database
+PHASE 7 📋  50-bug credibility benchmark — the number that opens doors
+```
+
+**What exists and works right now:**
+- Web app on Netlify with folder upload, GitHub import, 3 input methods
+- VS Code / Cursor / Windsurf extension as .vsix — right-click debug with squigglies, overlays, hover, sidebar
+- Core engine: `orchestrate(files, symptom, options)` — one function, all platforms
+- 10-bug development proxy with runner and preliminary results
+- README, LICENSE, STORY.md — launch-ready
+
+**What's needed before Phase 4:**
+1. Full proxy benchmark run with Claude Opus or Gemini Pro (paid credits)
+2. Launch posts (Dev.to, Reddit, YouTube, LinkedIn)
+3. Get first real users and feedback
+
+---
+
+## The One Number That Matters
+
+**RCA with AST pre-analysis vs without, on a SOTA model, across 50 bugs.**
+
+That delta is the entire technical story of Unravel. Phase 7 fills it in. Then the API play becomes real.
