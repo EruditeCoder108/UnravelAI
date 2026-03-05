@@ -142,14 +142,49 @@ export default function App() {
             // Filter files
             const validExts = ['.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.py', '.md', '.vue', '.svelte'];
             const blacklist = ['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '__pycache__', 'package-lock.json', 'yarn.lock'];
-            const candidates = (treeData.tree || []).filter(f =>
+            const allCandidates = (treeData.tree || []).filter(f =>
                 f.type === 'blob'
                 && f.size < 500000
                 && validExts.some(ext => f.path.endsWith(ext))
                 && !blacklist.some(d => f.path.includes(`${d}/`) || f.path === d)
-            ).slice(0, 50); // Cap at 50 files
+            );
 
-            if (candidates.length === 0) throw new Error('No valid source files found in repo.');
+            if (allCandidates.length === 0) throw new Error('No valid source files found in repo.');
+
+            // ── Router-First: if many files, use Router Agent to pick relevant ones ──
+            let candidates = allCandidates;
+            if (allCandidates.length > 10 && apiKey && provider && model) {
+                try {
+                    const allPaths = allCandidates.map(f => `${repo}/${f.path}`);
+                    const routerPrompt = buildRouterPrompt(allPaths, userError);
+                    const routerRaw = await callProvider({
+                        provider, apiKey, model,
+                        systemPrompt: 'You are a file routing agent. Return JSON only.',
+                        userPrompt: routerPrompt,
+                        useSchema: false,
+                    });
+                    const routerData = parseAIJson(routerRaw);
+                    const selectedPaths = routerData?.filesToRead || [];
+                    if (selectedPaths.length > 0) {
+                        // Map Router-selected paths back to tree candidates
+                        const selectedSet = new Set(selectedPaths.map(p =>
+                            p.startsWith(`${repo}/`) ? p.slice(repo.length + 1) : p
+                        ));
+                        const filtered = allCandidates.filter(f => selectedSet.has(f.path));
+                        // Only use Router result if it found at least 2 files
+                        if (filtered.length >= 2) {
+                            candidates = filtered;
+                            console.log(`[ROUTER] Selected ${filtered.length} files from ${allCandidates.length} candidates`);
+                        }
+                    }
+                } catch (routerErr) {
+                    console.warn('[ROUTER] Failed, falling back to all candidates:', routerErr.message);
+                    // Fall through — use allCandidates as-is
+                }
+            }
+
+            // Cap at 50 files max
+            candidates = candidates.slice(0, 50);
 
             // Fetch file contents in parallel (batches of 10)
             const fetched = [];
@@ -598,8 +633,8 @@ export default function App() {
 
                             {/* Symptom */}
                             <div style={{ borderTop: '2px solid #333', paddingTop: 20, marginTop: 20 }}>
-                                <div style={{ ...S.label, color: '#ff003c' }}><Activity size={14} /> Define The Symptom</div>
-                                <textarea style={S.codeInput} placeholder="E.g., Timer resets to wrong value after pause. Include stack traces if you have them..."
+                                <div style={{ ...S.label, color: '#ff003c' }}><Activity size={14} /> Define The Symptom <span style={{ color: '#666', fontWeight: 'normal', fontSize: 11 }}>(optional — leave empty to scan for any issues)</span></div>
+                                <textarea style={S.codeInput} placeholder="E.g., Timer resets to wrong value after pause. Include stack traces if you have them... Or leave empty and we'll find issues for you."
                                     value={userError} onChange={(e) => setUserError(e.target.value)} />
                             </div>
 

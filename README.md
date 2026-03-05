@@ -344,11 +344,17 @@ Extracted shared engine into `src/core/` — `orchestrate()`, `callProvider()`, 
 ### Phase 3.5 — Pre-Publish Hardening `COMPLETE`
 Object property mutation detection (`task.status = newStatus`) surgically added to AST. Input completeness validation added to detect silently truncated files (HTML, JS, CSS) before reasoning begins.
 
-### Phase 4 — Intelligence Layer `PLANNED`
-Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom contradiction check, and multi-symptom mode. Function-level code slicing. **Adversarial multi-agent debate** — three agents independently diagnose the same bug and attack hypotheses. Variable Trace UI and Visual diff output.
+### Phase 3.6 — File Handling Hardening `COMPLETE`
+Router-first GitHub repo import (picks relevant files before downloading). Support for empty-symptom scanning in both Web App and VS Code Extension.
+
+### Phase 4A — Analysis Modes & Output Control `PLANNED`
+Transform from single-mode debugger to multi-mode platform. New modes: **Debug**, **Explain**, and **Security Scan**. Output presets (Quick Fix vs Full Report). Web App UX redesign (Input → Mode → Configure flow) and expanded VS Code settings.
+
+### Phase 4B — Intelligence Layer `PLANNED`
+Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom contradiction check. Function-level code slicing. **Adversarial multi-agent debate** — three agents independently diagnose the same bug and attack hypotheses. Variable Trace UI and Visual diff output.
 
 ### Phase 5 — The Breakthrough `PLANNED`
-WebContainers for live in-browser code execution. Real instrumented bug replay. Interactive D3.js dependency graph. Debug Journal ("What did I learn?"). CLI tool + OpenClaw integration. Desktop app.
+Web Search integration (finds GitHub issues/version mismatches based on error signatures). WebContainers for live in-browser code execution. Real instrumented bug replay. Interactive D3.js dependency graph. Debug Journal ("What did I learn?"). CLI tool + OpenClaw integration. Desktop app.
 
 ---
 

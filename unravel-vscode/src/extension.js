@@ -71,12 +71,13 @@ async function debugCurrentFile() {
     }
 
     // ── Prompt for symptom description ──
-    const symptom = await vscode.window.showInputBox({
-        prompt: 'Describe the bug in one sentence',
-        placeHolder: 'E.g. Timer shows wrong value after pause/resume...',
+    const symptomInput = await vscode.window.showInputBox({
+        prompt: 'Describe the bug (or leave empty to scan for any issues)',
+        placeHolder: 'E.g. Timer shows wrong value after pause/resume... (optional)',
         ignoreFocusOut: true,
     });
-    if (!symptom) return; // user cancelled
+    if (symptomInput === undefined) return; // user pressed Escape — cancel
+    const symptom = symptomInput.trim(); // empty string is OK — orchestrate handles fallback
 
     // ── Status bar progress ──
     const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);

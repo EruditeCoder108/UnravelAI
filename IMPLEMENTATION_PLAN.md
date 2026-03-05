@@ -417,11 +417,11 @@ These were in the original Phase 3 plan but not built. They're presentation laye
 
 ---
 
-### Phase 3.5 — "Pre-Publish Hardening" 📋 REQUIRED BEFORE PUBLISHING
+### Phase 3.5 — "Pre-Publish Hardening" ✅ COMPLETE
 
 **Goal:** Fix the two concrete gaps discovered during Bug 8 benchmark verification. These are engine-level issues that will cause silent misses or degraded analysis on real user code.
 
-**Trigger:** Now. These must be done before any public benchmark claims are published.
+**Completed:** Both items verified with 3 runs of Bug 8 on the live site.
 
 **What the Bug 8 verification revealed:**
 
@@ -475,13 +475,178 @@ Right now the warning is buried in one evidence item. It must be top-level. A di
 
 ---
 
-### Phase 4 — "Intelligence Layer" 📋 PLANNED
+### Phase 3.6 — "File Handling Hardening" ✅ COMPLETE
+
+**Goal:** Harden the file upload and GitHub fetch flows. Add Router-first optimization and allow symptom-free scanning.
+
+**Completed:** All items verified with successful builds of both web app and VS Code extension.
+
+| Task | Status |
+|------|--------|
+| VS Code allows empty symptom (scan mode) | ✅ |
+| Router-first GitHub fetch (pick files before downloading) | ✅ |
+| Symptom field marked "optional" in both web + VS Code | ✅ |
+| Rebuilt .vsix v0.2.0 with all Phase 3.5 + 3.6 changes | ✅ |
+
+---
+
+### Phase 4A — "Analysis Modes & Output Control" 📋 PLANNED
+
+**Goal:** Transform Unravel from a single-mode debugger into a multi-mode analysis platform with user-controlled output. Users pick what they need; the engine delivers only that.
+
+**Trigger:** Before adding more features. The current "output everything" approach won't scale.
+
+**Why this comes first:** Every feature after this (security scan, project explainer, web search) needs the mode system to exist. Building them without it means every new mode dumps a novel. This is the architectural foundation for Phase 4B and beyond.
+
+#### 4A.1 — Analysis Mode Selector
+
+Three modes, each with a different system prompt and output schema:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Choose Analysis Mode                                        │
+│                                                              │
+│  🐛 Debug Mode         (default — current behavior)          │
+│     Find bugs, trace root cause, provide fix                 │
+│                                                              │
+│  🔍 Explain Mode       (new)                                 │
+│     Understand this project — architecture, data flow,       │
+│     entry points, how components connect                     │
+│                                                              │
+│  🛡️ Security Scan      (new)                                 │
+│     Find vulnerabilities — injection, hardcoded secrets,     │
+│     unsafe DOM ops, missing auth, CSRF exposure              │
+│                                                              │
+│  📊 Code Review        (future — Phase 5)                    │
+│     Quality audit — patterns, anti-patterns, complexity      │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Implementation:**
+- New `buildExplainPrompt()` and `buildSecurityPrompt()` in `config.js`
+- `orchestrate()` receives a `mode` option: `'debug' | 'explain' | 'security'`
+- Each mode has its own output schema (explain mode doesn't need `minimalFix`, security mode doesn't need `whyAILooped`)
+- AST engine serves all modes (mutations are relevant to security too)
+
+**VS Code:** Mode selector dropdown in extension settings + quick-pick popup before analysis.
+
+#### 4A.2 — Output Section Controls
+
+Before running the analysis, user picks which sections they want in the report:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Output Sections                          [All] [Minimal]    │
+│                                                              │
+│  ☑ 🎯 Root Cause + Evidence              (always on)        │
+│  ☑ 🔧 Minimal Fix                        (always on)        │
+│  ☑ 📊 Variable State Table                                  │
+│  ☐ ⏱️ Execution Timeline                                    │
+│  ☐ 🔄 Why AI Tools Loop                                     │
+│  ☐ 💡 Concept Extraction + Analogy                          │
+│  ☐ 📋 Reproduction Steps                                    │
+│  ☑ 🤖 AI Fix Prompt                                         │
+│  ☐ 📉 Confidence Evidence                                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Presets:**
+- **Quick Fix** — Root Cause + Fix + AI Prompt only (fastest, cheapest)
+- **Developer** — Root Cause + Fix + Variables + Timeline (technical depth)
+- **Full Report** — Everything (current behavior, default for beginners)
+- **Custom** — Pick your own
+
+**Implementation:**
+- The system prompt already forces all 8 phases of reasoning. What changes is the **output schema** — we only request the sections the user checked.
+- Smaller output schema = fewer tokens = faster response + lower cost.
+- Sections are passed as an `outputSections` array in the orchestrate options.
+- The prompt's output instruction dynamically lists only the requested fields.
+
+**VS Code:** Configurable in `settings.json` under `unravel.outputSections` and `unravel.outputPreset`. Default: `"developer"`. This means users set their preference once and it applies to every analysis.
+
+#### 4A.3 — Web App UX Redesign
+
+Current: all inputs on one page, all outputs dump at once.
+
+New: structured flow with clear panels.
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  STEP 1: Input                                             │
+│  ┌──────────┬────────────┬──────────────┐                  │
+│  │ 📋 Paste │ 📁 Upload  │ 🐙 GitHub    │                  │
+│  └──────────┴────────────┴──────────────┘                  │
+│                                                            │
+│  STEP 2: Configure                                         │
+│  ┌─────────────┬───────────────┬──────────────────┐        │
+│  │ 🐛 Debug    │ 🔍 Explain    │ 🛡️ Security     │        │
+│  └─────────────┴───────────────┴──────────────────┘        │
+│  [Quick Fix ▼] — preset dropdown for output sections       │
+│                                                            │
+│  STEP 3: Describe (optional)                               │
+│  ┌──────────────────────────────────────────────┐          │
+│  │ What's going wrong? (leave empty to scan)    │          │
+│  └──────────────────────────────────────────────┘          │
+│                                                            │
+│  [▶ ANALYZE]                                               │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Key design decisions:**
+- Mode selection is a clear visual step, not buried in settings
+- Output preset is a dropdown, not a long checklist (but "Custom" opens the checklist)
+- Symptom is the LAST step, after mode — because the mode affects what the engine looks for
+
+#### 4A.4 — VS Code Extension Settings
+
+```json
+{
+    "unravel.mode": {
+        "type": "string",
+        "enum": ["debug", "explain", "security"],
+        "default": "debug",
+        "description": "Analysis mode: debug (find bugs), explain (understand code), security (find vulnerabilities)"
+    },
+    "unravel.outputPreset": {
+        "type": "string",
+        "enum": ["quick", "developer", "full", "custom"],
+        "default": "developer",
+        "description": "How much detail to include in the report"
+    },
+    "unravel.outputSections": {
+        "type": "array",
+        "default": ["rootCause", "minimalFix", "variableState", "timeline", "aiPrompt"],
+        "description": "Custom sections to include (used when outputPreset is 'custom')"
+    },
+    "unravel.level": {
+        "type": "string",
+        "enum": ["beginner", "vibe", "basic", "intermediate"],
+        "default": "intermediate",
+        "description": "Your coding level — affects explanation depth"
+    },
+    "unravel.language": {
+        "type": "string",
+        "enum": ["english", "hinglish", "hindi"],
+        "default": "english",
+        "description": "Output language"
+    }
+}
+```
+
+**VS Code command palette:**
+- `Unravel: Debug This File` (existing)
+- `Unravel: Explain This File` (new — shortcut for explain mode)
+- `Unravel: Security Scan This File` (new — shortcut for security mode)
+
+---
+
+### Phase 4B — "Intelligence Layer" 📋 PLANNED
 
 **Goal:** Adversarial multi-agent debate. Variable Trace UI. Code diff. Symptom-independent static analysis.
 
 **Trigger:** First reports of confident-but-wrong diagnoses from real users. Do not build speculatively.
 
-#### 4.1 — Hypothesis Elimination Model + Adversarial Debate
+#### 4B.1 — Hypothesis Elimination Model + Adversarial Debate
 
 **The pipeline upgrade.** Current Phase 3–5 in the 8-phase reasoning is: Simulate → Root Cause. This commits to a single explanation too early.
 
@@ -529,7 +694,7 @@ Do not anchor to any previous hypothesis. Approach from first principles only.
 
 **Cost control:** Only activate multi-agent when single-agent confidence < 80%. Prevents 3x API cost on every analysis.
 
-#### 4.2 — Variable Trace ("Where Did It Break?")
+#### 4B.2 — Variable Trace ("Where Did It Break?")
 
 The killer feature. The AST engine already has this data. This is a presentation layer.
 
@@ -561,7 +726,7 @@ Developer sees: where it started, where it changed, where it manifested. This is
 
 **VS Code integration:** Click the 🔴 overlay → Variable Trace panel opens in sidebar with clickable lifecycle lines.
 
-#### 4.3 — Function-Level Code Slicing + Router Hardening
+#### 4B.3 — Function-Level Code Slicing + Router Hardening
 
 ```
 Full project:   47 files, 12,000 lines
@@ -584,7 +749,7 @@ Result: deterministic file selection, not probabilistic.
 
 The AST already has function call data, variable read/write locations, and import paths. The router should use this as hard constraints, not just AI judgment.
 
-#### 4.4 — Visual Diff Output
+#### 4B.4 — Visual Diff Output
 
 ```diff
  function pause(){
@@ -600,11 +765,11 @@ The AST already has function call data, variable read/write locations, and impor
  }
 ```
 
-#### 4.5 — Benchmark Expansion
+#### 4B.5 — Benchmark Expansion
 
 Expand 10-bug suite to 20+ bugs. Include cross-file bugs and multi-component React bugs.
 
-#### 4.6 — Symptom-Independent AST Scan ⏱️ 1–2 hours
+#### 4B.6 — Symptom-Independent AST Scan ⏱️ 1–2 hours
 
 Currently the AST facts are injected but the pipeline reasons strictly toward the reported symptom. Add a second AST pass that runs completely independent of the symptom — flags everything suspicious regardless of what the user reported:
 - Mutation of objects inside arrays
@@ -614,7 +779,7 @@ Currently the AST facts are injected but the pipeline reasons strictly toward th
 
 This becomes a separate **"Static Warnings"** section in the report. These aren't necessarily bugs — they're code smells worth knowing about. Key risk: noise. Needs a severity threshold or it'll dump 50 warnings on a 5-file project.
 
-#### 4.7 — Hypothesis Elimination Scoring ⏱️ 2 hours
+#### 4B.7 — Hypothesis Elimination Scoring ⏱️ 2 hours
 
 Right now hypotheses are generated and the surviving one is reported. Add explicit elimination reasoning to the output — not just "hypothesis 2 eliminated" but:
 
@@ -625,7 +790,7 @@ four mutation functions — missing emit is not possible.
 
 Forces the model to show its elimination work, not just its conclusion. Makes confident-wrong outputs harder to produce. Makes the output auditable.
 
-#### 4.8 — Symptom Contradiction Check ⏱️ 1 hour
+#### 4B.8 — Symptom Contradiction Check ⏱️ 1 hour
 
 Add a rule in Phase 1 (INGEST) that checks: does the symptom description contradict anything the AST already knows?
 
@@ -633,7 +798,7 @@ Example: user says "event isn't firing" but AST shows `addEventListener` is corr
 
 This implements Anti-Sycophancy Rule 2 at the pipeline level, not just the prompt level. Implemented inside Phase 1 rather than as a separate "Phase 0" to avoid an extra LLM call — the model already reads everything during INGEST.
 
-#### 4.9 — Multi-Symptom Mode ⏱️ 2 hours
+#### 4B.9 — Multi-Symptom Mode ⏱️ 2 hours
 
 The Bug 8 second run proved that a broader symptom unlocks more bugs. Add an optional **"Deep Scan"** mode where Unravel runs the pipeline three times with three different symptom framings derived from the same code:
 - "UI not updating"
@@ -644,7 +809,13 @@ Then merges the findings. Catches layered bugs that single-symptom analysis miss
 
 **Key implementation concern:** Merging three pipeline outputs requires deduplication logic for findings that appear in multiple framings. 3x cost — opt-in only.
 
-**Phase 4 verification:**
+**Phase 4A verification:**
+- All 3 modes produce correctly scoped output (no minimalFix in explain mode, etc.)
+- Output presets filter sections correctly
+- VS Code settings persist and apply to analyses
+- Web UX flow works: Input → Mode → Configure → Analyze
+
+**Phase 4B verification:**
 - Multi-agent RCA delta vs single-agent > 10%? If not, reassess complexity cost
 - Agent B produces genuinely independent hypotheses (test on 5 known bugs)
 - Agent C cannot propose new hypotheses (constraint working)
@@ -657,6 +828,25 @@ Then merges the findings. Catches layered bugs that single-symptom analysis miss
 ### Phase 5 — "The Breakthrough" 📋 PLANNED
 
 **Trigger:** Real user base asking for it. Build nothing in this phase speculatively.
+
+#### 5.0 — Web Search Integration (Online Help Discovery)
+
+When the engine detects a bug that looks like a known library issue, version mismatch, or deprecated API usage, search for existing solutions online.
+
+**Flow:**
+```
+Orchestrate detects: "TypeError: model.generateContent is not a function"
+  → Recognizes this as an external dependency issue
+  → Searches: GitHub Issues, Stack Overflow, npm changelogs
+  → Returns: "This was fixed in @google/generative-ai v0.22.0. You're on v0.19.0."
+```
+
+**Implementation options:**
+- Google Custom Search API (paid, reliable)
+- GitHub Issues search API (free, scoped to repos)
+- Prompt-level hint (free, uses LLM training data): *"If this looks like a version mismatch or known library issue, say so and suggest checking the library's changelog/GitHub issues."*
+
+**Start with the free option (prompt hint). Add API search only after user demand is proven.**
 
 #### 5.1 — Instrumentation Without Execution (Intermediate Step)
 
@@ -795,38 +985,38 @@ POST /analyze
 ## Where We Are Right Now
 
 ```
-PHASE 1   ✅  Web app, 8-phase pipeline, SOTA models, anti-sycophancy
-PHASE 2   ✅  AST pre-analysis, 10-bug dev proxy, open source
-              ⏳ Preliminary Flash run done (15→20% RCA, 0% HR)
-              ⏳ Full Opus/Pro benchmark still pending
-PHASE 3   ✅  Core engine extracted, VS Code / Cursor / Windsurf extension working end-to-end
-              ✅ Web app UX: file list, remove, append, GitHub import
-              ⏳ Advanced decorations (🟠🟡🔵) deferred to Phase 4
-              ⏳ Clickable sidebar tree deferred to Phase 4
-              ⏳ [Apply Fix] button deferred to Phase 4
-PHASE 3.5 📋  Pre-publish hardening (object property mutation + input completeness)
-              ⏱️ ~3 hours total — MUST complete before benchmark is published
-PHASE 4   📋  Hypothesis elimination + adversarial debate + Variable Trace
-              + Symptom-independent AST, elimination scoring, contradiction check,
-                multi-symptom mode
-PHASE 5   📋  Instrumented execution (iframe first, then WebContainers)
-PHASE 6   📋  Pattern database
-PHASE 7   📋  50-bug credibility benchmark — the number that opens doors
+PHASE 1    ✅  Web app, 8-phase pipeline, SOTA models, anti-sycophancy
+PHASE 2    ✅  AST pre-analysis, 10-bug dev proxy, open source
+               ⏳ Full Opus/Pro benchmark still pending
+PHASE 3    ✅  Core engine extracted, VS Code extension working end-to-end
+               ✅ Web app UX: file list, remove, append, GitHub import
+PHASE 3.5  ✅  Pre-publish hardening (MemberExpression detection + input completeness)
+               ✅ Verified with 3 Bug 8 runs — flawless
+PHASE 3.6  ✅  File handling hardening (Router-first GitHub, empty symptom support)
+               ✅ VSIX v0.2.0 rebuilt with all changes
+PHASE 4A   📋  Analysis modes (Debug/Explain/Security) + output controls
+               + Web app UX redesign + VS Code settings expansion
+PHASE 4B   📋  Intelligence layer: adversarial debate, Variable Trace,
+               code slicing, elimination scoring, multi-symptom mode
+PHASE 5    📋  Web search integration + instrumented execution + CLI tool
+PHASE 6    📋  Pattern database
+PHASE 7    📋  50-bug credibility benchmark — the number that opens doors
 ```
 
 **What exists and works right now:**
-- Web app on Netlify with folder upload, GitHub import, 3 input methods
-- VS Code / Cursor / Windsurf extension as .vsix — right-click debug with squigglies, overlays, hover, sidebar
+- Web app on Netlify with folder upload, GitHub import (Router-first), 3 input methods
+- VS Code / Cursor / Windsurf extension as .vsix v0.2.0 — right-click debug with squigglies, overlays, hover, sidebar
 - Core engine: `orchestrate(files, symptom, options)` — one function, all platforms
+- AST engine with MemberExpression mutation detection + input completeness check
+- Empty-symptom scanning mode (engine finds issues on its own)
 - 10-bug development proxy with runner and preliminary results
 - README, LICENSE, STORY.md — launch-ready
 
-**What's needed before publishing benchmark:**
-1. Phase 3.5.1 — Object property mutation detection in AST (~2-3 hours)
-2. Phase 3.5.2 — Input completeness check (~30 min)
+**What's next:**
+1. Ship current version — gather real user feedback
+2. Phase 4A — Analysis modes + output controls (this is the UX foundation)
 3. Full proxy benchmark run with Claude Opus or Gemini Pro (paid credits)
 4. Launch posts (Dev.to, Reddit, YouTube, LinkedIn)
-5. Get first real users and feedback
 
 ---
 

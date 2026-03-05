@@ -754,7 +754,21 @@ console.log(result.report.minimalFix);
 - **3.5.1 — Object Property Mutation Detection in AST:** The `extractMutationChains` function now catches property mutations (`task.status = newStatus`) on objects inside arrays.
 - **3.5.2 — Input Completeness Check:** Before the pipeline runs, every uploaded file is checked for truncation signals (missing HTML closing tags, unclosed JS/TS braces, suspicious CSS size). Truncated files surface a top-level warning banner.
 
-## Phase 4: Intelligence Layer (Planned)
+## Phase 3.6: File Handling Hardening (Complete)
+
+- **3.6.1 — Router-first GitHub repo import:** Uses the Router Agent to select relevant files from the repo tree before fetching raw file content to save tokens/time.
+- **3.6.2 — Empty-Symptom Support:** Ensures users can submit an empty symptom field in both the Web App and VS Code Extension, allowing the engine to scan for issues autonomously.
+
+## Phase 4A: Analysis Modes & Output Control (Planned)
+
+Transform from a single-mode debugger to a multi-mode platform. New modes:
+- **🐛 Debug:** Find bugs, trace root cause, provide fix
+- **🔍 Explain:** Architecture, data flow, how components connect
+- **🛡️ Security Scan:** Injection vulnerabilities, hardcoded secrets, CSRF
+
+Includes Web App UX redesign (Input → Mode → Configure flow) and VS Code settings for output presets (Quick Fix vs Full Report).
+
+## Phase 4B: Intelligence Layer (Planned)
 
 **Goal:** Adversarial multi-agent debate. Variable Trace UI. Code diff. Symptom-independent static analysis.
 **Trigger:** First reports of confident-but-wrong diagnoses from real users. Do not build speculatively.
@@ -817,7 +831,10 @@ Intersection of all three = the exact subgraph the AI needs.
  }
 ```
 
-## Phase 5: Execution Layer (Planned)
+## Phase 5: The Breakthrough (Planned)
+
+### 5.0 — Web Search Integration
+When the engine detects a bug that looks like a known library issue, version mismatch, or deprecated API usage, it searches for existing solutions online (e.g., GitHub issues, Stack Overflow, NPM changelogs).
 
 ### 5.1 — Instrumentation Without Execution (First)
 Inject logging at AST-identified mutation points → run in sandboxed iframe → capture variable values. 80% of the value, 20% of the risk.
