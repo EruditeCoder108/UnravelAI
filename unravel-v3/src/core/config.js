@@ -58,7 +58,7 @@ export const PROVIDERS = {
                 systemInstruction: { parts: [{ text: systemPrompt }] },
                 generationConfig: {
                     responseMimeType: 'application/json',
-                    maxOutputTokens: isGemini3 ? 65536 : 16000,
+                    maxOutputTokens: isGemini3 ? 65536 : 32000,
                     thinkingConfig,
                 },
             };

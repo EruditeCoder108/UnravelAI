@@ -276,11 +276,16 @@ export default function App() {
             });
 
             // If orchestrate returned with a report, show it
+            // Handle both { report: {...} } and flat { bugType, rootCause, ... } shapes
             if (result?.report) {
                 setReport(result.report);
                 setStep(4);
+            } else if (result?.bugType || result?.rootCause) {
+                // Model returned report fields at top level instead of nested
+                setReport(result);
+                setStep(4);
             } else if (!result?.needsMoreInfo) {
-                throw new Error('Unexpected engine response format.');
+                throw new Error('Unexpected engine response format. The model returned data we could not display.');
             }
 
         } catch (err) {

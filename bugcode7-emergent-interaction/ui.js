@@ -7,8 +7,7 @@ const refreshBtn = document.getElementById('refreshBtn');
 
 async function render() {
     listEl.innerHTML = "Loading...";
-    // Asks Module A for the users. 
-    // Always gets the stale cache after the first load!
+    // Asks Module A for the users.
     const users = await dataStore.fetchUsers();
 
     listEl.innerHTML = '';
@@ -28,13 +27,11 @@ addBtn.addEventListener('click', async () => {
     inputEl.value = '';
 
     // Developer expects render() to show the new user
-    // Emergent bug: UI calls store.fetchUsers(), store returns stale cache.
-    // The new user is in the database, but never appears on screen.
     render();
 });
 
 refreshBtn.addEventListener('click', () => {
-    // Even an explicit UI refresh won't fix it, because the cache is locked!
+    // Even an explicit UI refresh won't fix it
     render();
 });
 

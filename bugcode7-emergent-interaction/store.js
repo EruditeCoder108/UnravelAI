@@ -15,7 +15,6 @@ export const dataStore = {
     },
 
     // Module B: writing logic (written by a different dev)
-    // BUG: This updates the SERVER, but forgets to invalidate `cachedUsers` in Module A!
     addNewUser: async (name) => {
         console.log("Sending new user to API...");
         await api.addUser(name);

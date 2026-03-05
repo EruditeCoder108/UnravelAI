@@ -9,10 +9,6 @@ async function syncUI() {
     balanceDisplay.textContent = `$${current}`;
 }
 
-// BUG: This function simulates a race condition.
-// If a user clicks +$10 and +$50 quickly, two concurrent identical functions run.
-// Both await the OLD balance, add their respective amounts, and save.
-// Whichever completes last overwrites the first one completely.
 async function addFundsBuggy(amount) {
     // 1. Fetch current balance
     const currentBalance = await api.fetchBalance();

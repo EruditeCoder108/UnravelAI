@@ -9,10 +9,7 @@ function convertFtoC(f) {
     return (f - 32) * 5 / 9;
 }
 
-// BUG: Hidden Feedback Loop.
-// When you type in Celsius, it updates Fahrenheit's value and explicitly triggers its input event.
-// The Fahrenheit listener runs, updates Celsius, and explicitly triggers its input event.
-// This creates an infinite ping-pong loop that immediately freezes the browser.
+
 
 celsiusInput.addEventListener('input', (e) => {
     const c = parseFloat(e.target.value);

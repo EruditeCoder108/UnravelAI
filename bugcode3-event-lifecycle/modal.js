@@ -18,8 +18,6 @@ class ModalViewer {
         this.overlay.classList.add('active');
         this.log('Modal opened.');
 
-        // BUG: Using .bind(this) creates a BRAND NEW function instance in memory.
-        // It does not refer to the existing prototype method.
         document.addEventListener('keydown', this.handleKey.bind(this));
     }
 
@@ -27,9 +25,6 @@ class ModalViewer {
         this.overlay.classList.remove('active');
         this.log('Modal closed.');
 
-        // BUG: Since .bind(this) is called again, this creates another brand new function instance.
-        // removeEventListener won't find a match, so the event listener is NEVER removed.
-        // It leaks memory and fires multiple times if opened and closed repeatedly.
         document.removeEventListener('keydown', this.handleKey.bind(this));
     }
 

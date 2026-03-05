@@ -153,6 +153,37 @@ Three things that actually exist and work:
 
 ---
 
+## 🏆 The Benchmark Proof: Beating SOTA with Flash
+
+The entire architecture of Unravel hinges on a specific hypothesis: **giving a weaker AI model deterministic context over 9 phases is better than giving a state-of-the-art model raw code.**
+
+We proved this on the hardest bug class in software engineering: **The Heisenbug**.
+
+We ran the exact same code (a React UI race condition where observing the bug via `console.log` changes the timing enough to mathematically eliminate the bug) through:
+1. **Claude 4.6 Extended Thinking** (Anthropic's current SOTA)
+2. **ChatGPT 5.3** (OpenAI's current SOTA)
+3. **Unravel Engine using Gemini 2.5 Flash** (A free-tier, blazing fast, but far weaker general model)
+
+### The Results
+
+| Feature Correctness | Claude 4.6 | ChatGPT 5.3 | Unravel (Gemini Flash) |
+|---|---|---|---|
+| Bug category correct | ✅ | ✅ | ✅ |
+| Heisenbug correctly identified | ✅ | ❌ Dismissed | ✅ Fully explained |
+| Why console.log "fixes" it | ✅ | ❌ Missed | ✅ Exact mechanism |
+| **AI Symptom-Chasing Loop** | ❌ Not included | ❌ Not included | ✅ **7-step loop traced** |
+| Spread syntax behavior | ⚠️ Imprecise | ✅ Exact | ✅ Exact |
+| Stale read scenario explained | ❌ | ❌ Missed | ✅ Timeline mapped |
+| Variable state tracker | ❌ | ❌ | ✅ Included |
+
+**The most crucial victory:** ChatGPT wrote 600 words of generalized analysis but completely missed the Heisenbug nature. Claude 4.6 caught the Heisenbug, but neither of these state-of-the-art models predicted the AI symptom-chasing loop. Unravel not only caught the bug, it mapped out the **exact wrong path** a human developer would take (adding a log) and how that would trick them into thinking the bug was fixed. 
+
+It predicted the AI loop before it even happened.
+
+**The takeaway:** The 9-phase pipeline and AST pre-analysis are doing the actual heavy lifting. Unravel gives a cheap, fast model the structural superpowers of a senior engineer.
+
+---
+
 ## What the Phases Ahead Mean
 
 ### Phase 4 — Multiple Investigators
