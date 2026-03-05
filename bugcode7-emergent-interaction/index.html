@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergent Interaction (Cache Desync)</title>
+    <style>
+        body {
+            font-family: system-ui;
+            padding: 2rem;
+            background: #e0f2fe;
+        }
+
+        .app-container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        li {
+            padding: 0.5rem;
+            background: #f3f4f6;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        input {
+            flex: 1;
+            padding: 0.5rem;
+        }
+
+        button {
+            padding: 0.5rem 1rem;
+            background: #0284c7;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-container">
+        <h2>Team Roster</h2>
+        <ul id="rosterList">Loading...</ul>
+
+        <div class="controls">
+            <input type="text" id="newName" placeholder="New member name">
+            <button id="addBtn">Add Member</button>
+        </div>
+        <button id="refreshBtn" style="margin-top:1rem; width: 100%; background: #475569;">⟳ Refresh UI</button>
+    </div>
+
+    <!-- Using modules to simulate emergent interaction across multiple files -->
+    <script type="module" src="ui.js"></script>
+</body>
+
+</html>

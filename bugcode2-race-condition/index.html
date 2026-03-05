@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Dashboard</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            padding: 2rem;
+            background: #f4f4f5;
+        }
+
+        .card {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .balance {
+            font-size: 3rem;
+            font-weight: bold;
+            margin: 1rem 0;
+            color: #10b981;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        button {
+            padding: 0.5rem 1rem;
+            border: none;
+            background: #3b82f6;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1rem;
+        }
+
+        button:active {
+            background: #2563eb;
+        }
+
+        .log {
+            margin-top: 2rem;
+            text-align: left;
+            font-size: 0.9rem;
+            color: #6b7280;
+            height: 150px;
+            overflow-y: auto;
+            background: #f9fafb;
+            padding: 1rem;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h2>Account Balance</h2>
+        <div class="balance" id="balanceDisplay">$100</div>
+        <div class="buttons">
+            <button id="add10">+ $10</button>
+            <button id="add50">+ $50</button>
+        </div>
+        <div class="log" id="log"></div>
+    </div>
+    <script type="module" src="app.js"></script>
+</body>
+
+</html>

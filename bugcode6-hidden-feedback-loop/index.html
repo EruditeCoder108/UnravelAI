@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temperature Converter (Feedback Loop)</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 2rem;
+            background: #fafafa;
+        }
+
+        .converter {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        input {
+            padding: 0.5rem;
+            font-size: 1.2rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .warning {
+            color: red;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="converter">
+        <h2>Live Converter</h2>
+        <div class="input-group">
+            <label>Celsius</label>
+            <input type="number" id="celsius" placeholder="0">
+        </div>
+        <div class="input-group">
+            <label>Fahrenheit</label>
+            <input type="number" id="fahrenheit" placeholder="32">
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

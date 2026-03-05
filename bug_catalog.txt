@@ -1,0 +1,68 @@
+====================================
+UNRAVEL BUG CODE CATALOG
+====================================
+
+This file catalogs the intentionally buggy applications built to test the Unravel debugging engine.
+
+------------------------------------
+1. Pomodoro Timer
+------------------------------------
+- Folder: /bugcode1 pomodoro
+- Bug Type: STATE_MUTATION (also conceptually STALE_CLOSURE/LIFECYCLE)
+- Difficulty: Medium
+- Files: index.html, styles.css, script.js
+- Description: When the user pauses the timer, the `duration` variable (which is meant to store the total time for the current mode, e.g., 25 mins) is overwritten with the `remaining` time. When the user resumes, or restarts, the internal state of the timer is permanently corrupted.
+
+------------------------------------
+2. Bank Dashboard Add Funds
+------------------------------------
+- Folder: /bugcode2-race-condition
+- Bug Type: ASYNC_ORDERING / RACE_CONDITION
+- Difficulty: Hard
+- Files: index.html, api.js, app.js
+- Description: A classic race condition. The UI has two buttons: +10 and +50. If the user clicks both rapidly, two async functions fire simultaneously. Both fetch the same initial balance (e.g., 100), then add their respective amounts, and then save back to the API. Whichever finishes last overwrites the first. The data from the first click is silently lost.
+
+------------------------------------
+3. Modal Dialog Viewer
+------------------------------------
+- Folder: /bugcode3-event-lifecycle
+- Bug Type: EVENT_LIFECYCLE / MEMORY_LEAK
+- Difficulty: Medium
+- Files: index.html, modal.js
+- Description: A modal that closes when the Escape key is pressed. The bug happens in the `open` and `close` functions. The event listener is attached using `document.addEventListener('keydown', this.handleKey.bind(this))`. When removing it, `.bind(this)` is called again. Because `bind` creates a new function reference in memory every time it is called, `removeEventListener` fails to find the original function. The event listener leaks and stacks up every time the modal opens.
+
+------------------------------------
+4. Tip Calculator
+------------------------------------
+- Folder: /bugcode4-type-coercion
+- Bug Type: TYPE_COERCION
+- Difficulty: Easy
+- Files: index.html, script.js
+- Description: A seemingly simple calculator script. It calculates the tip by multiplying `subtotal * tipPercentage`. JS invisibly coerces the string subtotal to a number for multiplication. However, on the next line: `total = subtotal + tipAmount`, the `+` operator sees the string `subtotal` and decides to do string concatenation instead of math. `50.00` + `7.5` becomes `"50.007.5"`.
+
+------------------------------------
+5. The Heisenbug (Observation Effect)
+------------------------------------
+- Folder: /bugcode5-heisenbug
+- Bug Type: RACE_CONDITION / HEISENBUG
+- Difficulty: Very Hard
+- Files: index.html, script.js
+- Description: Fetches two chunks of data concurrently. The developer failed to resolve them safely, causing a race condition on assignment. If a developer tries to debug this by adding `console.log(settings)` inside the first `.then()`, the tiny 5ms delay caused by synchronous logging shifts the microtask queue just enough that the bug disappears entirely. The act of observing the bug fixes the bug.
+
+------------------------------------
+6. Temperature Converter
+------------------------------------
+- Folder: /bugcode6-hidden-feedback-loop
+- Bug Type: HIDDEN_FEEDBACK_LOOP / EVENT_RECURSION
+- Difficulty: Medium
+- Files: index.html, script.js
+- Description: A live temperature converter. When Celsius is typed, it updates Fahrenheit and explicitly dispatches an `input` event. The Fahrenheit listener runs, updates Celsius, and dispatches an `input` event. The two listeners ping-pong infinitely, completely freezing the browser tab instantly.
+
+------------------------------------
+7. Team Roster Sync
+------------------------------------
+- Folder: /bugcode7-emergent-interaction
+- Bug Type: EMERGENT_INTERACTION / CACHE_DESYNC
+- Difficulty: Hard
+- Files: index.html, server.js, store.js, ui.js
+- Description: A multi-file architecture. The `ui.js` file reads from `store.js` which reads from `server.js`. The store caches the GET request aggressively. When the UI adds a new user, it calls a POST method in `store.js` which successfully adds it to the server. But `store.js` forgets to invalidate the local cache. The UI refreshes, calls GET again, and receives the stale cached list. The data exists on the backend but the UI is permanently out of sync.
