@@ -351,7 +351,7 @@ Router-first GitHub repo import (picks relevant files before downloading). Suppo
 Transform from single-mode debugger to multi-mode platform. New modes: **Debug**, **Explain**, and **Security Scan**. Output presets (Quick Fix vs Full Report). Web App UX redesign (Input → Mode → Configure flow) and expanded VS Code settings.
 
 ### Phase 4B — Intelligence Layer `PLANNED`
-Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom contradiction check. Function-level code slicing. **Adversarial multi-agent debate** — three agents independently diagnose the same bug and attack hypotheses. Variable Trace UI and Visual diff output.
+Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom contradiction check. Function-level code slicing. **Adversarial multi-agent debate** — three agents independently diagnose the same bug and attack hypotheses. Variable Trace UI and Visual diff output. *(Note: **Self-Healing Context** — where the engine automatically fetches missing files from GitHub mid-analysis — was ✅ **BUILT EARLY**).*
 
 ### Phase 5 — The Breakthrough `PLANNED`
 Web Search integration (finds GitHub issues/version mismatches based on error signatures). WebContainers for live in-browser code execution. Real instrumented bug replay. Interactive D3.js dependency graph. Debug Journal ("What did I learn?"). CLI tool + OpenClaw integration. Desktop app.

@@ -643,8 +643,18 @@ New: structured flow with clear panels.
 ### Phase 4B — "Intelligence Layer" 📋 PLANNED
 
 **Goal:** Adversarial multi-agent debate. Variable Trace UI. Code diff. Symptom-independent static analysis.
+*(Note: One feature from this phase was built early during Phase 3.6).*
 
 **Trigger:** First reports of confident-but-wrong diagnoses from real users. Do not build speculatively.
+
+#### 4B.0 — Self-Healing Context (Recursive Fetching) ✅ BUILT EARLY (Phase 3.6)
+
+**The pipeline upgrade:** The engine can realize mid-analysis that it lacks critical context.
+- Identifies missing files needed to accurately diagnose a bug.
+- Emits `missingFilesRequest` with specific paths.
+- Automatically fetches those files from the GitHub repository API.
+- Re-runs the entire AST-to-Diagnosis pipeline with the expanded context.
+- Capable of fuzzy-matching paths and exploring unfiltered trees (e.g. `.env`, `.yaml`).
 
 #### 4B.1 — Hypothesis Elimination Model + Adversarial Debate
 

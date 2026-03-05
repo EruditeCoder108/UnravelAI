@@ -35,6 +35,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         projectContext = '',
         onProgress,
         onMissingFiles,
+        _depth = 0,
     } = options;
 
     if (!provider || !apiKey || !model) {
@@ -121,12 +122,16 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     if (!result) throw new Error('Engine failed to produce structured output after retry. The model may be overloaded — try again or use a different model.');
 
     // ── Phase 4: Handle missing files or return ──
-    if (result.needsMoreInfo && result.missingFilesRequest && onMissingFiles) {
+    if (result.needsMoreInfo && result.missingFilesRequest && onMissingFiles && _depth < 2) {
+        onProgress?.(`SELF-HEAL: Engine requesting additional files (attempt ${_depth + 1}/2)...`);
         const additionalFiles = await onMissingFiles(result.missingFilesRequest);
         if (additionalFiles && additionalFiles.length > 0) {
             // Recursive call with the additional files appended
-            return orchestrate([...codeFiles, ...additionalFiles], symptom, options);
+            return orchestrate([...codeFiles, ...additionalFiles], symptom, { ...options, _depth: _depth + 1 });
         }
+    } else if (result.needsMoreInfo && _depth >= 2) {
+        console.warn('[Engine] Max self-heal depth (2) reached, proceeding with available files.');
+        onProgress?.('⚠️ Max file-fetch attempts reached. Analyzing with available context...');
     }
 
     // Attach context warnings to result so UI can show a top-level banner

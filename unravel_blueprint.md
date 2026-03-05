@@ -773,7 +773,14 @@ Includes Web App UX redesign (Input → Mode → Configure flow) and VS Code set
 **Goal:** Adversarial multi-agent debate. Variable Trace UI. Code diff. Symptom-independent static analysis.
 **Trigger:** First reports of confident-but-wrong diagnoses from real users. Do not build speculatively.
 
-### 4.0 — Pipeline Hardening
+*(Note: The Self-Healing Context feature from this phase was built early during Phase 3.6).*
+
+### 4.0 — Self-Healing Context (Recursive Fetching) ✅ BUILT EARLY
+The engine is no longer constrained by the initial file selection. If it realizes during analysis that critical context is missing (e.g., an imported class definition), it outputs a `missingFilesRequest`.
+- **GitHub Mode:** The orchestrator automatically pauses, fetches the exact requested files from the GitHub API (using fuzzy path matching if necessary), and recursively re-runs the entire AST pipeline with the expanded context.
+- **Manual Fallback:** Falls back to a manual paste UI for pasted/uploaded projects.
+
+### 4.1 — Pipeline Hardening
 - **Symptom-Independent AST Scan:** A second AST pass that runs completely independent of the symptom to flag suspicious patterns (like objects inside arrays, direct DOM references).
 - **Hypothesis Elimination Scoring:** Explicitly show reasoning for eliminating each hypothesis ("Hypothesis 2 eliminated: AST confirms...").
 - **Symptom Contradiction Check:** Check if the user symptom contradicts AST facts during Phase 1 INGEST.

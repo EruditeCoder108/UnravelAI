@@ -77,6 +77,7 @@ export default function App() {
     const [routerSelectedPaths, setRouterSelectedPaths] = useState([]);
 
     const dirInputRef = useRef(null);
+    const githubRepoContext = useRef(null); // Stores { owner, repo, branch, tree } for missing-files callback
 
     // Init model from provider
     React.useEffect(() => {
@@ -141,17 +142,24 @@ export default function App() {
         }
         const treeData = await treeRes.json();
 
-        // Filter valid source files
-        const validExts = ['.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.py', '.md', '.vue', '.svelte'];
+        // Full file tree (minus blacklist) — stored for missing-files lookup
         const blacklist = ['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '__pycache__', 'package-lock.json', 'yarn.lock'];
-        const allCandidates = (treeData.tree || []).filter(f =>
+        const allRepoFiles = (treeData.tree || []).filter(f =>
             f.type === 'blob'
             && f.size < 500000
-            && validExts.some(ext => f.path.endsWith(ext))
             && !blacklist.some(d => f.path.includes(`${d}/`) || f.path === d)
         );
 
+        // Filter to valid source files for the Router Agent
+        const validExts = ['.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.py', '.md', '.vue', '.svelte'];
+        const allCandidates = allRepoFiles.filter(f =>
+            validExts.some(ext => f.path.endsWith(ext))
+        );
+
         if (allCandidates.length === 0) throw new Error('No valid source files found in repo.');
+
+        // Store context for onMissingFiles callback
+        githubRepoContext.current = { owner, repo, branch, tree: allRepoFiles };
 
         // ── Router Agent: pick relevant files using the symptom ──
         let candidates = allCandidates;
@@ -308,11 +316,54 @@ export default function App() {
                 projectContext,
                 onProgress: (stage) => setLoadingStage(stage),
                 onMissingFiles: async (request) => {
-                    // Show the missing files UI
+                    const filesNeeded = request.filesNeeded || [];
+                    if (filesNeeded.length === 0) return null;
+
+                    // GitHub mode: auto-fetch from API
+                    if (inputType === 'github' && githubRepoContext.current) {
+                        const { owner, repo, branch, tree } = githubRepoContext.current;
+                        setLoadingStage(`SELF-HEAL: Fetching ${filesNeeded.length} additional files (${request.reason})...`);
+
+                        const additional = [];
+                        for (const requestedPath of filesNeeded) {
+                            // Normalize: strip repo prefix if present
+                            const cleanPath = requestedPath.startsWith(`${repo}/`)
+                                ? requestedPath.slice(repo.length + 1)
+                                : requestedPath;
+
+                            // Exact match in tree, or fuzzy match by filename
+                            let matchedEntry = tree.find(f => f.path === cleanPath);
+                            if (!matchedEntry) {
+                                const filename = cleanPath.split(/[\\/]/).pop();
+                                matchedEntry = tree.find(f =>
+                                    f.path.endsWith('/' + filename) || f.path === filename
+                                );
+                            }
+
+                            if (matchedEntry) {
+                                try {
+                                    const res = await fetch(
+                                        `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${matchedEntry.path}`
+                                    );
+                                    if (res.ok) {
+                                        const content = await res.text();
+                                        additional.push({ name: `${repo}/${matchedEntry.path}`, content });
+                                    }
+                                } catch { /* skip failed downloads */ }
+                            }
+                        }
+
+                        if (additional.length > 0) {
+                            console.log(`[SELF-HEAL] Fetched ${additional.length}/${filesNeeded.length} additional files`);
+                            return additional; // Orchestrator will recursively re-run
+                        }
+                        // If no files could be fetched, fall through to manual UI
+                    }
+
+                    // Non-GitHub / fallback: show manual paste UI
                     setMissingFileRequest(request);
-                    setAdditionalFiles((request.filesNeeded || []).map(f => ({ name: f, content: '' })));
+                    setAdditionalFiles(filesNeeded.map(f => ({ name: f, content: '' })));
                     setStep(3.5);
-                    // Return null — the user will click "Resume" which calls executeAnalysis(true)
                     return null;
                 },
             });
