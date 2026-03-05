@@ -72,9 +72,38 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         useSchema: true,
     });
 
+    // ── Phase 3: Parse Response ──
+    // raw might be a string (most cases) or already an object (Gemini structured output)
+    let result;
+    if (raw && typeof raw === 'object') {
+        // Already parsed — Gemini responseSchema can return pre-structured objects
+        result = raw;
+    } else {
+        result = parseAIJson(raw);
+    }
 
-    const result = parseAIJson(raw);
-    if (!result) throw new Error('Engine failed to produce structured output. Try again.');
+    // If parse failed, retry WITHOUT schema constraint (gives model more freedom)
+    if (!result) {
+        console.warn('[Engine] Structured output parse failed. Retrying without schema constraint...');
+        onProgress?.('RETRYING: Model response was malformed, retrying with relaxed constraints...');
+
+        const retryRaw = await callProvider({
+            provider,
+            apiKey,
+            model,
+            systemPrompt,
+            userPrompt: enginePrompt + '\n\nCRITICAL: You MUST respond with valid JSON only. No markdown fences, no explanation text. Just the raw JSON object.',
+            useSchema: false,
+        });
+
+        if (retryRaw && typeof retryRaw === 'object') {
+            result = retryRaw;
+        } else {
+            result = parseAIJson(retryRaw);
+        }
+    }
+
+    if (!result) throw new Error('Engine failed to produce structured output after retry. The model may be overloaded — try again or use a different model.');
 
     // ── Phase 4: Handle missing files or return ──
     if (result.needsMoreInfo && result.missingFilesRequest && onMissingFiles) {
