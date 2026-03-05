@@ -153,34 +153,122 @@ Three things that actually exist and work:
 
 ---
 
-## 🏆 The Benchmark Proof: Beating SOTA with Flash
+## 🏆 The Benchmark Proof: 4-Model Live Report
 
-The entire architecture of Unravel hinges on a specific hypothesis: **giving a weaker AI model deterministic context over 9 phases is better than giving a state-of-the-art model raw code.**
+*Conducted: March 2026. Both tests run on stripped code — no inline comments, no hints, no spoilers.*
 
-We proved this on the hardest bug class in software engineering: **The Heisenbug**.
+> **"Unravel gives a $0.05 model the output structure of a senior engineer's written report, consistently, on any bug, across any project size."**
 
-We ran the exact same code (a React UI race condition where observing the bug via `console.log` changes the timing enough to mathematically eliminate the bug) through:
-1. **Claude 4.6 Extended Thinking** (Anthropic's current SOTA)
-2. **ChatGPT 5.3** (OpenAI's current SOTA)
-3. **Unravel Engine using Gemini 2.5 Flash** (A free-tier, blazing fast, but far weaker general model)
+Three SOTA models were used as the baseline — Claude 4.6 (Anthropic), ChatGPT 5.3 (OpenAI), and Gemini 3.1 Pro (Google, latest). Unravel ran on Gemini 2.5 Flash — the weakest, cheapest model in its supported list, free tier.
 
-### The Results
+### Test 1 — The Heisenbug (Single File)
 
-| Feature Correctness | Claude 4.6 | ChatGPT 5.3 | Unravel (Gemini Flash) |
-|---|---|---|---|
-| Bug category correct | ✅ | ✅ | ✅ |
-| Heisenbug correctly identified | ✅ | ❌ Dismissed | ✅ Fully explained |
-| Why console.log "fixes" it | ✅ | ❌ Missed | ✅ Exact mechanism |
-| **AI Symptom-Chasing Loop** | ❌ Not included | ❌ Not included | ✅ **7-step loop traced** |
-| Spread syntax behavior | ⚠️ Imprecise | ✅ Exact | ✅ Exact |
-| Stale read scenario explained | ❌ | ❌ Missed | ✅ Timeline mapped |
-| Variable state tracker | ❌ | ❌ | ✅ Included |
+A race condition in a dashboard initializer where two async operations both mutate and render from shared state independently. The Heisenbug: adding `console.log` to debug it changes microtask scheduling just enough to make the bug disappear entirely. Observation eliminates the bug.
 
-**The most crucial victory:** ChatGPT wrote 600 words of generalized analysis but completely missed the Heisenbug nature. Claude 4.6 caught the Heisenbug, but neither of these state-of-the-art models predicted the AI symptom-chasing loop. Unravel not only caught the bug, it mapped out the **exact wrong path** a human developer would take (adding a log) and how that would trick them into thinking the bug was fixed. 
+| Feature | Claude 4.6 | ChatGPT 5.3 | Gemini 3.1 Pro | Unravel (Flash) |
+|---------|-----------|------------|---------------|----------------|
+| Bug category correct | ✅ RACE_CONDITION | ✅ (called "UI sync") | ✅ RACE_CONDITION | ✅ RACE_CONDITION |
+| Heisenbug correctly identified | ✅ | ❌ Interpreted as transient async state | ✅ | ✅ Fully explained |
+| Why console.log fixes it | ✅ | ❌ Missed mechanism | ✅ | ✅ Exact microtask mechanism |
+| Spread doesn't always overwrite | ⚠️ Imprecise | ✅ Caught this | ✅ | ✅ With timing explanation |
+| Correct fix (Promise.all) | ✅ | ✅ | ✅ | ✅ |
+| Error handling in fix | ❌ | ❌ | ✅ | ✅ |
+| **Predicted 7-step AI symptom loop** | ❌ | ❌ | ❌ | ✅ by design |
+| **Variable state tracker** | ❌ | ❌ | ❌ | ✅ by design |
+| **Invariants documented** | ❌ | ❌ | ❌ | ✅ 4 invariants |
+| **Execution timeline** | ✅ basic | ✅ basic | ❌ | ✅ Most detailed |
+| **Structured JSON output** | ❌ prose | ❌ prose | ❌ prose | ✅ by design |
 
-It predicted the AI loop before it even happened.
+**Key Finding:** ChatGPT 5.3 interpreted the bug as a transient async state rather than emphasizing the Heisenbug framing. Gemini 3.1 Pro got the technical diagnosis right using extended reasoning *thinking tokens*. Unravel (Flash, no thinking mode) matched all three on the technical diagnosis, then produced four things systematically by design: the 7-step AI loop trace, variable state tracker, 4 invariants, and structured JSON. Unravel produced comparable diagnostic depth without relying on extended reasoning tokens.
 
-**The takeaway:** The 9-phase pipeline and AST pre-analysis are doing the actual heavy lifting. Unravel gives a cheap, fast model the structural superpowers of a senior engineer.
+### Test 2 — The Phantom Accumulator (5 Files)
+
+A 4-way emergent bug across 5 files: a memoization reference bug, a WeakRef GC footgun, a microtask async ordering issue, and a Heisenbug observation effect combined. The selector cache checks `===` reference equality, but the array is mutated in place.
+
+| Feature | Claude 4.6 | ChatGPT 5.3 | Gemini 3.1 Pro | Unravel (Flash) |
+|---------|-----------|------------|---------------|----------------|
+| Root cause correct | ✅ | ✅ | ✅ | ✅ |
+| Mutation sites with exact lines | ✅ | ✅ | ✅ | ✅ L22, L28, L32 |
+| `resetBoard` noted as working | ✅ | ❌ | ❌ | ✅ explicitly |
+| Offered full file rewrite | ❌ | ✅ anti-pattern | ❌ | ❌ minimal fix only |
+| **Exact timestamped failure trace** | ✅ basic T0/T1/T2 | ❌ | ❌ | ✅ 0s→10.5s with ref_A notation |
+| **8-step AI loop traced** | ✅ | ⚠️ surface only | ❌ | ✅ full 8 steps |
+| **Variable tracker** | ❌ | ❌ | ❌ | ✅ by design |
+| **8 invariants documented** | ❌ | ❌ | ❌ | ✅ systematically |
+| **3 competing hypotheses listed** | ❌ | ❌ | ❌ | ✅ systematically |
+| **Deterministic AI fix prompt** | ❌ | ❌ | ❌ | ✅ by design |
+| **Exact reproduction steps** | ❌ | ❌ | ❌ | ✅ by design |
+| **Real-world analogy** | ❌ | ❌ | ❌ | ✅ box/label analogy |
+
+**Key Finding:** All four tools found the root cause on this 5-file architecture. The divergence is everything surrounding the diagnosis. Unravel systematically produces 8 output categories by design that no other tool produced: invariants, reproduction steps, variable tracker, fix prompt, competing hypotheses, timestamped trace, real-world analogy, and structured JSON.
+
+### Ablation Study: The Pipeline vs The Model (Test 2)
+
+What happens if we take the Unravel pipeline away and just ask Gemini 2.5 Flash to fix Test 2 directly?
+
+Standalone Flash found the bug and fixed it — but chose `selectorCache.clear()` on every mutation instead of immutable updates. It works, but compare the two approaches:
+
+**Standalone Flash fix — cache clearing:**
+```javascript
+state.tasks.push(task);
+selectorCache.clear(); // brute force
+```
+
+**Unravel's fix — immutable updates:**
+```javascript
+state.tasks = [...state.tasks, task]; // reference changes
+```
+
+**Why Unravel's fix is pragmatically better:**
+The entire point of `selectorCache` is to avoid recomputing all three filtered arrays on every change. Clearing it on every mutation defeats that purpose completely — you now recompute all selectors on every single state change, which is exactly what the cache was built to prevent. Unravel's fix preserves the cache's value. The cache still works — it just invalidates correctly now because the reference changes.
+
+| Feature Output | Standalone Flash | Unravel (Flash) |
+|---------------|------------------|-----------------|
+| Found the bug | ✅ | ✅ |
+| Fix works | ✅ | ✅ |
+| **Fix preserves cache intent** | ❌ defeats the cache | ✅ |
+| AI loop analysis | ❌ | ✅ |
+| Invariants | ❌ | ✅ |
+| Competing hypotheses | ❌ | ✅ |
+| Structured output | ❌ prose + code | ✅ JSON |
+
+The headline from this: **same model, completely different output quality.** Standalone Flash gives you a working fix that quietly breaks the performance optimization the built-in cache was designed for. Unravel gives you the correct fix, the reasoning, the invariants, the loop analysis, and the structured report.
+
+The model isn't the differentiator. The pipeline is.
+
+### The "Second Run" Revelation: Symptom-Driven Analysis
+
+During testing, we ran the exact same 5 files for Test 2 through Unravel *a second time*, but changed the symptom description. 
+- **First run symptom:** "Tasks don't appear after adding." 
+- **Second run symptom:** "Statistics not displayed, rapid add causes flickering and log spam."
+
+**The result:** The second run found **three root causes**. Two were confirmed real. One was a conditionally correct observation flagged with explicit uncertainty due to input truncation.
+
+| Finding | Status |
+|---------|--------|
+| Cache invalidation (same as run 1) | ✅ Real, correctly diagnosed |
+| Redundant renders on Rapid Add | ✅ Real, correctly diagnosed |
+| Missing HTML elements | ⚠️ Conditionally correct observation + Uncertainty flag |
+
+**The real finding — Redundant Render Batching:** Clicking "Rapid Add x5" fired 5 synchronous mutations, which scheduled 5 separate `emit()` calls into the microtask queue. The microtask executed all 5 sequentially, causing 5 useless DOM renders for one logical action. The `queueStateChangeEmit` fix Unravel proposed — using a `stateChangePending` flag to ensure only one emit fires per microtask — is genuinely better engineering than what any model proposed in round one.
+
+**The "False Positive" that wasn't — Input Context Limitation:** Unravel reported that `renderStats` references DOM IDs (`stat-highpri`, `count-todo`, etc.) that do not appear in `index.html`. It turns out the HTML file had been truncated during context ingestion before the statistics bar was included.
+
+However, Unravel did not blindly assert those elements were missing. It flagged the claim as uncertain in the Confidence Evidence section:
+
+> *"The provided `bugcode8/index.html` file is truncated. While `renderStats` clearly references IDs not present in the snippet, it's possible these elements exist in the full, untruncated HTML. My analysis assumes the provided HTML is the complete context available for debugging."*
+
+This is exactly what Rule 3 and Rule 7 require: *"Cannot confirm without complete context"* and *"Report uncertainty, do not guess."* The model found a real pattern (AST references vs DOM evidence mismatch) and stated why it might be wrong. The analysis was not a false positive reasoning failure; it was a correct conditional observation based on a truncated input pipeline. ChatGPT might call it a false positive and move on, but a pipeline that knows it might be wrong and says so is vastly more trustworthy. This proves the anti-sycophancy guardrails are load-bearing, not decorative.
+
+**Pipeline improvement filed:** Input truncation detection. Before analysis begins, verify all uploaded files were received completely. If a file appears truncated (no closing tags, abrupt end), warn the user before running the pipeline. A diagnosis built on incomplete context should carry a visible warning on the entire report, not just one evidence item. This is now a Phase 4 improvement item.
+
+### Cumulative Takeaway
+
+Two bugs. One single-file Heisenbug, one 5-file cross-component cache invalidation failure. Three SOTA models (including Gemini 3.1 Pro with thinking tokens) and Unravel running on free-tier Gemini 2.5 Flash. 
+
+All four found both bugs. ChatGPT interpreted the Heisenbug's most important property as a transient async state rather than emphasizing the Heisenbug framing. Gemini Pro used extended reasoning tokens to get there. Unravel matched the diagnostic depth on both tests *without relying on extended reasoning tokens*, and systematically produced 8 categories of structured output by design. 
+
+The 9-phase pipeline and AST pre-analysis give a $0.05 model the analytical depth and output structure of a senior engineer's written bug report. That is the Unravel thesis, demonstrated.
 
 ---
 

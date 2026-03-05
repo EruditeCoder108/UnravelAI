@@ -66,3 +66,44 @@ This file catalogs the intentionally buggy applications built to test the Unrave
 - Difficulty: Hard
 - Files: index.html, server.js, store.js, ui.js
 - Description: A multi-file architecture. The `ui.js` file reads from `store.js` which reads from `server.js`. The store caches the GET request aggressively. When the UI adds a new user, it calls a POST method in `store.js` which successfully adds it to the server. But `store.js` forgets to invalidate the local cache. The UI refreshes, calls GET again, and receives the stale cached list. The data exists on the backend but the UI is permanently out of sync.
+
+------------------------------------
+8. The Phantom Accumulator (ULTIMATE)
+------------------------------------
+- Folder: /bugcode8-phantom-accumulator
+- Bug Type: EMERGENT_INTERACTION (4-way stack)
+- Difficulty: LEGENDARY
+- Files: index.html, scheduler.js, event-bus.js, store.js, ui.js
+- Description: FOUR independent bugs that are each invisible in isolation and only catastrophic in combination:
+
+  BUG 1 — STALE_CLOSURE / UI_LOGIC (store.js)
+  The memoized selector cache uses reference equality (`cached.input === state.tasks`).
+  Since `state.tasks` is the same array reference even after mutations (push/splice mutates in place),
+  and `moveTask()` mutates task objects in-place (task.status = newStatus vs. replacing the array),
+  the cache NEVER sees a cache miss for move operations. The selector returns stale filtered results.
+  Moving a task from "todo" to "doing" leaves it visually stuck.
+
+  BUG 2 — EVENT_LIFECYCLE / MEMORY_LEAK (event-bus.js)
+  Uses WeakRef to store listeners. The `handleStateChange` arrow function in ui.js is passed directly
+  to `on()`. Since WeakRef holds only a weak reference, if/when the JS engine performs GC,
+  the callback is collected if no strong reference is held in the calling scope.
+  In ui.js the reference is local to the module scope with no guarantee, so after GC the board
+  silently stops receiving state:change events. No error. Board just freezes.
+
+  BUG 3 — ASYNC_ORDERING (scheduler.js + store.js)
+  `scheduleUpdate()` defers the `emit('state:change')` call to a microtask.
+  `moveTask()` mutates state synchronously and schedules the emit asynchronously.
+  If the UI reads state (via `select()`) before the microtask flush, it reads mutated state
+  but through the stale memoization cache (Bug 1), compounding the staleness.
+
+  BUG 4 — HEISENBUG (all files combined)
+  The interaction of all three creates a Heisenbug: adding console.log anywhere in the
+  data path (store.js, event-bus.js, ui.js) causes the microtask queue to yield at a
+  different point, causing the memoization cache to be re-evaluated with an updated reference,
+  making the bug disappear completely. The act of observing eliminates all three root causes simultaneously.
+
+  SYMPTOM: Adding tasks works. Moving tasks appears to work (log says "moved") but
+  columns do not update. After a page interaction or garbage collection cycle, the board
+  either shows stale data or stops updating entirely. The bug is non-deterministic and
+  varies by browser GC timing and microtask pressure.
+

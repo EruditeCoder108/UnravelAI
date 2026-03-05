@@ -546,6 +546,20 @@ The AST already has function call data, variable read/write locations, and impor
 
 Expand 10-bug suite to 20+ bugs. Include cross-file bugs and multi-component React bugs.
 
+#### 4.6 — Context Completeness Validation
+
+**Motivation:** Bug 8 Run 2 produced an uncertain finding regarding missing HTML elements because the input `index.html` file was truncated during ingestion. The model correctly identified the AST-to-DOM mismatch and appropriately flagged its uncertainty, behaving exactly as designed by Rule 7. However, the pipeline itself should detect incomplete input before running the analysis engine.
+
+**Implementation:** Add a pre-analysis validation step that detects truncated input files before the model reasons from them.
+
+Detection signals:
+- HTML ending mid-section (missing closing tags like `</body>`, `</html>`)
+- Large file but only partial AST parsed (byte count vs parsed node count mismatch)
+
+**Action on detection:**
+- If a file appears truncated, warn the user *before* running the pipeline.
+- A diagnosis built on incomplete context must carry a visible global warning on the entire generated report, not just localized to single evidence items.
+
 **Phase 4 verification:**
 - Multi-agent RCA delta vs single-agent > 10%? If not, reassess complexity cost
 - Agent B produces genuinely independent hypotheses (test on 5 known bugs)

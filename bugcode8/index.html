@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Task Board Pro</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #0f1117;
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 32px;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            color: #64748b;
+            font-size: 0.9rem;
+            margin-bottom: 32px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 28px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        input[type="text"] {
+            padding: 10px 14px;
+            background: #1e2130;
+            border: 1px solid #2d3148;
+            border-radius: 8px;
+            color: #e2e8f0;
+            font-size: 0.95rem;
+            width: 280px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: #6366f1;
+        }
+
+        select {
+            padding: 10px 14px;
+            background: #1e2130;
+            border: 1px solid #2d3148;
+            border-radius: 8px;
+            color: #e2e8f0;
+            font-size: 0.95rem;
+            outline: none;
+            cursor: pointer;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-primary {
+            background: #6366f1;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid #2d3148;
+            color: #94a3b8;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        .btn-ghost:hover {
+            background: #1e2130;
+            color: #e2e8f0;
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 28px;
+            padding: 16px 20px;
+            background: #1e2130;
+            border-radius: 10px;
+            border: 1px solid #2d3148;
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #6366f1;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .columns {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .column {
+            background: #1e2130;
+            border-radius: 12px;
+            border: 1px solid #2d3148;
+            padding: 16px;
+        }
+
+        .column-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #2d3148;
+        }
+
+        .column-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge {
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+        }
+
+        .badge-todo {
+            background: #1e293b;
+            color: #64748b;
+        }
+
+        .badge-doing {
+            background: #1e3a5f;
+            color: #60a5fa;
+        }
+
+        .badge-done {
+            background: #052e16;
+            color: #4ade80;
+        }
+
+        .task-card {
+            background: #0f1117;
+            border: 1px solid #2d3148;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            transition: border-color 0.2s;
+        }
+
+        .task-card:hover {
+            border-color: #4f46e5;
+        }
+
+        .task-name {
+            font-size: 0.9rem;
+            color: #e2e8f0;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .task-meta {
+            display: flex;
+            gap: 8px;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .priority-badge {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .priority-high {
+            background: #450a0a;
+            color: #f87171;
+        }
+
+        .priority-medium {
+            background: #451a03;
+            color: #fb923c;
+        }
+
+        .priority-low {
+            background: #082f49;
+            color: #38bdf8;
+        }
+
+        .task-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 32px 16px;
+            color: #475569;
+            font-size: 0.85rem;
+        }
+
+        #log-panel {
+            margin-top: 28px;
+            background: #0a0e1a;
+            border: 1px solid #1e2d4a;
+            border-radius: 10px;
+            padding: 16px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.8rem;
+        }
+
+        #log-panel h3 {
+            color: #38bdf8;
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #log-output {
+            color: #64748b;
+            line-height: 1.8;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        #log-output span.ok {
+            color: #4ade80;
+        }
+
+        #log-output span.warn {
+            color: #fb923c;
+        }
+
+        #log-output span.err {
+            color: #f87171;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Task Board Pro</h1>
+    <p class="subtitle">A real-time collaborative task management system</p>
+
+    <div class="controls">
+        <input type="text" id="task-input" placeholder="Enter task name..." />
+        <select id="priority-select">
+            <option value="high">High Priority</option>
+            <option value="medium" selected>Medium Priority</option>
+            <option value="low">Low Priority</option>
+        </select>
+        <button class="btn-primary" id="add-btn">Add Task</button>
+        <button class="btn-ghost" id="stress-btn">Rapid Add (x5)</button>
+        <button class="btn-ghost" id="reset-btn">Reset Board</button>
+    </div>
+
+    <div class="stats-bar">
+        <div class="stat">
+            <span class="stat-value" id="stat-total">0</span>
+            <span class="stat-label">Total Tasks</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value" id="stat-todo">0</span>
+            <span class="stat-label">To Do</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value" id="stat-doing">0</span>
+            <span class="stat-label">In Progress</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value" id="stat-done">0</span>
+            <span class="stat-label">Done</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value" id="stat-highpri">0</span>
+            <span class="stat-label">High Priority</span>
+        </div>
+    </div>
+
+    <div class="columns">
+        <div class="column">
+            <div class="column-header">
+                <span class="column-title">
+                    📋 To Do
+                    <span class="badge badge-todo" id="count-todo">0</span>
+                </span>
+            </div>
+            <div id="col-todo"></div>
+        </div>
+        <div class="column">
+            <div class="column-header">
+                <span class="column-title">
+                    ⚡ In Progress
+                    <span class="badge badge-doing" id="count-doing">0</span>
+                </span>
+            </div>
+            <div id="col-doing"></div>
+        </div>
+        <div class="column">
+            <div class="column-header">
+                <span class="column-title">
+                    ✅ Done
+                    <span class="badge badge-done" id="count-done">0</span>
+                </span>
+            </div>
+            <div id="col-done"></div>
+        </div>
+    </div>
+
+    <div id="log-panel">
+        <h3>System Log</h3>
+        <div id="log-output"><span class="ok">» Board initialized.</span></div>
+    </div>
+
+    <script type="module" src="scheduler.js"></script>
+    <script type="module" src="event-bus.js"></script>
+    <script type="module" src="store.js"></script>
+    <script type="module" src="ui.js"></script>
+</body>
+
+</html>
