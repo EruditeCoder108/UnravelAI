@@ -259,6 +259,10 @@ export function trackClosureCaptures(ast) {
                     // Check if this variable is bound in an outer scope
                     const binding = innerPath.scope.getBinding(name);
                     if (binding && !path.scope.hasOwnBinding(name)) {
+                        // Skip imports — they're immutable module references, never stale
+                        if (binding.kind === 'module') return;
+                        // Skip hoisted function declarations from outer scope — not a closure risk
+                        if (binding.kind === 'hoisted' && binding.path?.isFunctionDeclaration?.()) return;
                         capturedVars.add(name);
                     }
                 },
