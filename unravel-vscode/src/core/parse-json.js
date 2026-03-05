@@ -51,6 +51,9 @@ export function parseAIJson(text) {
         } catch { }
     }
 
+    // If we get here, nothing parsed. Log what we received for debugging.
+    console.warn('[parseAIJson] Failed to parse. Raw text preview:', typeof text === 'string' ? text.slice(0, 500) : typeof text);
+
     return null;
 }
 

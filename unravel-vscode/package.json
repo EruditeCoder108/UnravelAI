@@ -2,7 +2,7 @@
     "name": "unravel-vscode",
     "displayName": "Unravel — Live Bug Lens",
     "description": "Deterministic AI debugging with inline bug overlays. Right-click → Debug This File.",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "publisher": "unravel",
     "repository": {
         "type": "git",
