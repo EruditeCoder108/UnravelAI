@@ -151,12 +151,13 @@ export function buildSystemPrompt(level, language, provider = 'anthropic') {
     const phases = [
         { n: 1, name: 'INGEST', desc: 'Read ALL provided code. Build a complete mental model of the program. Do NOT theorize about bugs yet.' },
         { n: 2, name: 'TRACK STATE', desc: 'For every variable in the program, identify: where it\'s declared, where it\'s read, where it\'s mutated. Build a complete variable mutation map.' },
-        { n: 3, name: 'SIMULATE', desc: 'Mentally execute the program. What happens when the user performs the actions they described? Trace the exact sequence: function calls → variable changes → side effects.' },
-        { n: 4, name: 'INVARIANTS', desc: 'What conditions MUST always be true for this program to work correctly? Which of these invariants are violated?' },
-        { n: 5, name: 'ROOT CAUSE', desc: 'NOW identify the root cause. Be extremely specific — file, line, variable, function. Do NOT give a vague answer.' },
+        { n: 3, name: 'SIMULATE + HYPOTHESIZE', desc: 'Mentally execute the program through the user\'s described actions. Trace function calls → variable changes → side effects. Then generate exactly 3 competing hypotheses for the root cause. Do NOT commit to a single explanation yet.' },
+        { n: 4, name: 'ELIMINATE', desc: 'For each of the 3 hypotheses, check it against the AST evidence and code facts. Kill any hypothesis the evidence contradicts. If 2 or more survive elimination, mark the diagnosis as uncertain — do NOT pick one arbitrarily.' },
+        { n: 5, name: 'ROOT CAUSE', desc: 'Confirm the surviving hypothesis as the root cause. Be extremely specific — file, line, variable, function. Do NOT give a vague answer. If multiple hypotheses survived, present all survivors with evidence for each.' },
         { n: 6, name: 'MINIMAL FIX', desc: 'What is the smallest possible code change that fixes the bug? Do NOT rewrite the entire program. Show targeted surgical fixes.' },
         { n: 7, name: 'AI LOOP ANALYSIS', desc: 'Why would typical AI tools (ChatGPT, Cursor, Copilot) fail to fix this correctly? What symptom-chasing loop would they fall into? This is critical.' },
         { n: 8, name: 'CONCEPT EXTRACTION', desc: 'What programming concept does this bug teach? How should the user avoid this class of bug forever?' },
+        { n: 9, name: 'INVARIANTS', desc: 'What conditions MUST always be true for this program to work correctly? Document them for future prevention.' },
     ];
 
     const rules = [
@@ -165,6 +166,8 @@ export function buildSystemPrompt(level, language, provider = 'anthropic') {
         'If the user\'s bug description contradicts the actual code behavior, point out the contradiction instead of agreeing with a false premise.',
         'If you are uncertain, say "I cannot confirm this without runtime execution" — do NOT guess and present it as fact.',
         'Every bug claim MUST include the exact line number and code fragment that proves it. Format: "Bug: [type], Location: [function] line [N], Evidence: [exact code]". If you cannot cite evidence, do NOT claim the bug.',
+        'Generate at least 3 competing hypotheses before committing to a root cause. Do not anchor to the first plausible explanation.',
+        'If multiple hypotheses survive evidence elimination, report all survivors with evidence for each. Do NOT pick one arbitrarily to appear decisive.',
         'If critical files are missing, set needsMoreInfo to true and specify exactly what you need.',
         'Use Indian daily-life analogies when explaining (ghar, sabzi, auto-rickshaw, chai, cricket).',
         'Be warm like a senior developer friend, not cold like documentation.',

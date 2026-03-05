@@ -321,8 +321,10 @@ Three numbers define whether Unravel is working:
 | Configuration | RCA Score | Hallucination Rate |
 |---|---|---|
 | Standard prompting (no pipeline) | _pending_ | _pending_ |
-| + 8-phase deterministic pipeline | _pending_ | _pending_ |
+| + 9-phase deterministic pipeline | _pending_ | _pending_ |
 | + AST pre-analysis context | _pending_ | _pending_ |
+
+> The 10-bug proxy benchmark exists only to validate architectural improvements during development. Public claims rely exclusively on the extended 50-bug benchmark (Phase 7).
 
 > Run `node benchmarks/runner.js --provider google --model gemini-2.5-flash --key YOUR_KEY` to generate these numbers. Results are saved to `benchmarks/results.json`.
 
