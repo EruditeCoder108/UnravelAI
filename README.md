@@ -3,10 +3,7 @@
   <h1>UNRAVEL</h1>
   <p><strong>Most AI tools can write code. Unravel is built to explain why that code broke.</strong></p>
   <h3>The Deterministic Debug Engine for AI-Generated Code</h3>
-  <p>
-    <em>AI Code Generation is solved. AI Code <b>Understanding</b> is not.</em><br/>
-    <b>Unravel fixes that.</b>
-  </p>
+  
   <p>
     <a href="#-quick-start"><img alt="Get Started" src="https://img.shields.io/badge/Get_Started-ccff00?style=for-the-badge&logo=rocket&logoColor=black" /></a>
     <a href="#-vs-code-extension--live-bug-lens"><img alt="VS Code" src="https://img.shields.io/badge/VS_Code_Extension-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white" /></a>
