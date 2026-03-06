@@ -132,6 +132,12 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     } else if (result.needsMoreInfo && _depth >= 2) {
         console.warn('[Engine] Max self-heal depth (2) reached, proceeding with available files.');
         onProgress?.('⚠️ Max file-fetch attempts reached. Analyzing with available context...');
+        // If the LLM only returned needsMoreInfo with no report after max retries,
+        // clear the flag so App.jsx doesn't silently swallow it
+        if (!result.report && !result.bugType) {
+            result.needsMoreInfo = false;
+            // Let App.jsx throw "Unexpected engine response" so user sees an error
+        }
     }
 
     // Attach context warnings to result so UI can show a top-level banner

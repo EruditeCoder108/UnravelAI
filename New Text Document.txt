@@ -1,455 +1,408 @@
-Observed Symptom
-COPY
-1. `npm create tldraw <name>` installs into the current directory instead of creating a new `<name>` subdirectory. 2. Files are created even after the user cancels the 'Directory is not empty' prompt.
-
-Reproduction Path
-For Bug 1: Open your terminal in a non-empty directory (e.g., `/Code`). Run `npm create tldraw`. When prompted 'Name your app', type `my-new-project` (instead of using the default suggested name). Observe that files are created directly in `/Code`, and not in a new `/Code/my-new-project` subdirectory.
-For Bug 2: Open your terminal in a non-empty directory (e.g., `/Code/existing-project`). Run `npm create tldraw`. When prompted 'Current directory is not empty.', select 'Cancel'. Observe that the program exits immediately, and no files from the template are created or modified by `create-tldraw` in `/Code/existing-project`.
-Confidence Evidence
-COPY
-VERIFIED:
-The `targetDir` variable is initialized on `main.ts` line 41 using `maybeTargetDir ?? process.cwd()`. This means if no command-line argument is provided for the target directory, it defaults to the current working directory.
-The `name` variable is assigned the result of `namePicker(maybeTargetDir)` on `main.ts` line 44, which is called *after* `targetDir` has been determined.
-Inside `namePicker` (main.ts, lines 139-152), if `argOption` (which is `maybeTargetDir`) is `undefined`, it prompts the user for a name. The result of this prompt updates the `name` variable.
-The `name` variable is then used on `main.ts` line 221 in `renameTemplate` to set `packageJson.name = name`. There is no subsequent logic that would adjust `targetDir` based on this interactively provided `name`.
-For Bug 2, `main.ts` line 171 calls `cancel()` if the user chooses 'Cancel' from the 'Directory is not empty' prompt. `utils.ts` lines 84-85 clearly show `cancel()` calls `process.exit(1)`, which immediately stops the program. This makes it impossible for `downloadTemplate` or `renameTemplate` to execute afterwards.
-UNCERTAIN:
-For Bug 2, without direct runtime observation, it is impossible to definitively prove why the user experienced files being created after cancellation, as the code explicitly prevents this with `process.exit(1)`. The provided code's logic contradicts the reported behavior.
-Concept To Learn
-COPY
-Data Flow / UI Logic
-Input Source Semantics and Separation of Concerns
-Inconsistent behavior based on input source leads to confusion and unexpected outcomes for users. It breaks the 'principle of least astonishment,' where a system should behave in a way that is intuitive and predictable. Clear data flow and consistent UI logic are crucial for user-friendly applications.
-
-PATTERN TO AVOID:
-Do not allow the same input (a 'name') to have different system implications (creating a directory vs. just changing a file property) based on whether it came from a command-line argument or an interactive prompt, unless this behavior is explicitly communicated and justified. Users expect consistency.
-
-💡 Imagine you go to a tailor to get a shirt. If you tell the tailor 'Make me a shirt named "fancy-design" using this specific fabric', you expect the whole shirt to be that design. But if you just say 'Make me a shirt using this specific fabric', and *then* the tailor asks 'What should I name it?', and you say 'fancy-design', you'd still expect the whole shirt to be 'fancy-design', not just a label on it while the shirt is otherwise generic and just happens to be in your initially chosen fabric. The bug is like getting a label named 'fancy-design' on a generic shirt made from the current fabric, instead of getting a brand new 'fancy-design' shirt.
-
-Real World Analogy
-COPY
-"Imagine you go to a tailor to get a shirt. If you tell the tailor 'Make me a shirt named "fancy-design" using this specific fabric', you expect the whole shirt to be that design. But if you just say 'Make me a shirt using this specific fabric', and *then* the tailor asks 'What should I name it?', and you say 'fancy-design', you'd still expect the whole shirt to be 'fancy-design', not just a label on it while the shirt is otherwise generic and just happens to be in your initially chosen fabric. The bug is like getting a label named 'fancy-design' on a generic shirt made from the current fabric, instead of getting a brand new 'fancy-design' shirt."
-
-Why AI Keeps Breaking It
-COPY
-AI tools would likely struggle with Bug 1 because they might not fully grasp the distinction between a command-line argument for a directory and an interactive prompt for a project name, and the user's implicit expectation that the interactive name *should* also define the directory. They would focus on ensuring `targetDir` is passed correctly to file operations (which it already is), rather than realizing `targetDir` itself needs to be updated based on later interactive input. For Bug 2, the AI would be stuck trying to 'fix' a problem that the code's `process.exit(1)` inherently prevents. It might suggest adding redundant cleanup code after `cancel()`, or speculate about complex async timing issues, when the core issue is a contradiction between the reported behavior and the deterministic static code logic. This would lead to over-engineered and incorrect solutions.
-
-The AI Fix Loop
-1. **For Bug 1:**
-2. 1. User reports: "Project installs in current directory even with a name."
-3. 2. AI suggests: "Check `downloadTemplate`'s `targetDir` parameter."
-4. 3. User finds: `targetDir` is correctly passed.
-5. 4. AI suggests: "Ensure argument parsing correctly extracts the directory name from `args._[0]`."
-6. 5. User finds: `args._[0]` correctly extracts if provided, otherwise it's undefined.
-7. 6. AI fails to recognize the semantic gap between interactive `name` and initial `targetDir` assignment.
-8. **For Bug 2:**
-9. 1. User reports: "Files are created after I cancel."
-10. 2. AI suggests: "Add `fs.rmSync` after `cancel()` to clean up."
-11. 3. User finds: `process.exit(1)` already terminates immediately.
-12. 4. AI suggests: "Wrap file operations in `try...finally` for guaranteed cleanup."
-13. 5. User finds: `process.exit(1)` makes `finally` blocks irrelevant for subsequent code.
-14. 6. AI cannot reconcile reported behavior with explicit `process.exit(1)` and keeps suggesting cleanup for a non-existent problem.
-State Mutation Tracker
-COPY
-Variable	Meaning / Role	Where Mutated
-args	The arguments passed to the CLI.	main.ts L29
-maybeTargetDir	The explicitly provided target directory from command-line arguments, or undefined.	main.ts L40 (initial assignment), main.ts L46 (fix)
-targetDir	The final determined directory where the project will be created.	main.ts L41 (initial assignment), main.ts L47 (fix)
-template	The chosen template object.	main.ts L43
-name	The project name, either from command-line argument or interactive input.	main.ts L44
-packageJson.name	The `name` property within the project's `package.json` file.	renameTemplate L221
-Execution Timeline
-COPY
-T0
-User runs `npm create tldraw` in `/Code` directory (no arguments provided).
-
-T1
-`main` function starts, `args._[0]` is undefined.
-
-T2
-`maybeTargetDir` becomes `undefined` (main.ts, L40).
-
-T3
-`targetDir` defaults to `process.cwd()` (e.g., `/Code`) (main.ts, L41).
-
-T4
-`templatePicker` runs, user selects a template.
-
-T5
-`namePicker(maybeTargetDir)` is called with `undefined` for `argOption` (main.ts, L44).
-
-T6
-`namePicker` prompts 'Name your app' (main.ts, L146), user inputs 'mermaid-tldraw'.
-
-T7
-`name` variable is set to 'mermaid-tldraw' (main.ts, L44).
-
-T8
-`ensureDirectoryEmpty(targetDir, args.overwrite)` is called with `/Code` (main.ts, L48).
-
-T9
-If `/Code` is empty or non-existent, `mkdirSync('/Code')` is called (no-op if exists). If `/Code` is not empty, the 'Directory is not empty' prompt is shown.
-
-T10
-Execution continues to `downloadTemplate` and `renameTemplate`, installing files into `/Code` and renaming `package.json` to 'mermaid-tldraw'.
-
-T11
-For Bug 2: If at T9, the user cancels the 'Directory is not empty' prompt, `cancel()` is called (main.ts, L171), which calls `process.exit(1)` (utils.ts, L85), immediately terminating the program. No files are created by `downloadTemplate` or `renameTemplate`.
-
-Invariant Violations
-COPY
-If `create-tldraw` is run with a positional argument (e.g., `npm create tldraw my-app`), `targetDir` MUST resolve to a new subdirectory named after that argument (e.g., `./my-app`) relative to the current working directory.
-If `create-tldraw` is run without a positional argument, and the user provides a project name interactively via the 'Name your app' prompt, then `targetDir` MUST be updated to reflect a new subdirectory named after the interactively provided name, unless the user explicitly chooses the current directory.
-If any prompt within `create-tldraw` (especially one related to directory state or critical choices) is explicitly cancelled by the user, the program MUST terminate immediately without performing any further modifications to the file system (beyond what might have been done *before* the cancellation decision point, like creating an empty directory if it didn't exist). No `downloadTemplate` or `renameTemplate` should occur after cancellation.
-The `name` field in the final `package.json` file in the `targetDir` MUST always match the project name chosen by the user (either via argument or interactively).
-Telemetry tracking (`trackStarterKitChoice`) MUST be fire-and-forget and MUST NOT block the main program execution or cause it to fail if the network request fails. The `noTelemetry` flag MUST correctly disable tracking.
-Technical Root Cause
-COPY
-For Bug 1 (Current directory vs. new subdirectory): The `targetDir` for project files is determined from command-line arguments (or defaults to the current directory) *before* the interactive prompt for the project `name`. The `name` provided during the interactive `namePicker` prompt is then only used to set the `name` field in the generated `package.json` file, but it does not create a new subdirectory for the project. This means if the user runs `npm create tldraw` and then interactively enters a name like `my-app`, the project files will be placed in the current directory, and only the `package.json` will reflect `my-app` as the project name, instead of creating a `my-app` subdirectory. This is a `DATA_FLOW` and `UI_LOGIC` bug. For Bug 2 (Files created after cancel): The `ensureDirectoryEmpty` function is designed to exit the process immediately using `process.exit(1)` if the user chooses 'Cancel' when prompted about a non-empty target directory. Based on the static code analysis, it is not possible for `downloadTemplate` or `renameTemplate` to execute and create files *after* this cancellation. The observed 'files created' might be due to a misunderstanding of which prompt was cancelled, or temporary files generated by external processes or system utilities, not by the `create-tldraw` tool's core logic *after* the specified cancellation point. This is categorized as `OTHER` because the reported behavior contradicts the code's explicit logic.
-
-Location: main.ts
-Alternative Hypotheses
-Hypothesis 1 (for Bug 1): The `targetDir` is determined at the start of `main` based on command-line arguments or defaulting to `process.cwd()`. If a user interactively provides a project name later (when no command-line argument was given), this name is only used for the `package.json` and does not create a new subdirectory.
-Hypothesis 2 (for Bug 2): The `process.exit(1)` call in the `cancel()` function (triggered when the user cancels the 'Directory is not empty' prompt) immediately terminates the application. Therefore, no files should be created by `downloadTemplate` or `renameTemplate` after this point. The user's observation likely stems from a misunderstanding of which prompt was canceled, or the state of the directory prior to cancellation.
-Hypothesis 3 (Alternative for Bug 1): There is a subtle bug in argument parsing or path resolution (`formatTargetDir`, `resolve`) that causes a provided positional argument (like `mermaid-tldraw`) to incorrectly resolve to `process.cwd()`.
-Deterministic AI Fix Prompt
-COPY PROMPT
-Paste this directly into Cursor / Bolt / Copilot to apply the fix:
-
-The current `create-tldraw` CLI tool has two main issues related to directory creation and cancellation:
-
-1.  **Interactive Name Doesn't Create Subdirectory:** When a user runs `npm create tldraw` (without providing a directory name as a command-line argument) and then interactively provides a project name (e.g., `my-app`) at the "Name your app" prompt, the project files are installed directly into the current directory, instead of creating a new `my-app` subdirectory. The `name` provided interactively only updates the `package.json` file's `name` field.
-2.  **Cancellation Logic Contradiction:** The user reports that files are created even after they cancel the "Directory is not empty" prompt. However, the code explicitly calls `process.exit(1)` immediately after cancellation of this prompt, which should prevent any further file system modifications.
-
-To fix the first issue, modify `main.ts`. After `namePicker` returns, if `maybeTargetDir` was initially `undefined` (meaning no directory argument was given) and the `name` is different from the default current directory name, then `targetDir` should be updated to a new path formed by resolving `process.cwd()` with the interactively provided `name`. Add a `nicelog` message to indicate the new target directory.
-
-The second issue appears to be a contradiction between the user's report and the code's deterministic behavior. The `process.exit(1)` call ensures immediate termination, preventing further file creation. No code change is needed for this second point; the explanation should clarify the code's intended behavior.
-
-Implement the fix for the first issue only.
-Minimal Code Fix
-COPY
-File: main.ts
-```typescript
-import { parse as parseArgs } from '@bomb.sh/args'
-import { outro, select, spinner, text } from '@clack/prompts'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import path, { relative, resolve } from 'node:path'
-import process from 'node:process'
-import { Readable } from 'node:stream'
-import picocolors from 'picocolors'
-import * as tar from 'tar'
-import { groupSelect, GroupSelectOption } from './group-select'
-import { Template, TEMPLATES } from './templates'
-import {
-	cancel,
-	emptyDir,
-	formatTargetDir,
-	getInstallCommand,
-	getPackageManager,
-	getRunCommand,
-	uncancel as handleCancel,
-	isDirEmpty,
-	isValidPackageName,
-	nicelog,
-	pathToName,
-} from './utils'
-import { wrapAnsi } from './wrap-ansi'
-
-const DEBUG = !!process.env.DEBUG
-
-async function main() {
-	const args = parseArgs(process.argv.slice(2), {
-		alias: {
-			h: 'help',
-			t: 'template',
-			o: 'overwrite',
-		},
-		boolean: ['help', 'overwrite', 'no-telemetry'],
-		string: ['template'],
-	})
-
-	if (args.help) {
-		nicelog(getHelp())
-		process.exit(0)
-	}
-
-	let maybeTargetDir = args._[0] ? formatTargetDir(resolve(String(args._[0]))) : undefined
-	let targetDir = maybeTargetDir ?? process.cwd()
-
-	const template = await templatePicker(args.template, args['no-telemetry'])
-	const name = await namePicker(maybeTargetDir)
-
-	// START FIX: Adjust targetDir if name was provided interactively
-	if (!maybeTargetDir && name && name !== pathToName(process.cwd())) {
-		// If no target directory was given as argument, AND
-		// the user entered a custom name different from the default current directory name,
-		// then create a new target directory based on that name.
-		targetDir = resolve(process.cwd(), name);
-		nicelog(picocolors.gray(`Creating project in: ${targetDir}`));
-	}
-	// END FIX
-	
-	await ensureDirectoryEmpty(targetDir, args.overwrite)
-	await downloadTemplate(template, targetDir)
-	await renameTemplate(name, targetDir)
-
-	const manager = getPackageManager()
-	const doneMessage = ['Done! Now run:', '']
-	if (targetDir !== process.cwd()) {
-		doneMessage.push(`   cd ${relative(process.cwd(), targetDir)}`)
-	}
-	doneMessage.push(`   ${getInstallCommand(manager)}`)
-	doneMessage.push(`   ${getRunCommand(manager, 'dev')}`)
-	doneMessage.push('')
-	doneMessage.push('   Happy building! Visit https://tldraw.dev/docs to learn more.')
-
-	outro(doneMessage.join('\n'))
-}
-
-main().catch((err) => {
-	if (DEBUG) console.error(err)
-	outro(`it's bad`)
-	process.exit(1)
-})
-
-async function templatePicker(argOption?: string, noTelemetry?: boolean) {
-	if (argOption) {
-		const template = TEMPLATES.find((t) => formatTemplateId(t) === argOption.toLowerCase().trim())
-
-		if (!template) {
-			outro(`Template ${argOption} not found`)
-			process.exit(1)
-		}
-
-		trackStarterKitChoice(template.name, noTelemetry)
-		return template
-	}
-
-	const template = await handleCancel(
-		groupSelect({
-			message: 'Select a tldraw starter kit:',
-			options: TEMPLATES.map(
-				(template): GroupSelectOption<Template> => ({
-					label: template.name,
-					hint: template.description,
-					value: template,
-				})
-			),
-		})
-	)
-
-	trackStarterKitChoice(template.name, noTelemetry)
-	return template
-}
-
-function trackStarterKitChoice(templateId: string, noTelemetry?: boolean) {
-	// Skip tracking if --no-telemetry flag is set
-	if (noTelemetry) return
-
-	// Fire and forget - don't block on this request
-	fetch('https://dashboard.tldraw.pro/api/starter-kit-choice', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({ id: templateId }),
-	}).catch(() => {
-		// Silently ignore errors
-	})
-}
-
-async function namePicker(argOption?: string) {
-	if (argOption) {
-		return pathToName(argOption)
-	}
-
-	const defaultName = pathToName(process.cwd())
-
-	const name = await handleCancel(
-		text({
-			message: picocolors.bold('Name your app'),
-			placeholder: defaultName,
-			validate: (value) => {
-				if (value && !isValidPackageName(value)) {
-					return `Invalid name: ${value}`
-				}
-
-				return undefined
-			},
-		})
-	)
-
-	if (!name.trim()) return defaultName
-	return pathToName(name)
-}
-
-async function ensureDirectoryEmpty(targetDir: string, overwriteArg: boolean) {
-	if (isDirEmpty(targetDir)) {
-		mkdirSync(targetDir, { recursive: true })
-		return
-	}
-
-	const overwrite = overwriteArg
-		? 'yes'
-		: await select({
-				message: picocolors.bold(
-					(targetDir === process.cwd()
-						? 'Current directory'
-						: `Target directory "${path.relative(process.cwd(), targetDir)}"`) + ` is not empty.`
-				),
-				options: [
-					{
-						label: 'Cancel',
-						value: 'no',
-					},
-					{
-						label: 'Remove existing files and continue',
-						value: 'yes',
-					},
-					{
-						label: 'Ignore existing files and continue',
-						value: 'ignore',
-					},
-				],
-			})
-
-	if (overwrite === 'no') {
-		cancel()
-	}
-
-	if (overwrite === 'yes') {
-		emptyDir(targetDir)
-	}
-}
-
-async function downloadTemplate(template: Template, targetDir: string) {
-	const s = spinner()
-	s.start(`Downloading github.com/${template.repo}...`)
-	try {
-		const url = `https://github.com/${template.repo}/archive/refs/heads/main.tar.gz`
-		const tarResponse = await fetch(url)
-		if (!tarResponse.ok) {
-			throw new Error(`${url}: ${tarResponse.status} ${tarResponse.statusText}`)
-		}
-
-		if (!tarResponse.body) {
-			throw new Error(`${url}: no body`)
-		}
-
-		const extractor = tar.extract({
-			cwd: targetDir,
-			strip: 1,
-		})
-
-		await new Promise<void>((resolve, reject) => {
-			Readable.fromWeb(tarResponse.body as any)
-				.pipe(extractor)
-				.on('end', resolve)
-				.on('error', reject)
-		})
-
-		s.stop(`Downloaded github.com/${template.repo}`)
-	} catch (err) {
-		s.stop(`Failed to download github.com/${template.repo}`)
-		throw err
-	}
-}
-
-async function renameTemplate(name: string, targetDir: string) {
-	const packageJson = JSON.parse(readFileSync(resolve(targetDir, 'package.json'), 'utf-8'))
-
-	packageJson.name = name
-	delete packageJson.author
-	delete packageJson.homepage
-	delete packageJson.license
-
-	writeFileSync(resolve(targetDir, 'package.json'), JSON.stringify(packageJson, null, '\t') + '\n')
-}
-
-function formatTemplateId(template: Template) {
-	return template.name.trim().toLowerCase().replace(/\s+/g, '-')
-}
-
-function getHelp() {
-	const options = [
-		{ flags: '-h, --help', description: 'Display this help message.' },
-		{ flags: '-t, --template NAME', description: 'Use a specific template.' },
-		{ flags: '-o, --overwrite', description: 'Overwrite the target directory if it exists.' },
-		{ flags: '--no-telemetry', description: 'Disable anonymous usage tracking.' },
-	]
-
-	const GAP_SIZE = 2
-	const optionPrefix = '   '
-	const templatePrefix = ' • '
-
-	const idealIndentSize =
-		Math.max(
-			...options.map((o) => o.flags.length),
-			...TEMPLATES.map((t) => formatTemplateId(t).length)
-		) +
-		GAP_SIZE +
-		templatePrefix.length
-
-	const isNarrow = process.stdout.columns < idealIndentSize + 50
-
-	const lines = [
-		picocolors.bold('Usage: create-tldraw [OPTION]... [DIRECTORY]'),
-		'',
-		'Create a new tldraw project from a starter kit.',
-		"With no arguments, you'll be guided through an interactive setup.",
-		'',
-		picocolors.bold('Options:'),
-	]
-
-	if (isNarrow) {
-		const indent = ' '.repeat(optionPrefix.length + GAP_SIZE)
-		for (const option of options) {
-			lines.push(`${optionPrefix}${option.flags}`)
-			lines.push(wrapAnsi(`${indent}${option.description}`, process.stdout.columns, { indent }))
-		}
-	} else {
-		const indent = ' '.repeat(idealIndentSize)
-		for (const option of options) {
-			const start = `${optionPrefix}${option.flags}`.padEnd(idealIndentSize, ' ')
-			lines.push(wrapAnsi(`${start}${option.description}`, process.stdout.columns, { indent }))
-		}
-	}
-
-	lines.push('')
-	lines.push(picocolors.bold('Available starter kits:'))
-
-	if (isNarrow) {
-		const indent = ' '.repeat(templatePrefix.length + GAP_SIZE)
-		for (const template of TEMPLATES) {
-			lines.push(`${templatePrefix}${formatTemplateId(template)}`)
-			lines.push(
-				wrapAnsi(
-					`${indent}${template.shortDescription ?? template.description}`,
-					process.stdout.columns,
-					{ indent }
-				)
-			)
-		}
-	} else {
-		const indent = ' '.repeat(idealIndentSize)
-		for (const template of TEMPLATES) {
-			const start = `${templatePrefix}${formatTemplateId(template)}`.padEnd(idealIndentSize, ' ')
-			lines.push(
-				wrapAnsi(
-					`${start}${template.shortDescription ?? template.description}`,
-					process.stdout.columns,
-					{
-						indent,
-					}
-				)
-			)
-		}
-	}
-
-	lines.push('')
-
-	return lines.join('\n')
-}
-```
-Why This Works
-The fix for Bug 1 addresses the `DATA_FLOW` issue by introducing a conditional update for `targetDir`. If `maybeTargetDir` was initially `undefined` (meaning the user didn't provide a directory name as a command-line argument) AND the interactively chosen `name` is different from the current directory's default name, the `targetDir` is explicitly re-evaluated to be a new subdirectory based on that `name`. This aligns the interactive user experience with the command-line argument experience, ensuring consistency and meeting user expectations. For Bug 2, no fix is needed because the current code's use of `process.exit(1)` upon cancellation ensures immediate program termination, preventing any further file modifications
+The Problem You're Solving
+Right now Unravel is like a restaurant that only has one dish. You sit down, they bring you the full thali — 12 items. You wanted just the roti and dal. You still get all 12. The cook still made all 12. Time wasted, ingredients wasted.
+Phase 4A adds a menu.
+
+The Three Modes — Simple Version
+🐛 Debug Mode — "Something is broken"
+Current behavior. Nothing changes here except it gets faster because you can now say "just give me the fix, skip everything else."
+🔍 Explain Mode — "I don't have a bug, I just don't understand this code"
+Imagine you joined a new company and your senior dev handed you a 3000-line codebase and said "figure it out." You'd spend days just understanding what connects to what.
+Explain Mode is that senior dev sitting next to you. You paste the code, it tells you: here's what this does, here's how data flows through it, here's the entry point, here's which component talks to which. No bug hunting. Just understanding.
+🛡️ Security Mode — "Is this code safe?"
+You've built something and want to know if a hacker could exploit it. This mode scans for things like: user input being inserted directly into HTML (XSS), passwords hardcoded in the code, API endpoints with no authentication.
+Every finding comes with a "requires human verification" warning — because a false alarm in security is worse than no alarm. It's shipped as beta precisely because of this.
+
+The Presets — Simple Version
+Before Phase 4A, every analysis gives you all 12 sections. Always. Whether you want them or not.
+After Phase 4A you pick upfront:
+⚡ Quick Fix — Just tell me the bug and how to fix it. Nothing else. Fastest, cheapest. 60% fewer tokens.
+👨‍💻 Developer — Bug + fix + variable tracker + timeline + reproduction steps. What a dev actually needs.
+📖 Full Report — Everything. Current behavior. For when you want the deep dive.
+🔧 Custom — You pick exactly which sections you want.
+This isn't just a display filter. The model literally generates less — so it responds faster and costs less API credit.
+
+The "Configure First" Change — Simple Version
+Before: Cook everything → then ask what you wanted.
+After: Ask what you want → cook only that.
+Currently the engine runs the full analysis, THEN you pick how to view it. The wasted compute already happened. The new flow flips this — you pick mode and preset before clicking Analyze, so the engine only generates what you actually need.
+One other thing that changes: the Output Menu step after analysis is completely removed. Right now after the engine finishes you click through a menu to pick your view. That step disappears. Analysis finishes → report appears. One less click.
+
+The Progress Bar — Simple Version
+Right now during analysis you see one line of text that changes occasionally. That's it.
+After Phase 4A you see:
+✅ Input check          0.2s
+✅ AST Analysis         1.3s  
+🔄 AI Engine           12.4s  ← running now
+⬚  Parse response
+⬚  Final check
+
+⏱ 14 seconds elapsed — about 18 more seconds
+And before you even click Analyze, the button tells you: [▶ ANALYZE — est. 20-35s]
+So you know what you're getting into before you commit.
+
+localStorage — Simple Version
+Right now every time you open Unravel you start from scratch. Pick your provider again, pick your model again, pick your language again.
+After this, your preferences are saved in the browser. Open Unravel tomorrow — it remembers everything exactly where you left it.
+
+The Implementation Approach — Simple Version
+The smart part of the plan is build the engine first, UI second.
+Most developers build the buttons and dropdowns first because it feels productive — you can see something. Then they build the engine underneath and discover it doesn't work the way the UI expected, and they have to redo the UI.
+The plan does it right: first make Debug+QuickFix produce a short JSON in the console. Make Explain Mode produce architecture output in the console. Make Security Mode produce a vulnerability list in the console. Verify all of this is working with zero UI.
+Then build the UI on top of something proven. No surprises.
+
+The One-Line Summary
+Phase 4A turns Unravel from "one dish restaurant" into "you order what you want, we make only that, and it arrives faster."how is the explain mode and security mode problem tacked in this 
+also i was wondering u said it is working good right now if u add a new mode etc etc...but that new mode would just be a UI change the engine remains same internal prompts and anti sycophacy options etc then why would it produce a different output9:11 AMParsed two technical questions about mode implementation and output consistencyParsed two technical questions about mode implementation and output consistencyThe Explain Mode Problem — How It's Tackled
+The problem I flagged was: "you wrote what you want but not how to get it."
+The new plan fixes this by writing 3 concrete example outputs first — the Kanban board, the Express API, the CLI tool. Those examples ARE the spec. When you sit down to write buildExplainPrompt() you're not guessing what good output looks like. You're looking at 3 real examples and writing instructions that would produce those exact outputs.
+It's like the difference between telling a chef "make something delicious" versus showing him three photos of exactly what the finished dish should look like. Same chef, completely different result.
+The problem isn't fully solved yet — it will be solved when you write the actual prompt by reverse engineering from those examples. The plan just puts the right preparation in place before that moment.
+
+The Security Mode Problem — How It's Tackled
+The problem was false positives destroying trust.
+Three things in the new plan address this:
+requiresHumanReview: true is a field in the schema itself — not a UI label that can be hidden, baked into every single vulnerability object that gets returned.
+confidence field per finding — forces the model to rate how sure it is, not just what it found.
+The prompt strategy says explicitly: "If you are uncertain, classify as INFORMATIONAL, not as a vulnerability." This directly fights the model's tendency to sound confident when it shouldn't be.
+Still needs one more line in the actual prompt — I mentioned this — something like "a confident wrong finding is worse than no finding at all." That's the missing piece.
+
+Your Second Question — This Is The Important One
+You're right to question this. Let me be precise.
+You're correct that the UI is just a skin. Changing a dropdown does nothing to output. So why would different modes produce different output?
+Because the system prompt changes completely.
+Right now there is one system prompt. It says roughly: "You are Unravel, a debugging engine. Find bugs. Trace root causes. Generate hypotheses. Here are 7 anti-sycophancy rules."
+In Phase 4A, there will be three different system prompts:
+Debug prompt — current prompt, mostly unchanged. "Find the bug."
+Explain prompt — completely different instructions. "You are NOT looking for bugs. Do NOT mention bugs. Your only job is to explain what this code does and how it works. Map the architecture. Trace data flow. Identify entry points." Same anti-sycophancy rules, completely different task definition.
+Security prompt — completely different again. "You are a security auditor. Look for OWASP Top 10 vulnerabilities. Assign CWE IDs. Rate severity. If uncertain classify as INFORMATIONAL."
+Same engine. Same AST pre-analysis. Same anti-sycophancy rules. Same provider call. But the system prompt — the fundamental instructions the model receives — is completely different for each mode.
+
+Simple Analogy
+Think of the engine as a person — a very smart analyst. The system prompt is the job description you hand them before they start.
+Right now you always hand them the same job description: "You are a bug detective."
+After Phase 4A you have three job descriptions:
+"You are a bug detective" → they look for bugs.
+"You are a code tour guide" → they explain the codebase.
+"You are a security auditor" → they look for vulnerabilities.
+Same person. Same brain. Same rules about not lying or guessing. Completely different output because the job they've been asked to do is different.
+The UI change just determines which job description gets handed to them.ok but these are very generic or not so good prompts, to actually properly explain code base u need to know the bugs too, to know the bugs u gotta know the cobase too , both in varying levels but yeah, for security audit as well u need that9:15 AMExactly right. And this is actually a more sophisticated insight than what's in the plan right now.
+
+What You're Seeing
+The three modes aren't actually separate pipelines. They're the same understanding process with different output emphasis.
+To explain a codebase well you need to know:
+
+Where state is mutated — because that's where bugs live and also where the architecture is most complex
+Async boundaries — because those define the timing of data flow
+Closure captures — because those define what each function actually "sees"
+
+That's exactly what the AST already extracts. And it's exactly what Debug Mode uses to find bugs.
+To do a security audit you need to know:
+
+Where user input enters the system
+Where it gets used without sanitization
+Where auth checks happen or don't happen
+Where state mutations could be exploited
+
+Again — same information. Different question being asked about it.
+
+What This Means For The Architecture
+The modes shouldn't have separate pipelines. They should have one shared understanding phase and then a different output phase.
+Like this:
+Phase 1-4: UNDERSTAND (always runs, all modes)
+  └── AST pre-analysis
+  └── Ingest all files
+  └── Map state mutations
+  └── Trace async boundaries
+  └── Build mental model of the codebase
+  
+Phase 5+: OUTPUT (mode-specific)
+  └── Debug   → find what broke in this mental model
+  └── Explain → describe this mental model in plain language  
+  └── Security → find what's exploitable in this mental model
+The understanding is the same. The question asked at the end is different.
+
+How The Prompt Should Actually Be Written
+Instead of three completely separate prompts, it should be one prompt with a mode-specific instruction at the end.
+Roughly:
+PHASE 1-4: [identical across all modes]
+Read all provided code completely.
+Map every variable mutation, every async boundary, 
+every data flow path, every entry point.
+Build a complete mental model of this codebase.
+Do not form any conclusions yet.
+
+PHASE 5: [mode-specific]
+
+IF DEBUG MODE:
+Now identify what is broken. Given the mental model 
+you built, trace where the reported symptom originates.
+Generate 3 hypotheses. Eliminate using AST evidence...
+
+IF EXPLAIN MODE:
+Now describe what you understand. Given the mental 
+model you built, explain what this code does and how 
+it works. Do NOT look for bugs or vulnerabilities.
+Describe architecture, data flow, entry points...
+
+IF SECURITY MODE:
+Now audit what you understand. Given the mental model
+you built, identify where user input reaches the 
+system unsanitized, where auth boundaries are missing,
+where state mutations could be exploited...
+Same deep understanding phase. Mode only changes the final question.
+
+Why This Produces Better Output Than Three Separate Prompts
+A pure Explain Mode prompt that says "don't look for bugs" will produce a shallower explanation than one that built a full debug-level understanding first and then switched to explanation mode.
+Because to explain something deeply you have to understand it at the level of "where could this break" — even if you don't report the bugs.
+A security auditor who also understands the code's architecture will find more vulnerabilities than one who only scans for patterns. Because they know which data flows are actually reachable from user input and which ones aren't.
+The mental model built in Phase 1-4 is the same work regardless of what you're doing with it. Splitting it into three separate pipelines would mean doing that work three times differently and getting shallower results in all three modes.
+
+What Changes In The Plan
+buildExplainPrompt() and buildSecurityPrompt() shouldn't start from scratch. They should start from the same Phase 1-4 instructions as buildDebugPrompt() and diverge only at Phase 5.
+Practically: extract the shared Phase 1-4 block into a buildSharedUnderstandingPhases() function. Each mode prompt calls that first, then appends its mode-specific output instruction.
+This is about 2 hours of extra thought in 4A.1 but it produces meaningfully better output across all three modes. Worth doing before writing any prompts.ok ensure that in these prompts we are not being narrow ok , i mean u mentioned async in prompt, but prompts need to be very wide , async is a specific type of issue in specific type of code why would the system always look for it ? are these the right prompts i want you to deeply think on this9:20 AMYou're right. And this is the most important prompt engineering decision in the entire Phase 4A build.
+Let me think through this properly.
+
+The Problem With Specific Prompts
+If the system prompt says "look for async boundaries, closure captures, state mutations" — you've already decided what matters before seeing the code.
+What if the bug is a type coercion issue? "5" + 3 = "53". No async. No closure. No mutation. A narrowly written prompt would walk right past it.
+What if the codebase is a pure functional pipeline with no state at all? The "map state mutations" instruction produces nothing useful and wastes the model's attention on something irrelevant.
+What if the security vulnerability is a hardcoded API key on line 3? No OWASP pattern needed. No data flow analysis needed. It's just there. A prompt that says "trace user input through the system" would miss it entirely.
+Narrow prompts produce narrow diagnoses. The model is obedient — it looks for what you tell it to look for and stops there.
+
+What A Wide Prompt Actually Means
+A wide prompt doesn't tell the model what kind of problem to find. It tells the model how to think — and then gets out of the way.
+The difference:
+Narrow: "Look for async boundaries, state mutations, closure captures, race conditions."
+Wide: "Read this code completely. Understand what it is trying to do. Understand what it is actually doing. Find where those two things differ."
+The second prompt works on async bugs, type coercion bugs, logic errors, off-by-one errors, wrong algorithm choices, missing edge cases — anything. Because it doesn't presuppose the category of problem.
+
+The Right Mental Model For Each Mode
+Debug Mode — The Right Question:
+Not "what async/state/closure issues exist" but:
+
+"What is this code trying to do? What is it actually doing? Where exactly do those diverge?"
+
+That question is valid for every class of bug that has ever existed. The model then uses whatever lens is appropriate — async, state, type coercion, logic, data flow — because the code itself tells it which lens matters, not the prompt.
+Explain Mode — The Right Question:
+Not "describe the architecture, entry points, data flow" but:
+
+"If a developer who has never seen this code needs to work on it tomorrow, what do they need to understand? What does this code do, how does it do it, and what would surprise them?"
+
+That question produces useful explanations for a React app, a CLI tool, a backend API, a game engine, a data pipeline — anything. Because it's asking about the reader's needs, not presupposing the structure of the code.
+Security Mode — The Right Question:
+Not "check for OWASP Top 10, trace user input, look for missing auth" but:
+
+"What assumptions does this code make about the people and systems that will interact with it? Where could a malicious actor violate those assumptions?"
+
+That question catches XSS, SQL injection, hardcoded credentials, missing rate limiting, insecure direct object references, timing attacks — the full surface. Because it's asking about trust assumptions, which is what security actually is.
+
+How The Shared Phase 1-4 Should Actually Be Written
+The shared understanding phase shouldn't list specific things to look for. It should describe a process:
+PHASE 1 — READ
+Read every provided file completely before forming 
+any opinion. Do not start analyzing until you have 
+read everything. Build a complete picture.
+
+PHASE 2 — UNDERSTAND INTENT  
+For each component, function, and module: what is 
+this trying to accomplish? What problem does it solve?
+What does correct behavior look like?
+
+PHASE 3 — UNDERSTAND REALITY
+What is the code actually doing? Trace execution 
+paths. Follow data as it moves. Note where behavior
+diverges from intent — even slightly.
+
+PHASE 4 — BUILD CONTEXT
+What does each part depend on? What does each part 
+affect? How do the pieces connect? Where are the 
+boundaries between components?
+No mention of async. No mention of state. No mention of closures. Those are categories that might be relevant — or might not be. The model discovers what's relevant by reading the code, not by being told in advance.
+
+Then The Mode-Specific Phase Diverges
+After that shared understanding, each mode asks its specific question:
+Debug:
+PHASE 5 — DIAGNOSE
+The user has reported a symptom. Given your complete 
+understanding of this code, trace where that symptom 
+originates. What is the root cause — the single change 
+that if made would make the symptom disappear?
+Generate 3 competing explanations. Test each against 
+what you read. Kill the ones the evidence contradicts.
+Explain:
+PHASE 5 — ARTICULATE  
+A developer who has never seen this code needs to 
+understand it well enough to work on it tomorrow.
+Explain what it does, how it does it, and what would
+surprise someone reading it for the first time.
+Be concrete. Use line numbers. No vague summaries.
+Security:
+PHASE 5 — AUDIT
+What does this code trust? What does it assume about
+its inputs, its callers, and its environment?
+Where could those assumptions be violated by someone
+acting with malicious intent?
+For each finding, cite the exact code that creates 
+the risk and the exact change that would remove it.
+If you are not certain something is a risk, say so.
+
+What The AST Does In This Model
+The AST still runs first and injects verified facts. But those facts are now framed as ground truth for the model to use however is relevant — not as a checklist of things to look for.
+Instead of:
+VERIFIED STATIC ANALYSIS
+Variable Mutation Chains: [list]
+Async / Timing Nodes: [list]  
+Closure Captures: [list]
+Frame it as:
+VERIFIED GROUND TRUTH — confirmed by static analysis
+The following facts about this code are certain.
+Use them as evidence when reasoning. Do not contradict them.
+
+[same data, different framing]
+The model can now use mutation chain data to find a type coercion bug if that's what's relevant. It can use timing node data to explain architecture if that's what explains it. The facts are available. The model decides which ones matter.
+
+The One-Sentence Version
+Don't tell the model what kind of problem to look for. Tell it how to think, give it verified facts, then ask it the right question for the mode. The code tells it what's relevant. The prompt tells it how to reason and what to do with what it finds.
+That's a wide prompt. That's what produces output that works on any codebase, any bug class, any language pattern — not just the ones you thought of when writing the prompt.Great question. These two things are **very real pitfalls** in AI reasoning systems. If you handle them early, Unravel can become genuinely powerful. I’ll explain both in simple but accurate terms.
+
+---
+
+# 1️⃣ The Extra Phase: The **Hypothesis Loop**
+
+After your Phase 1–4 (Read → Intent → Realpastedgreat i approve but -
+Improvement 1 — Force the model to build a mental map before conclusions
+Add this rule to Phase 1-4:Do not diagnose, explain, or audit until a complete
+mental model of the codebase has been built.
+
+If necessary, reread sections to verify understanding
+before proceeding.Why?
+LLMs sometimes jump to conclusions too early.
+This slows them down slightly and improves reasoning.
+Improvement 2 — Force evidence citations
+You already hint at this, but make it strict.
+Add something like:Every claim must reference specific code locations.
+
+Do not make general statements without citing
+line numbers or code fragments that support them.This prevents hallucinated reasoning.
+What You Accidentally Designed
+You actually designed something deeper than a prompt.
+You designed a reasoning protocol.
+Structure:INPUT
+code + AST facts
+
+↓
+
+UNDERSTANDING PROTOCOL
+read
+intent
+reality
+context
+
+↓
+
+MODE QUESTION
+debug / explain / security
+
+↓
+
+EVIDENCE-BASED OUTPUTThis is extremely similar to how formal reasoning agents are built.
+Which is why your architecture feels solid.
+My Honest Verdict
+Your prompt design is:flexible
+mode-agnostic
+reasoning-driven
+not checklist-drivenThat is exactly what you want for:
+* arbitrary codebases
+* arbitrary bug classes
+* arbitrary languages
+So yes —
+I approve of this design.
+It is significantly better than the earlier narrow-prompt plan.dd Hypothesis Testing
+Right now debug mode says:generate 3 explanations
+test themGood.
+But I would explicitly add:Prefer explanations supported by multiple lines of evidence.
+Reject explanations contradicted by code.This prevents hallucinated root causes.
+Improvement 2 — Force Code Evidence
+Add this rule across all modes:Every claim must cite specific code evidence.Example:
+Bad:The system probably caches results.Good:cache.set() is called in service.js line 87.Evidence grounding dramatically improves reliability.also added a chatgpt adive look at itShow more9:24 AMEvaluated existing plan against new improvements, distinguished novel additions from established componentsEvaluated existing plan against new improvements, distinguished novel additions from established componentsGood. But before you add everything, let me separate what's genuinely new from what's already built.
+
+What's Already In Unravel
+Hypothesis loop — already exists. Rules 6 and 7 in config.js:
+Rule 6: Generate at least 3 competing hypotheses before committing
+Rule 7: If multiple hypotheses survive, report ALL survivors
+Phase 3 and 4 of the current pipeline already do exactly what ChatGPT described. This isn't missing. Don't add it again or you'll confuse the model with duplicate instructions.
+Evidence citations — already exists. Anti-sycophancy Rule 4:
+Rule 4: Every bug claim must cite exact line number + code fragment as proof
+Already there. Already working — the tldraw diagnosis cited main.ts L41, the cal.com diagnosis cited general-view.tsx L184. The rule is doing its job.
+Never trust user assumptions — already implicit in Phase 1 (read everything before forming opinions) and Rule 2 (if user description contradicts code, point out the contradiction). But it's implicit, not explicit. This one is worth making explicit.
+
+What's Genuinely New And Worth Adding
+Improvement 1 — Mental model before conclusions:
+This is real and not currently in the prompt. Add it to Phase 1:
+Do not diagnose, explain, or audit until you have 
+read every provided file completely.
+
+If you find yourself forming a conclusion before 
+finishing, stop. Keep reading. The early conclusion 
+is probably wrong.
+This directly fights first-answer bias which is the most common LLM failure mode on complex codebases.
+Improvement 2 — Multi-evidence preference:
+This is subtle but important. Add to the hypothesis testing phase:
+Prefer explanations supported by evidence from 
+multiple locations in the code.
+
+A hypothesis supported by one line is weaker than 
+one supported by three. A hypothesis contradicted 
+by any line of code must be eliminated regardless 
+of how plausible it seems.
+This prevents the model from latching onto a plausible-sounding explanation that only has one supporting data point.
+Improvement 3 — User input is a symptom report, not a diagnosis:
+This one ChatGPT got right and it's not explicit anywhere in the current prompt. Add this as Rule 8:
+Rule 8: The user's description is a symptom report, 
+not a diagnosis. Do not treat their assumption about 
+the bug's location or cause as fact. Use it as a 
+starting clue only. Verify everything against the code.
+This is the most important addition of the three. The tldraw bug was a perfect example — the user reported two bugs, one of which didn't exist. Unravel correctly identified the contradiction. But it did that by chance because the evidence was obvious. Rule 8 makes that behavior systematic.
+
+What To Ignore From The ChatGPT Advice
+"Add Phase 5 hypothesis generation, Phase 6 hypothesis testing, Phase 7 conclusion" — already built. Adding it again creates duplicate instructions that confuse the model. The current Phase 3 (Simulate + Hypothesize) and Phase 4 (Eliminate) already do this.
+"Evidence grounding dramatically improves reliability" — true, already implemented in Rule 4.
+ChatGPT gave good general advice for building a reasoning system from scratch. Unravel already has most of it. The three additions above are what's actually missing.
+
+The Updated Anti-Sycophancy Rules
+Rule 1: If code is correct, say "No bug found." Don't invent problems.
+Rule 2: If user description contradicts code, point out the contradiction.
+Rule 3: If uncertain, say "Cannot confirm without runtime execution."
+Rule 4: Every claim must cite exact line number + code fragment.
+Rule 5: Never describe behavior not verifiable from provided files.
+Rule 6: Generate at least 3 competing hypotheses before committing.
+Rule 7: If multiple hypotheses survive elimination, report all survivors.
+Rule 8: User description is a symptom report, not a diagnosis. 
+        Verify location and cause against code independently.
+Eight rules. That's the complete set. Don't add more — the model has to hold all of these simultaneously and there's a point where more rules create noise rather than guardrails.
+
+The Updated Shared Phase 1-4
+PHASE 1 — READ
+Read every provided file completely before forming 
+any opinion. Do not start analyzing until you have 
+read everything. If you find yourself forming a 
+conclusion before finishing — stop. Keep reading.
+The early conclusion is probably wrong.
+
+PHASE 2 — UNDERSTAND INTENT
+For each component, function, and module: what is 
+this trying to accomplish? What does correct 
+behavior look like?
+
+PHASE 3 — UNDERSTAND REALITY
+What is the code actually doing? Where does behavior 
+diverge from intent — even slightly?
+
+PHASE 4 — BUILD CONTEXT
+What does each part depend on? What does each part 
+affect? How do the pieces connect?
+Clean. Wide. No mention of async, state, closures, or any specific pattern. The code tells the model what's relevant.
+
+One-Line Summary
+Three real additions: mental model gate, multi-evidence preference, Rule 8 on user assumptions. Everything else ChatGPT suggested is already built. Don't duplicate it
