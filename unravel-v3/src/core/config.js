@@ -141,43 +141,215 @@ const LEVEL_INSTRUCTIONS = {
     intermediate: "The user is a developer who can write code but is confused about THIS specific bug. Give technical details but still explain the 'why' clearly.",
 };
 
-// --- The Core Engine Prompt ---
-export function buildSystemPrompt(level, language, provider = 'anthropic') {
+// ═══════════════════════════════════════════════════
+// PHASE 4A: Reasoning Protocol & Mode System
+// ═══════════════════════════════════════════════════
+
+// --- Shared Understanding Phase (Phase 1-4) ---
+// Wide prompts: no mention of async, closures, state. Model discovers what's relevant.
+function buildSharedPhases() {
+    return [
+        {
+            n: 1, name: 'READ',
+            desc: `Read every provided file completely before forming any opinion.
+Do not diagnose, explain, or audit until a complete mental model of the codebase has been built.
+If you find yourself forming a conclusion before finishing — stop. Keep reading. The early conclusion is probably wrong.
+If necessary, reread sections to verify understanding before proceeding.`
+        },
+        {
+            n: 2, name: 'UNDERSTAND INTENT',
+            desc: `For each component, function, and module: what is this trying to accomplish?
+What problem does it solve? What does correct behavior look like from the perspective of whoever wrote it?
+Do not assume anything about implementation — derive intent from the code structure and naming.`
+        },
+        {
+            n: 3, name: 'UNDERSTAND REALITY',
+            desc: `What is the code actually doing?
+Where does actual behavior diverge from intended behavior — even slightly?
+Trace data as it moves. Follow execution paths.
+Generate 3-5 competing explanations for any divergence you find.
+Do not commit to any single explanation yet.
+Prefer explanations supported by evidence from multiple locations in the code.
+Reject explanations contradicted by any line of code, regardless of how plausible they seem.
+For variables with 5 or more combined reads and writes, populate variableStateEdges with their full mutation flow as directed edges.`
+        },
+        {
+            n: 4, name: 'BUILD CONTEXT',
+            desc: `What does each part depend on? What does each part affect?
+How do the pieces connect? Where are the boundaries between components?
+Use the verified AST facts provided — they are ground truth. Do not contradict them.`
+        },
+    ];
+}
+
+// --- Debug Mode Prompt (Phase 5-9 appended to shared) ---
+export function buildDebugPrompt(level, language, provider = 'anthropic') {
     const levelInst = LEVEL_INSTRUCTIONS[level] || LEVEL_INSTRUCTIONS.vibe;
     const langInst = LANG_INSTRUCTIONS[language] || LANG_INSTRUCTIONS.english;
 
-    const role = 'You are UNRAVEL — a deterministic AI debugging engine. You do NOT guess bugs. You systematically analyze code through a structured pipeline.';
+    const role = 'You are UNRAVEL — a deterministic AI debugging engine. You do NOT guess bugs. You reason systematically through a structured pipeline.';
 
-    const phases = [
-        { n: 1, name: 'INGEST', desc: 'Read ALL provided code. Build a complete mental model of the program. Do NOT theorize about bugs yet.' },
-        { n: 2, name: 'TRACK STATE', desc: 'For every variable in the program, identify: where it\'s declared, where it\'s read, where it\'s mutated. Build a complete variable mutation map.' },
-        { n: 3, name: 'SIMULATE + HYPOTHESIZE', desc: 'Mentally execute the program through the user\'s described actions. Trace function calls → variable changes → side effects. Then generate exactly 3 competing hypotheses for the root cause. Do NOT commit to a single explanation yet.' },
-        { n: 4, name: 'ELIMINATE', desc: 'For each of the 3 hypotheses, check it against the AST evidence and code facts. Kill any hypothesis the evidence contradicts. If 2 or more survive elimination, mark the diagnosis as uncertain — do NOT pick one arbitrarily.' },
-        { n: 5, name: 'ROOT CAUSE', desc: 'Confirm the surviving hypothesis as the root cause. Be extremely specific — file, line, variable, function. Do NOT give a vague answer. If multiple hypotheses survived, present all survivors with evidence for each.' },
-        { n: 6, name: 'MINIMAL FIX', desc: 'What is the smallest possible code change that fixes the bug? Do NOT rewrite the entire program. Show targeted surgical fixes.' },
-        { n: 7, name: 'AI LOOP ANALYSIS', desc: 'Why would typical AI tools (ChatGPT, Cursor, Copilot) fail to fix this correctly? What symptom-chasing loop would they fall into? This is critical.' },
-        { n: 8, name: 'CONCEPT EXTRACTION', desc: 'What programming concept does this bug teach? How should the user avoid this class of bug forever?' },
-        { n: 9, name: 'INVARIANTS', desc: 'What conditions MUST always be true for this program to work correctly? Document them for future prevention.' },
+    const sharedPhases = buildSharedPhases();
+
+    const debugPhases = [
+        {
+            n: 5, name: 'DIAGNOSE',
+            desc: `The user has reported a symptom. Their description is a symptom report — NOT a diagnosis.
+Do not assume the user is correct about the location or nature of the bug.
+Use their symptom as a starting clue only. Verify everything against the code.
+Given your complete understanding of this code, trace where that symptom originates.
+Test each hypothesis from Phase 3 against AST evidence. Kill the ones the evidence contradicts.
+The surviving hypothesis is the root cause. If multiple survive, report all of them.
+Populate hypothesisTree with each hypothesis, its status (survived/eliminated), and the exact code evidence that determined its fate.`
+        },
+        {
+            n: 6, name: 'MINIMAL FIX',
+            desc: `What is the smallest possible code change that fixes the bug?
+Do NOT rewrite the entire program. Show targeted surgical fixes only.
+Explain exactly why this fix works at the root cause level.
+Populate timelineEdges with the same timeline as directed edges between actors. Mark the exact edge where the bug manifests with isBugPoint: true.`
+        },
+        {
+            n: 7, name: 'AI LOOP ANALYSIS',
+            desc: `Why would typical AI tools (ChatGPT, Cursor, Copilot) fail to fix this correctly?
+What symptom-chasing loop would they fall into? Be specific about the wrong path.
+Populate aiLoopEdges with the loop as directed edges. Mark the Unravel escape path with isEscapePath: true.`
+        },
+        {
+            n: 8, name: 'CONCEPT EXTRACTION',
+            desc: `What programming concept does this bug teach?
+How should the user avoid this entire class of bug forever?
+Give a real-world analogy from Indian daily life.`
+        },
+        {
+            n: 9, name: 'INVARIANTS',
+            desc: `What conditions MUST always be true for this program to work correctly?
+Document them as rules for future prevention.`
+        },
     ];
+
+    const allPhases = [...sharedPhases, ...debugPhases];
 
     const rules = [
         'NEVER make up code behavior you cannot verify from the provided files.',
-        'If the code appears CORRECT and the described bug cannot be reproduced from the code logic, say so clearly. Do NOT invent bugs to appear useful.',
-        'If the user\'s bug description contradicts the actual code behavior, point out the contradiction instead of agreeing with a false premise.',
+        'If the code appears correct and the described bug cannot be reproduced from the code logic, say so clearly. Do NOT invent bugs to appear useful.',
+        'If the user\'s bug description contradicts actual code behavior, point out the contradiction instead of agreeing with a false premise.',
         'If you are uncertain, say "I cannot confirm this without runtime execution" — do NOT guess and present it as fact.',
-        'Every bug claim MUST include the exact line number and code fragment that proves it. Format: "Bug: [type], Location: [function] line [N], Evidence: [exact code]". If you cannot cite evidence, do NOT claim the bug.',
+        'Every bug claim MUST include the exact line number and code fragment that proves it. If you cannot cite evidence, do NOT claim the bug.',
         'Generate at least 3 competing hypotheses before committing to a root cause. Do not anchor to the first plausible explanation.',
-        'If multiple hypotheses survive evidence elimination, report all survivors with evidence for each. Do NOT pick one arbitrarily to appear decisive.',
+        'If multiple hypotheses survive evidence elimination, report all survivors with evidence for each. Do NOT pick one arbitrarily.',
+        'The user\'s description is a symptom report, not a diagnosis. Do not treat their assumption about the bug\'s location or cause as fact.',
         'If critical files are missing, set needsMoreInfo to true and specify exactly what you need.',
         'Use Indian daily-life analogies when explaining (ghar, sabzi, auto-rickshaw, chai, cricket).',
         'Be warm like a senior developer friend, not cold like documentation.',
-        'Confidence must be evidence-backed — list what you verified and what you couldn\'t.',
+        'Confidence must be evidence-backed — list what you verified and what you could not.',
         'Bug type MUST be one of: STATE_MUTATION, STALE_CLOSURE, RACE_CONDITION, TEMPORAL_LOGIC, EVENT_LIFECYCLE, TYPE_COERCION, ENV_DEPENDENCY, ASYNC_ORDERING, DATA_FLOW, UI_LOGIC, MEMORY_LEAK, INFINITE_LOOP, OTHER.',
     ];
 
+    return _formatPrompt(role, levelInst, langInst, allPhases, rules, provider);
+}
+
+// --- Explain Mode Prompt ---
+export function buildExplainPrompt(level, language, provider = 'anthropic') {
+    const levelInst = LEVEL_INSTRUCTIONS[level] || LEVEL_INSTRUCTIONS.vibe;
+    const langInst = LANG_INSTRUCTIONS[language] || LANG_INSTRUCTIONS.english;
+
+    const role = 'You are UNRAVEL in Explain Mode — a code understanding engine. You do NOT look for bugs. You do NOT look for vulnerabilities. Your only job is to explain what this code does and how it works.';
+
+    const sharedPhases = buildSharedPhases();
+
+    const explainPhase = {
+        n: 5, name: 'ARTICULATE',
+        desc: `You are a senior developer giving a thorough codebase walkthrough to a developer joining tomorrow. Not a documentation generator — a human expert briefing.
+
+SUMMARY: This is the MOST IMPORTANT section. Write a BIG, DETAILED, multi-paragraph explanation. Do NOT be brief. Do NOT be superficial. Cover ALL of the following in plain, everyday language — as if explaining to someone who has never seen this code before:
+
+Paragraph 1 — WHAT IS THIS: What does this project do? What problem does it solve? What does a user actually experience when they use it? Use simple analogies. Make it vivid and concrete.
+
+Paragraph 2 — TECH STACK & STRUCTURE: What languages, frameworks, and tools does this project use? How is the codebase organized — what are the main folders and files, and what role does each play? Explain this like you are giving someone a tour of the project directory.
+
+Paragraph 3 — HOW IT ACTUALLY WORKS: Walk through the internal flow step by step. When a user triggers the main action, what happens first, second, third? Trace the entire pipeline from input to output. If there are phases, stages, or layers, name each one and explain what it does in plain language. Do NOT skip steps — be thorough. This is where you explain the actual mechanics, not just a vague overview.
+
+Paragraph 4 — WHAT MAKES IT INTERESTING: What is architecturally distinctive about this code compared to typical projects? What is the core design insight someone needs to understand before reading any code? What patterns or decisions would surprise an experienced developer?
+
+ENTRY POINTS: The real starting points — where execution begins, where user interaction begins, where the system initializes. File path and exact line number for each. Give a clear one-line description of what each entry point does in simple terms.
+
+DATA FLOW + flowchartEdges: Trace how data actually moves through the system. Start from user input or external trigger, end at output or side effect. Populate flowchartEdges with the same data as directed edges for a Mermaid flowchart.
+
+ARCHITECTURE LAYERS + architectureLayers: Group the codebase into 3-5 high-level semantic layers (e.g. UI, Core Engine, Data, Extensions) so a human can mentally map the system immediately. This is not about imports — it's about semantic boundaries. Provide a name, a quick description, and the list of specific components/files that belong in that layer.
+
+COMPONENT MAP + dependencyEdges: Show which modules depend on which. Only include files that are EXPLICITLY imported in the provided code. Do NOT infer files from function names. If a function is defined in the same file, it is a local function — not a separate dependency. Populate dependencyEdges with explicit import relationships only — short filenames.
+
+KEY PATTERNS: Each pattern must name the specific mechanism, the specific files involved, and the specific lines where it is visible. Bad: "Modular Design". Good: "Core engine (orchestrate.js, ast-engine.js, config.js) shared between web app and VS Code extension via direct relative imports at App.jsx L3 and extension.js L2 — no npm package".
+
+NON-OBVIOUS INSIGHTS: What would genuinely surprise an experienced developer reading this for the first time? Architectural inversions, unusual patterns, implicit coupling, hidden assumptions. Minimum 3, maximum 6. Write each insight as a full sentence that explains both the WHAT and the WHY.
+
+GOTCHAS: Where are the landmines? What breaks silently when changed? What shared state or side effects aren't obvious from function signatures? Each gotcha needs a title, a clear description of what goes wrong and why, and a specific file and line.
+
+ONBOARDING: The 3-5 most common tasks a new developer would need to do. For each: the exact file, the exact line, and the exact existing code to model after. "To add a new provider, open config.js and copy the pattern of the existing google object starting at L38" is useful. "Modify the configuration" is not.
+
+ARCHITECTURE DECISIONS: What major structural choices are visible in the code? Only explain the reasoning if it is actually visible from the code — no speculation. If the reason is visible, explain the tradeoff it creates.
+
+Be concrete. Use line numbers for every claim. No vague summaries.
+Do NOT mention bugs. Do NOT mention vulnerabilities. Do NOT suggest improvements.
+Your only job is accurate, thorough, honest explanation.`
+    };
+
+    const allPhases = [...sharedPhases, explainPhase];
+
+    const rules = [
+        'Do NOT look for bugs, issues, or problems. You are an explainer, not a debugger.',
+        'Every claim must reference a specific file and line number. No general statements without code evidence.',
+        'If you are unsure what something does, say so — do not guess.',
+        'Explain at the level of the user profile below.',
+        'Be concrete. "This function takes X and returns Y" is better than "this function handles data processing".',
+        'Use Indian daily-life analogies when explaining concepts.',
+        'ONLY list files as dependencies if they appear in explicit import/require statements in the provided code. If a function is defined locally in the same file, say so. Never infer the existence of files you have not seen.',
+        'Key patterns must be specific: name the exact files, functions, and mechanism. "Flexible AI Providers" is too vague. "provider.js abstracts Gemini/Claude/OpenAI behind a single callProvider() interface" is correct.',
+    ];
+
+    return _formatPrompt(role, levelInst, langInst, allPhases, rules, provider);
+}
+
+// --- Security Mode Prompt (BETA) ---
+export function buildSecurityPrompt(level, language, provider = 'anthropic') {
+    const levelInst = LEVEL_INSTRUCTIONS[level] || LEVEL_INSTRUCTIONS.vibe;
+    const langInst = LANG_INSTRUCTIONS[language] || LANG_INSTRUCTIONS.english;
+
+    const role = 'You are UNRAVEL in Security Mode (BETA) — a static security auditor. You identify where code makes trust assumptions that a malicious actor could violate.';
+
+    const sharedPhases = buildSharedPhases();
+
+    const securityPhase = {
+        n: 5, name: 'AUDIT',
+        desc: `What does this code trust? What does it assume about its inputs, its callers, and its environment?
+Where could those assumptions be violated by someone acting with malicious intent?
+For each finding, cite the exact code that creates the risk and the exact change that would remove it.
+Rate severity honestly: Critical / High / Medium / Low / Informational.
+If you are not certain something is a vulnerability, classify it as INFORMATIONAL — not as a vulnerability.
+A confident wrong finding is worse than no finding at all.
+Every finding must have a confidence score. If confidence is below 0.7, it must be INFORMATIONAL regardless of severity rating.`
+    };
+
+    const allPhases = [...sharedPhases, securityPhase];
+
+    const rules = [
+        'This is BETA. Every finding automatically carries requiresHumanVerification: true.',
+        'If you cannot point to specific code evidence for a vulnerability, confidence must be below 0.5 and severity must be INFORMATIONAL.',
+        'Do not flag theoretical issues without code evidence. "This pattern could sometimes be unsafe" is not a finding.',
+        'Every finding must cite exact file and line number. No findings without code evidence.',
+        'Focus on what is detectable from static analysis: injection vulnerabilities (XSS, SQLi, command injection) and hardcoded credentials. Do not speculate about runtime behavior.',
+        'If the code appears safe, say so. Do not invent vulnerabilities to appear useful.',
+    ];
+
+    return _formatPrompt(role, levelInst, langInst, allPhases, rules, provider);
+}
+
+// --- Provider-Specific Formatting (shared by all modes) ---
+function _formatPrompt(role, levelInst, langInst, phases, rules, provider) {
     const schemaLine = 'Return your analysis as a JSON object matching the exact schema provided.';
 
-    // === CLAUDE: XML tags (Anthropic trained on XML-structured data) ===
+    // === CLAUDE: XML tags ===
     if (provider === 'anthropic') {
         return `<instructions>
 <role>${role}</role>
@@ -199,7 +371,7 @@ ${rules.map(r => `<rule>${r}</rule>`).join('\n')}
 </instructions>`;
     }
 
-    // === GEMINI: Markdown headers (Google recommends structured markdown) ===
+    // === GEMINI: Markdown headers ===
     if (provider === 'google') {
         return `# Role
 ${role}
@@ -208,7 +380,7 @@ ${role}
 **Level:** ${levelInst}
 **Language:** ${langInst}
 
-## Debugging Pipeline (follow EXACTLY)
+## Analysis Pipeline (follow EXACTLY)
 ${phases.map(p => `**Phase ${p.n} — ${p.name}:** ${p.desc}`).join('\n\n')}
 
 ## Rules
@@ -218,7 +390,7 @@ ${rules.map(r => `- ${r}`).join('\n')}
 ${schemaLine}`;
     }
 
-    // === OPENAI: Markdown + delimiters (OpenAI recommends clear section delimiters) ===
+    // === OPENAI: Markdown + delimiters ===
     if (provider === 'openai') {
         return `${role}
 
@@ -226,7 +398,7 @@ ${schemaLine}`;
 Level: ${levelInst}
 Language: ${langInst}
 
-### DEBUGGING PIPELINE (follow EXACTLY) ###
+### ANALYSIS PIPELINE (follow EXACTLY) ###
 ${phases.map(p => `${p.n}. ${p.name}: ${p.desc}`).join('\n')}
 
 ### RULES ###
@@ -240,25 +412,50 @@ ${schemaLine}`;
     return `${role}\n\nUSER PROFILE:\nLevel: ${levelInst}\n\nLANGUAGE:\n${langInst}\n\nPIPELINE:\n${phases.map(p => `PHASE ${p.n} — ${p.name}: ${p.desc}`).join('\n\n')}\n\nRULES:\n${rules.map(r => `- ${r}`).join('\n')}\n\n${schemaLine}`;
 }
 
-// --- Router Agent Prompt ---
-export function buildRouterPrompt(filePaths, userError) {
-    return `You are the Router Agent for the Unravel debugging engine.
+// --- Backward Compatibility Alias ---
+export function buildSystemPrompt(level, language, provider) {
+    return buildDebugPrompt(level, language, provider);
+}
 
-Your job: Look at this project's file tree and the user's bug report. Select the 5-8 most relevant files that need to be inspected to debug this issue.
+// --- Router Agent Prompt (mode-aware) ---
+export function buildRouterPrompt(filePaths, userIntent, mode = 'debug') {
+    const modeInstructions = {
+        debug: `Select 5-8 files maximum. Be aggressive about excluding irrelevant files.
+The bug is in a specific place. Select the files closest to the reported symptom and their direct imports.
+More files hurt focus. Prioritize files mentioned in the error, then their direct import chain.
+Skip: test files, config files (unless bug is config-related), documentation, assets.`,
 
-Rules:
-- Skip node_modules, .git, dist, build, .next, coverage
-- Prioritize files mentioned in error messages
-- Include related config files (package.json, tsconfig, etc.) if relevant
-- Think about import chains — if file A imports file B, and the bug is in A, include B too
+        explain: `This is Explain Mode — understanding requires breadth, not focus.
+FIRST PRIORITY: Always include README.md, docs/, CONTRIBUTING.md, ARCHITECTURE.md, or any documentation files if present. These reveal intent before implementation.
+THEN: Select 15-25 files covering all major areas. Include entry points, core modules, config files, and representative files from each major folder.
+Include package.json — it reveals dependencies and the overall shape of the project.
+Do NOT try to find a bug. Try to understand the whole system. More files = better understanding.`,
+
+        security: `Select 8-12 files focused on attack surface.
+Prioritize: entry points, auth middleware, input handlers, API route definitions, database query files, files that touch user-supplied data, environment config.
+Include package.json — reveals dependency versions with known CVEs.
+Skip: pure UI components, test files, utility functions with no I/O.`
+    };
+
+    return `You are the Router Agent for the Unravel analysis engine.
+
+Your job: Look at this project's file tree and the user's intent. Select the right files for this analysis.
+
+MODE: ${mode.toUpperCase()}
+${modeInstructions[mode] || modeInstructions.debug}
+
+Universal rules:
+- Skip node_modules, .git, dist, build, .next, coverage, .cache
+- Think about import chains — if file A imports B and the issue is in A, include B
+- Short filenames in output, matching exactly what appears in the file tree
 
 FILE TREE:
 ${JSON.stringify(filePaths)}
 
-USER'S BUG REPORT:
-${userError || 'No specific error described — analyze the full project for issues.'}
+USER INTENT:
+${userIntent || 'No specific intent described.'}
 
-Return a JSON object: { "filesToRead": ["path/to/file1.js", "path/to/file2.js", ...] }`;
+Return ONLY a JSON object: { "filesToRead": ["path/to/file1.js", ...] }`;
 }
 
 // --- Engine Output Schema (for Gemini structured output) ---
@@ -320,7 +517,68 @@ export const ENGINE_SCHEMA = {
                         loopSteps: { type: "ARRAY", items: { type: "STRING" } }
                     }
                 },
-                aiPrompt: { type: "STRING", description: "Prompt to paste into Cursor/Bolt to fix it safely." }
+                aiPrompt: { type: "STRING", description: "Prompt to paste into Cursor/Bolt to fix it safely." },
+                timelineEdges: {
+                    type: "ARRAY",
+                    description: "Execution timeline as directed edges for sequence diagram. Only populate if timeline section is requested.",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            from: { type: "STRING", description: "Actor or component initiating the action" },
+                            to: { type: "STRING", description: "Actor or component receiving the action" },
+                            label: { type: "STRING", description: "What happens — keep under 8 words" },
+                            isBugPoint: { type: "BOOLEAN", description: "TRUE only for the exact edge where the bug manifests" }
+                        }
+                    }
+                },
+                hypothesisTree: {
+                    type: "ARRAY",
+                    description: "All hypotheses with elimination status. Only populate if hypotheses section is requested.",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            id: { type: "STRING", description: "H1, H2, H3 etc" },
+                            text: { type: "STRING", description: "Short hypothesis statement under 10 words" },
+                            status: { type: "STRING", description: "survived OR eliminated" },
+                            reason: { type: "STRING", description: "One-line reason for elimination or survival — cite file + line" }
+                        }
+                    }
+                },
+                aiLoopEdges: {
+                    type: "ARRAY",
+                    description: "The AI fix loop as directed edges showing the cycle. Only populate if whyAILooped section is requested.",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            from: { type: "STRING" },
+                            to: { type: "STRING" },
+                            label: { type: "STRING" },
+                            isEscapePath: { type: "BOOLEAN", description: "TRUE only for the Unravel escape edge" }
+                        }
+                    }
+                },
+                variableStateEdges: {
+                    type: "ARRAY",
+                    description: "Variable mutation flow as edges. Only populate for variables with 5+ combined reads and writes. Only populate if variableState section is requested.",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            variable: { type: "STRING" },
+                            edges: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        from: { type: "STRING", description: "declared / functionName" },
+                                        to: { type: "STRING", description: "functionName that reads or writes" },
+                                        label: { type: "STRING", description: "written L24 / read L87 / mutated L103" },
+                                        type: { type: "STRING", description: "write OR read OR mutate" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     },
@@ -329,4 +587,290 @@ export const ENGINE_SCHEMA = {
 
 // --- Schema Instruction (for Claude / OpenAI inline prompt injection) ---
 // This mirrors ENGINE_SCHEMA so that changes to one are reflected in both.
-export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, whyAILooped: {pattern, explanation, loopSteps[]}, aiPrompt } }`;
+export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, whyAILooped: {pattern, explanation, loopSteps[]}, aiPrompt, timelineEdges: [{from, to, label, isBugPoint}], hypothesisTree: [{id, text, status, reason}], aiLoopEdges: [{from, to, label, isEscapePath}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}] } }`;
+
+// ═══════════════════════════════════════════════════
+// PHASE 4A: Mode-Specific Schemas
+// ═══════════════════════════════════════════════════
+
+// --- Explain Mode Schema ---
+export const EXPLAIN_SCHEMA = {
+    type: "OBJECT",
+    properties: {
+        summary: {
+            type: "STRING",
+            description: "A BIG multi-paragraph explanation. Paragraph 1: what does this project do in plain language. Paragraph 2: tech stack and project structure. Paragraph 3: step-by-step internal flow — how the code actually works from input to output, naming every phase/stage. Paragraph 4: what makes the architecture distinctive. Be thorough and detailed — minimum 4 paragraphs."
+        },
+        entryPoints: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    name: { type: "STRING" },
+                    type: { type: "STRING", description: "component / function / endpoint / server / class" },
+                    file: { type: "STRING" },
+                    line: { type: "NUMBER" },
+                    description: { type: "STRING" }
+                }
+            }
+        },
+        dataFlow: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    from: { type: "STRING" },
+                    to: { type: "STRING" },
+                    mechanism: { type: "STRING" },
+                    line: { type: "NUMBER" }
+                }
+            }
+        },
+        architectureLayers: {
+            type: "ARRAY",
+            description: "High-level semantic grouping of the codebase (e.g. UI Layer, Core Engine, Data Layer)",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    name: { type: "STRING" },
+                    description: { type: "STRING" },
+                    components: { type: "ARRAY", items: { type: "STRING" } }
+                }
+            }
+        },
+        componentMap: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    name: { type: "STRING" },
+                    children: { type: "ARRAY", items: { type: "STRING" } },
+                    stateOwned: { type: "ARRAY", items: { type: "STRING" } }
+                }
+            }
+        },
+        keyPatterns: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Each pattern must name specific mechanism and file. Bad: Modular Design. Good: Core engine (orchestrate.js, config.js) shared via direct relative imports — not npm package"
+        },
+        nonObviousInsights: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Things that would genuinely surprise a developer reading this for the first time. Implicit assumptions, unusual patterns, hidden dependencies."
+        },
+        gotchas: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    title: { type: "STRING" },
+                    description: { type: "STRING" },
+                    location: { type: "STRING", description: "file + line number" }
+                }
+            },
+            description: "Hidden coupling, shared mutable state, things that break silently when changed."
+        },
+        onboarding: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    task: { type: "STRING", description: "e.g. Add a new AI provider" },
+                    whereToLook: { type: "STRING", description: "Exact file and line number" },
+                    patternToFollow: { type: "STRING", description: "Exact existing code to model after — cite file and line" }
+                }
+            },
+            description: "3-5 most common tasks a new developer would need to do. Be surgically specific."
+        },
+        architectureDecisions: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    decision: { type: "STRING" },
+                    visibleReason: { type: "STRING", description: "Only what is visible in the code — no speculation" },
+                    tradeoff: { type: "STRING" }
+                }
+            }
+        },
+        flowchartEdges: {
+            type: "ARRAY",
+            description: "Data flow as directed edges for Mermaid flowchart",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    from: { type: "STRING" },
+                    to: { type: "STRING" },
+                    label: { type: "STRING", description: "Keep under 6 words" }
+                }
+            }
+        },
+        dependencyEdges: {
+            type: "ARRAY",
+            description: "File-level import dependencies as directed edges. Only EXPLICIT imports — never inferred.",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    file: { type: "STRING", description: "Short filename only e.g. App.jsx" },
+                    imports: { type: "ARRAY", items: { type: "STRING" }, description: "Short filenames only" }
+                }
+            }
+        }
+    },
+    required: ["summary", "entryPoints", "keyPatterns"]
+};
+
+export const EXPLAIN_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences) matching this structure: { summary: string, entryPoints: [{name, type, file, line, description}], dataFlow: [{from, to, mechanism, line}], architectureLayers: [{name, description, components[]}], componentMap: [{name, children[], stateOwned[]}], keyPatterns: string[], nonObviousInsights: string[], gotchas: [{title, description, location}], onboarding: [{task, whereToLook, patternToFollow}], architectureDecisions: [{decision, visibleReason, tradeoff}], flowchartEdges: [{from, to, label}], dependencyEdges: [{file, imports[]}] }`;
+
+// --- Security Mode Schema (BETA) ---
+export const SECURITY_SCHEMA = {
+    type: "OBJECT",
+    properties: {
+        vulnerabilities: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    type: { type: "STRING" },
+                    severity: { type: "STRING", description: "Critical / High / Medium / Low / Informational" },
+                    confidence: { type: "NUMBER", description: "0.0 to 1.0" },
+                    cweId: { type: "STRING" },
+                    location: { type: "STRING", description: "file + line number" },
+                    description: { type: "STRING" },
+                    evidence: { type: "STRING", description: "exact code fragment" },
+                    remediation: { type: "STRING" },
+                    requiresHumanVerification: { type: "BOOLEAN" }
+                }
+            }
+        },
+        summary: { type: "STRING" },
+        disclaimer: { type: "STRING" }
+    },
+    required: ["vulnerabilities", "disclaimer"]
+};
+
+export const SECURITY_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences) matching this structure: { vulnerabilities: [{type, severity, confidence, cweId, location, description, evidence, remediation, requiresHumanVerification}], summary: string, disclaimer: string }`;
+
+// ═══════════════════════════════════════════════════
+// PHASE 4A: Section Registry & Presets
+// ═══════════════════════════════════════════════════
+
+export const SECTION_REGISTRY = {
+    rootCause: { label: 'Root Cause', modes: ['debug'], defaultOn: true, tokenCost: 'low' },
+    minimalFix: { label: 'Minimal Fix', modes: ['debug'], defaultOn: true, tokenCost: 'low' },
+    aiPrompt: { label: 'AI Fix Prompt', modes: ['debug'], defaultOn: true, tokenCost: 'low' },
+    reproduction: { label: 'Reproduction Steps', modes: ['debug'], defaultOn: true, tokenCost: 'low' },
+    variableState: { label: 'Variable State Table', modes: ['debug'], defaultOn: false, tokenCost: 'medium' },
+    timeline: { label: 'Execution Timeline', modes: ['debug'], defaultOn: false, tokenCost: 'high' },
+    whyAILooped: { label: 'Why AI Loops', modes: ['debug'], defaultOn: false, tokenCost: 'medium' },
+    conceptExtraction: { label: 'Concept + Analogy', modes: ['debug'], defaultOn: false, tokenCost: 'medium' },
+    invariants: { label: 'Invariants', modes: ['debug'], defaultOn: false, tokenCost: 'low' },
+    hypotheses: { label: 'Hypotheses', modes: ['debug'], defaultOn: false, tokenCost: 'low' },
+    architecture: { label: 'Architecture + Flow', modes: ['explain'], defaultOn: true, tokenCost: 'high' },
+    vulnerabilities: { label: 'Vulnerability List', modes: ['security'], defaultOn: true, tokenCost: 'high' },
+};
+
+export const PRESETS = {
+    quick: {
+        label: '⚡ Quick Fix',
+        sections: ['rootCause', 'minimalFix', 'aiPrompt'],
+        description: 'Root cause + fix only. Fastest.',
+    },
+    developer: {
+        label: '👨‍💻 Developer',
+        sections: ['rootCause', 'minimalFix', 'aiPrompt', 'reproduction', 'variableState', 'timeline'],
+        description: 'Full technical breakdown.',
+    },
+    full: {
+        label: '📖 Full Report',
+        sections: Object.keys(SECTION_REGISTRY),
+        description: 'Everything. Current default behavior.',
+    },
+    custom: {
+        label: '🔧 Custom',
+        sections: [],
+        description: 'You pick.',
+    },
+};
+
+// ═══════════════════════════════════════════════════
+// PHASE 4A: Dynamic Schema Builder
+// ═══════════════════════════════════════════════════
+
+// Maps section keys to the ENGINE_SCHEMA report properties they require
+const SECTION_TO_SCHEMA_KEYS = {
+    rootCause: ['rootCause', 'codeLocation', 'bugType', 'confidence', 'evidence', 'uncertainties'],
+    minimalFix: ['minimalFix', 'whyFixWorks'],
+    aiPrompt: ['aiPrompt'],
+    reproduction: ['symptom', 'reproduction'],
+    variableState: ['variableState', 'variableStateEdges'],
+    timeline: ['timeline', 'timelineEdges'],
+    whyAILooped: ['whyAILooped', 'aiLoopEdges'],
+    conceptExtraction: ['conceptExtraction'],
+    invariants: ['invariants'],
+    hypotheses: ['hypotheses', 'hypothesisTree'],
+};
+
+// Build a subset of ENGINE_SCHEMA for Gemini structured output
+export function buildDynamicSchema(sections) {
+    const requestedKeys = new Set();
+    for (const section of sections) {
+        const keys = SECTION_TO_SCHEMA_KEYS[section] || [];
+        keys.forEach(k => requestedKeys.add(k));
+    }
+
+    // Build subset of report properties
+    const reportProps = {};
+    for (const key of requestedKeys) {
+        if (ENGINE_SCHEMA.properties.report?.properties[key]) {
+            reportProps[key] = ENGINE_SCHEMA.properties.report.properties[key];
+        }
+    }
+
+    return {
+        type: "OBJECT",
+        properties: {
+            needsMoreInfo: ENGINE_SCHEMA.properties.needsMoreInfo,
+            missingFilesRequest: ENGINE_SCHEMA.properties.missingFilesRequest,
+            report: { type: "OBJECT", properties: reportProps }
+        },
+        required: ["needsMoreInfo"]
+    };
+}
+
+// Build a subset schema instruction for Claude/OpenAI inline prompts
+export function buildDynamicSchemaInstruction(sections) {
+    const sectionToFields = {
+        rootCause: 'rootCause, codeLocation, bugType, confidence, evidence[], uncertainties[]',
+        minimalFix: 'minimalFix, whyFixWorks',
+        aiPrompt: 'aiPrompt',
+        reproduction: 'symptom, reproduction[]',
+        variableState: 'variableState: [{variable, meaning, whereChanged}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}]',
+        timeline: 'timeline: [{time, event}], timelineEdges: [{from, to, label, isBugPoint}]',
+        whyAILooped: 'whyAILooped: {pattern, explanation, loopSteps[]}, aiLoopEdges: [{from, to, label, isEscapePath}]',
+        conceptExtraction: 'conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}',
+        invariants: 'invariants[]',
+        hypotheses: 'hypotheses[], hypothesisTree: [{id, text, status, reason}]',
+    };
+
+    const fields = sections.map(s => sectionToFields[s]).filter(Boolean).join(', ');
+    return `\n\nReturn ONLY a raw JSON object (no markdown fences) with these fields: { needsMoreInfo: boolean, missingFilesRequest?: {filesNeeded[], reason}, report?: { ${fields} } }`;
+}
+
+// ═══════════════════════════════════════════════════
+// PHASE 4A: Runtime Estimation
+// ═══════════════════════════════════════════════════
+
+export function estimateRuntime(fileCount, totalLines, provider, preset) {
+    let base = 15; // base seconds
+    base += Math.min(fileCount * 3, 30);     // +3s per file, cap 30s
+    base += Math.min(totalLines / 200, 20);  // +1s per 200 lines, cap 20s
+
+    const presetMul = { quick: 0.6, developer: 0.85, full: 1.0, custom: 0.9 };
+    const providerMul = { google: 0.7, anthropic: 1.0, openai: 1.1 };
+
+    base *= (presetMul[preset] || 1.0) * (providerMul[provider] || 1.0);
+    return { min: Math.round(base * 0.7), max: Math.round(base * 1.5) };
+}
+

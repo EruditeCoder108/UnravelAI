@@ -344,8 +344,13 @@ Object property mutation detection (`task.status = newStatus`) surgically added 
 ### Phase 3.6 — File Handling Hardening `COMPLETE`
 Router-first GitHub repo import (picks relevant files before downloading). Support for empty-symptom scanning in both Web App and VS Code Extension.
 
-### Phase 4A — Analysis Modes & Output Control `PLANNED`
-Transform from single-mode debugger to multi-mode platform. New modes: **Debug**, **Explain**, and **Security Scan**. Output presets (Quick Fix vs Full Report). Web App UX redesign (Input → Mode → Configure flow) and expanded VS Code settings.
+### Phase 4A — Analysis Modes & Output Control `COMPLETE`
+Transformed from a single-mode debugger to a multi-mode platform. 
+New modes: **Debug**, **Explain**, and **Security Scan** with unique dynamic schemas. 
+Added **Mermaid Chart generation** (Timeline, Hypothesis, Data Flow, Dependency, AI Loop).
+Output presets (Quick Fix vs Full Report) added. 
+Web App UX complete visual redesign (5-step flow). 
+VS Code Extension updated to v0.3.0 with complete multi-mode reporting and self-healing.
 
 ### Phase 4B — Intelligence Layer `PLANNED`
 Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom contradiction check. Function-level code slicing. **Adversarial multi-agent debate** — three agents independently diagnose the same bug and attack hypotheses. Variable Trace UI and Visual diff output. *(Note: **Self-Healing Context** — where the engine automatically fetches missing files from GitHub mid-analysis — was ✅ **BUILT EARLY**).*

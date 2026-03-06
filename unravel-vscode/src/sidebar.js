@@ -1,5 +1,7 @@
 // ═══════════════════════════════════════════════════
-// Sidebar WebView — Full HTML report panel
+// Sidebar WebView — Full Multi-Mode HTML Report Panel
+// Supports: Debug, Explain, and Security modes
+// Renders Mermaid diagrams via CDN injection
 // ═══════════════════════════════════════════════════
 
 const vscode = require('vscode');
@@ -9,10 +11,10 @@ let currentPanel = null;
 /**
  * Show the full Unravel report in a WebView sidebar panel.
  *
- * @param {object} report - The Unravel report object
+ * @param {object} result - The result from orchestrate()
  * @param {string} fileName - Name of the analyzed file
  */
-function showReportPanel(report, fileName) {
+function showReportPanel(result, fileName) {
     const column = vscode.ViewColumn.Beside;
 
     if (currentPanel) {
@@ -22,184 +24,584 @@ function showReportPanel(report, fileName) {
             'unravelReport',
             '🔍 Unravel Report',
             column,
-            { enableScripts: false },
+            {
+                enableScripts: true,           // Required for Mermaid CDN loading
+                retainContextWhenHidden: true, // Keep chart state on switch
+            },
         );
         currentPanel.onDidDispose(() => { currentPanel = null; });
     }
 
-    currentPanel.webview.html = buildReportHTML(report, fileName);
+    // Determine the report object — orchestrate may nest under .report for debug
+    const mode = result?._mode || 'debug';
+    const report = (mode === 'debug' && result?.report) ? result.report
+        : (mode === 'debug' && (result?.bugType || result?.rootCause)) ? result
+            : result;
+
+    currentPanel.webview.html = buildReportHTML(report, fileName, mode);
 }
 
-/**
- * Build the full HTML report.
- */
-function buildReportHTML(report, fileName) {
-    const bugType = report.bugType || 'Unknown';
-    const confidence = Math.round((report.confidence || 0) * 100);
-    const rootCause = escapeHtml(report.rootCause || 'See details below');
-    const codeLocation = escapeHtml(typeof report.codeLocation === 'object'
-        ? JSON.stringify(report.codeLocation) : (report.codeLocation || ''));
-    const minimalFix = escapeHtml(report.minimalFix || 'No fix provided');
-    const whyFixWorks = escapeHtml(report.whyFixWorks || '');
-    const symptom = escapeHtml(report.symptom || '');
-    const aiPrompt = escapeHtml(report.aiPrompt || '');
+// ── Mermaid builder utilities (ported from App.jsx) ──────────────────────────
 
-    // Evidence list
-    const evidenceHTML = Array.isArray(report.evidence)
-        ? report.evidence.map(e => `<li>${escapeHtml(e)}</li>`).join('')
-        : '<li>No evidence listed</li>';
+function mId(s) {
+    return String(s).replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+}
 
-    // Uncertainties
-    const uncertaintiesHTML = Array.isArray(report.uncertainties) && report.uncertainties.length > 0
-        ? report.uncertainties.map(u => `<li>${escapeHtml(u)}</li>`).join('')
-        : '';
+function mLabel(s) {
+    return String(s || '').replace(/"/g, '#quot;').replace(/\n/g, ' ').slice(0, 60);
+}
 
-    // Timeline
-    const timelineHTML = Array.isArray(report.timeline) && report.timeline.length > 0
-        ? report.timeline.map(t =>
-            `<tr><td class="time">${escapeHtml(t.time || '')}</td><td>${escapeHtml(t.event || '')}</td></tr>`
-        ).join('')
-        : '';
+function hasCycle(edges) {
+    if (!edges || edges.length === 0) return false;
+    const graph = {};
+    edges.forEach(({ from, to }) => {
+        if (!graph[from]) graph[from] = [];
+        graph[from].push(to);
+    });
+    const visited = new Set();
+    const check = (node, path) => {
+        if (path.has(node)) return true;
+        if (visited.has(node)) return false;
+        visited.add(node); path.add(node);
+        for (const next of (graph[node] || [])) {
+            if (check(next, path)) return true;
+        }
+        path.delete(node);
+        return false;
+    };
+    return edges.some(({ from }) => check(from, new Set()));
+}
 
-    // Variable state
-    const varsHTML = Array.isArray(report.variableState) && report.variableState.length > 0
-        ? report.variableState.map(v =>
-            `<tr><td><code>${escapeHtml(v.variable || '')}</code></td><td>${escapeHtml(v.meaning || '')}</td><td>${escapeHtml(v.whereChanged || '')}</td></tr>`
-        ).join('')
-        : '';
+function buildTimelineMermaid(edges) {
+    if (!edges || edges.length === 0) return null;
+    const lines = ['sequenceDiagram'];
+    edges.forEach(({ from, to, label, isBugPoint }) => {
+        const arrow = isBugPoint ? '-->>' : '->>';
+        if (isBugPoint) lines.push(`    Note over ${mId(from)},${mId(to)}: 🐛 BUG HERE`);
+        lines.push(`    ${mId(from)}${arrow}${mId(to)}: ${mLabel(label)}`);
+    });
+    return lines.join('\n');
+}
 
-    // Why AI Looped
-    const aiLoopHTML = report.whyAILooped ? `
-        <section>
-            <h2>🔄 Why AI Tools Loop</h2>
-            <p><strong>Pattern:</strong> ${escapeHtml(report.whyAILooped.pattern || '')}</p>
-            <p>${escapeHtml(report.whyAILooped.explanation || '')}</p>
-            ${Array.isArray(report.whyAILooped.loopSteps) ? '<ol>' + report.whyAILooped.loopSteps.map(s => `<li>${escapeHtml(s)}</li>`).join('') + '</ol>' : ''}
-        </section>` : '';
+function buildHypothesisMermaid(tree) {
+    if (!tree || tree.length === 0) return null;
+    const lines = ['flowchart TD'];
+    tree.forEach(({ id, text, status, reason }, idx) => {
+        const nodeId = mId(id);
+        const shortText = mLabel((text || '').slice(0, 40));
+        if (status === 'survived') {
+            const survivedId = `SURVIVED_${idx}`;
+            lines.push(`    ${nodeId}["${mLabel(id)}: ${shortText}"]`);
+            lines.push(`    ${nodeId} --> ${survivedId}["✅ Root Cause Confirmed"]`);
+            lines.push(`    style ${nodeId} fill:#00ff88,color:#000`);
+            lines.push(`    style ${survivedId} fill:#00ff88,color:#000`);
+        } else {
+            const elimId = mId(id + '_elim');
+            lines.push(`    ${nodeId}["${mLabel(id)}: ${shortText}"]`);
+            lines.push(`    ${nodeId} -->|"${mLabel((reason || '').slice(0, 35))}"| ${elimId}["❌ Eliminated"]`);
+            lines.push(`    style ${nodeId} fill:#333,color:#fff`);
+            lines.push(`    style ${elimId} fill:#ff3333,color:#fff`);
+        }
+    });
+    return lines.join('\n');
+}
 
-    // Concept Extraction
-    const conceptHTML = report.conceptExtraction ? `
-        <section>
-            <h2>💡 Concept</h2>
-            <p><strong>${escapeHtml(report.conceptExtraction.concept || '')}</strong></p>
-            <p>${escapeHtml(report.conceptExtraction.whyItMatters || '')}</p>
-            ${report.conceptExtraction.realWorldAnalogy ? `<p class="analogy">🏏 ${escapeHtml(report.conceptExtraction.realWorldAnalogy)}</p>` : ''}
-            ${report.conceptExtraction.patternToAvoid ? `<p><strong>Avoid:</strong> ${escapeHtml(report.conceptExtraction.patternToAvoid)}</p>` : ''}
-        </section>` : '';
+function buildAILoopMermaid(edges) {
+    if (!edges || edges.length === 0) return null;
+    const lines = ['flowchart LR'];
+    edges.forEach(({ from, to, label, isEscapePath }) => {
+        const f = mId(from); const t = mId(to);
+        lines.push(`    ${f}["${mLabel(from)}"] -->|"${mLabel(label)}"| ${t}["${mLabel(to)}"]`);
+        if (isEscapePath) {
+            lines.push(`    style ${f} fill:#00ff88,color:#000`);
+            lines.push(`    style ${t} fill:#00ff88,color:#000`);
+        }
+    });
+    return lines.join('\n');
+}
 
-    // Reproduction steps
-    const reproHTML = Array.isArray(report.reproduction) && report.reproduction.length > 0
-        ? '<ol>' + report.reproduction.map(r => `<li>${escapeHtml(r)}</li>`).join('') + '</ol>'
-        : '';
+function buildDataFlowMermaid(edges) {
+    if (!edges || edges.length === 0) return null;
+    if (hasCycle(edges)) return null;
+    const lines = ['flowchart TD'];
+    const seen = new Set();
+    edges.forEach(({ from, to, label }) => {
+        const f = mId(from); const t = mId(to);
+        if (!seen.has(f)) { lines.push(`    ${f}["${mLabel(from)}"]`); seen.add(f); }
+        if (!seen.has(t)) { lines.push(`    ${t}["${mLabel(to)}"]`); seen.add(t); }
+        lines.push(`    ${f} -->|"${mLabel(label)}"| ${t}`);
+    });
+    return lines.join('\n');
+}
+
+function buildDependencyMermaid(deps) {
+    if (!deps || deps.length === 0) return null;
+    const lines = ['graph LR'];
+    deps.forEach(({ file, imports }) => {
+        (imports || []).forEach(imp => {
+            lines.push(`    ${mId(file)}["${mLabel(file)}"] --> ${mId(imp)}["${mLabel(imp)}"]`);
+        });
+    });
+    return lines.join('\n');
+}
+
+// ── HTML building helpers ─────────────────────────────────────────────────────
+
+function esc(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+/** Output a <div class="mermaid"> block for Mermaid to render, or empty string on null */
+function mermaidBlock(definition, caption = '') {
+    if (!definition) return '';
+    return `
+    <div class="mermaid-wrap">
+        <div class="mermaid">${esc(definition)}</div>
+        ${caption ? `<p class="merm-caption">${esc(caption)}</p>` : ''}
+    </div>`;
+}
+
+function sectionBlock(title, color, content, borderSide = 'left') {
+    const border = borderSide === 'top'
+        ? `border-top: 8px solid ${color};`
+        : `border-left: 8px solid ${color};`;
+    return `
+    <div class="section" style="${border}">
+        <h2 style="color:${color}">${title}</h2>
+        ${content}
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mode renderers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function renderExplain(r) {
+    const layerColors = ['#00ffff', '#ffaa00', '#ff00ff', '#ccff00', '#22c55e'];
+    let html = '';
+
+    if (r.summary) {
+        html += sectionBlock('📖 Summary', '#00ffff', `<p class="summary-text">${esc(r.summary)}</p>`);
+    }
+
+    if (r.entryPoints?.length > 0) {
+        const items = r.entryPoints.map(ep => `
+            <div class="card">
+                <div class="card-header">
+                    <span class="mono" style="color:#ff00ff">${esc(ep.name)}</span>
+                    <span class="tag">${esc(ep.type)}</span>
+                </div>
+                <p>${esc(ep.description)}</p>
+                ${ep.file ? `<code class="loc">📍 ${esc(ep.file)}${ep.line ? ':' + ep.line : ''}</code>` : ''}
+            </div>`).join('');
+        html += sectionBlock('⚡ Entry Points', '#ff00ff', items);
+    }
+
+    if (r.architectureLayers?.length > 0) {
+        const layers = r.architectureLayers.map((layer, i) => {
+            const color = layerColors[i % layerColors.length];
+            const comps = (layer.components || []).map(c =>
+                `<div class="layer-comp">• ${esc(c)}</div>`).join('');
+            return `
+            <div class="layer-card" style="border-top:4px solid ${color}">
+                <h4 style="color:#fff">Layer ${i + 1} — ${esc(layer.name)}</h4>
+                <p class="layer-desc">${esc(layer.description)}</p>
+                ${comps ? `<div class="layer-comps">${comps}</div>` : ''}
+            </div>`;
+        }).join('');
+        html += sectionBlock('🏗️ Architecture Layers', '#ccff00', `<div class="layers-grid">${layers}</div>`);
+    }
+
+    if (r.dataFlow?.length > 0) {
+        const chart = mermaidBlock(buildDataFlowMermaid(r.flowchartEdges || []), 'How data moves through the system');
+        const rows = r.dataFlow.map(flow => `
+            <tr>
+                <td>${esc(flow.from)}</td>
+                <td style="color:#888;font-style:italic">→ ${esc(flow.mechanism)} →</td>
+                <td>${esc(flow.to)}</td>
+                <td style="color:#777">${flow.line ? 'L' + flow.line : '—'}</td>
+            </tr>`).join('');
+        html += sectionBlock('🔀 Data Flow', '#ffaa00', `
+            ${chart}
+            <div class="tbl-wrap">
+                <table>
+                    <thead><tr><th>From</th><th>Mechanism</th><th>To</th><th>Line</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`);
+    }
+
+    if (r.componentMap?.length > 0) {
+        const chart = mermaidBlock(buildDependencyMermaid(r.dependencyEdges || []), 'File-level import dependencies');
+        const comps = r.componentMap.map(comp => `
+            <div class="dep-card">
+                <h4 class="mono" style="color:#ccff00">${esc(comp.name)}</h4>
+                ${comp.children?.length > 0 ? `<p><span class="meta">Dependencies:</span> ${esc(comp.children.join(', '))}</p>` : ''}
+                ${comp.stateOwned?.length > 0 ? `<p><span class="meta">State:</span> <span style="color:#ffaa00">${esc(comp.stateOwned.join(', '))}</span></p>` : ''}
+            </div>`).join('');
+        html += sectionBlock('🗂️ Component &amp; Dependency Map', '#ccff00', chart + comps);
+    }
+
+    if (r.keyPatterns?.length > 0) {
+        const items = r.keyPatterns.map(p => `<li>${esc(p)}</li>`).join('');
+        html += sectionBlock('💡 Key Patterns', '#22c55e', `<ul>${items}</ul>`);
+    }
+
+    if (r.nonObviousInsights?.length > 0) {
+        const items = r.nonObviousInsights.map(insight => `
+            <div class="insight-item">💡 ${esc(insight)}</div>`).join('');
+        html += sectionBlock('👁️ Non-Obvious Insights', '#ff00ff', `
+            <p class="meta">Things that would surprise a developer reading this for the first time</p>
+            ${items}`);
+    }
+
+    if (r.gotchas?.length > 0) {
+        const items = r.gotchas.map(g => `
+            <div class="gotcha">
+                <div class="gotcha-title">⚠️ ${esc(g.title)}</div>
+                <p>${esc(g.description)}</p>
+                ${g.location ? `<code class="loc">📍 ${esc(g.location)}</code>` : ''}
+            </div>`).join('');
+        html += sectionBlock('🪤 Gotchas', '#ff003c', `
+            <p class="meta">Hidden landmines — things that break when changed</p>
+            ${items}`);
+    }
+
+    if (r.onboarding?.length > 0) {
+        const items = r.onboarding.map(item => `
+            <div class="onboard-card">
+                <div class="onboard-task">🎯 ${esc(item.task)}</div>
+                <p><strong class="meta">Where:</strong> <code>${esc(item.whereToLook)}</code></p>
+                <p><strong class="meta">Model after:</strong> ${esc(item.patternToFollow)}</p>
+            </div>`).join('');
+        html += sectionBlock('🧭 Onboarding Guide', '#00ffff', `
+            <p class="meta">Exactly where to go for the most common tasks</p>
+            ${items}`);
+    }
+
+    if (r.architectureDecisions?.length > 0) {
+        const items = r.architectureDecisions.map(d => `
+            <div class="arch-decision">
+                <div class="arch-title">${esc(d.decision)}</div>
+                ${d.visibleReason ? `<p><strong class="meta">Why:</strong> ${esc(d.visibleReason)}</p>` : ''}
+                ${d.tradeoff ? `<p style="color:#ffaa00"><strong class="meta">Tradeoff:</strong> ${esc(d.tradeoff)}</p>` : ''}
+            </div>`).join('');
+        html += sectionBlock('🏛️ Architecture Decisions', '#ffaa00', items);
+    }
+
+    return html;
+}
+
+function renderSecurity(r) {
+    let html = '';
+
+    if (r.overallRisk) {
+        html += `
+        <div class="risk-banner">
+            <span>🛡️ Overall Risk: <strong>${esc(r.overallRisk)}</strong></span>
+            <span class="tag" style="background:#ff003c22;color:#ff003c">REQUIRES HUMAN VERIFICATION</span>
+        </div>`;
+    }
+
+    if (r.summary) {
+        html += sectionBlock('🛡️ Security Summary', '#ffaa00', `<p>${esc(r.summary)}</p>`);
+    }
+
+    if (r.vulnerabilities?.length > 0) {
+        const items = r.vulnerabilities.map(v => {
+            const sevColor = v.severity === 'critical' ? '#ff003c'
+                : v.severity === 'high' ? '#ffaa00' : '#888';
+            return `
+            <div class="vuln" style="border-left-color:${sevColor}">
+                <div class="vuln-header">
+                    <h4>${esc(v.type || v.title)}</h4>
+                    <span class="tag" style="background:${sevColor}22;color:${sevColor}">${esc(v.severity)}</span>
+                </div>
+                <p>${esc(v.description)}</p>
+                ${v.location ? `<p class="loc mono">📍 ${esc(v.location)}</p>` : ''}
+                ${v.remediation ? `<p class="fix">✅ Fix: ${esc(v.remediation)}</p>` : ''}
+            </div>`;
+        }).join('');
+        html += sectionBlock(`⚠️ Vulnerabilities (${r.vulnerabilities.length})`, '#ff003c', items);
+    }
+
+    if (r.positives?.length > 0) {
+        const items = r.positives.map(p => `<li>${esc(p)}</li>`).join('');
+        html += sectionBlock('✅ Security Positives', '#22c55e', `<ul class="mono-list">${items}</ul>`);
+    }
+
+    return html;
+}
+
+function renderDebug(r) {
+    let html = '';
+
+    if (r.symptom) {
+        let repro = '';
+        if (r.reproduction?.length > 0) {
+            const steps = r.reproduction.map(s => `<li>${esc(s)}</li>`).join('');
+            repro = `<div class="inner-block"><h4 class="sub-h">Reproduction Path</h4><ol class="mono-list">${steps}</ol></div>`;
+        }
+        html += sectionBlock('🐛 Observed Symptom', '#ff003c',
+            `<p class="symptom-text">${esc(r.symptom)}</p>${repro}`);
+    }
+
+    if (r.evidence?.length > 0) {
+        const verItems = r.evidence.map(e => `<li>${esc(e)}</li>`).join('');
+        const uncItems = r.uncertainties?.length > 0
+            ? `<div class="uncertain-block"><span class="uncertain-label">UNCERTAIN:</span>
+               <ul class="mono-list">${r.uncertainties.map(u => `<li>${esc(u)}</li>`).join('')}</ul></div>`
+            : '';
+        html += sectionBlock('✅ Confidence Evidence', '#22c55e', `
+            <span class="verified-label">VERIFIED:</span>
+            <ul class="mono-list">${verItems}</ul>
+            ${uncItems}`);
+    }
+
+    if (r.conceptExtraction) {
+        const c = r.conceptExtraction;
+        html += sectionBlock('💡 Concept To Learn', '#00ffff', `
+            <h4>${esc(c.concept)}</h4>
+            <p>${esc(c.whyItMatters)}</p>
+            ${c.patternToAvoid ? `<div class="avoid-block"><span class="avoid-label">PATTERN TO AVOID:</span><p>${esc(c.patternToAvoid)}</p></div>` : ''}
+            ${c.realWorldAnalogy ? `<p class="analogy">💡 ${esc(c.realWorldAnalogy)}</p>` : ''}`);
+    }
+
+    if (r.whyAILooped) {
+        const loopSteps = (r.whyAILooped.loopSteps || []).map((s, i) =>
+            `<div class="loop-step">${i + 1}. ${esc(s)}</div>`).join('');
+        html += sectionBlock('🔄 Why AI Keeps Breaking It', '#ff00ff', `
+            <p>${esc(r.whyAILooped.explanation)}</p>
+            ${loopSteps ? `<div class="loop-block"><h4 class="sub-h">The AI Fix Loop</h4>${loopSteps}</div>` : ''}`);
+    }
+
+    if (r.aiLoopEdges?.length > 0) {
+        html += mermaidBlock(buildAILoopMermaid(r.aiLoopEdges), 'The fix loop AI tools fall into — green path is how Unravel escapes it');
+    }
+
+    if (r.variableState?.length > 0) {
+        const rows = r.variableState.map(st => `
+            <tr>
+                <td style="color:#ccff00;font-weight:700">${esc(st.variable)}</td>
+                <td>${esc(st.meaning)}</td>
+                <td style="color:#ffaa00">${esc(st.whereChanged)}</td>
+            </tr>`).join('');
+        html += sectionBlock('📊 State Mutation Tracker', '#00ffff', `
+            <div class="tbl-wrap">
+                <table><thead><tr><th>Variable</th><th>Role</th><th>Mutated At</th></tr></thead>
+                <tbody>${rows}</tbody></table>
+            </div>`, 'top');
+    }
+
+    if (r.timeline?.length > 0) {
+        const items = r.timeline.map(item => `
+            <div class="tl-item">
+                <div class="tl-dot">${esc(item.time)}</div>
+                <div class="tl-event">${esc(item.event)}</div>
+            </div>`).join('');
+        html += sectionBlock('⏱️ Execution Timeline', '#ccff00', `<div class="timeline">${items}</div>`);
+    }
+
+    if (r.timelineEdges?.length > 0) {
+        html += mermaidBlock(buildTimelineMermaid(r.timelineEdges), 'Execution sequence — 🐛 marks where the bug manifests');
+    }
+
+    if (r.invariants?.length > 0) {
+        const items = r.invariants.map(i => `<li>${esc(i)}</li>`).join('');
+        html += sectionBlock('🔒 Invariant Violations', '#ff003c',
+            `<ul class="mono-list">${items}</ul>`);
+    }
+
+    if (r.rootCause) {
+        html += sectionBlock('🎯 Technical Root Cause', '#fff', `
+            <p>${esc(r.rootCause)}</p>
+            <div class="code-loc">Location: ${esc(typeof r.codeLocation === 'object' ? JSON.stringify(r.codeLocation) : r.codeLocation)}</div>`);
+    }
+
+    if (r.hypotheses?.length > 0) {
+        const items = r.hypotheses.map(h => `<li>${esc(h)}</li>`).join('');
+        html += sectionBlock('🔀 Alternative Hypotheses', '#888',
+            `<ul class="mono-list">${items}</ul>`, 'top');
+    }
+
+    if (r.hypothesisTree?.length > 0) {
+        html += mermaidBlock(buildHypothesisMermaid(r.hypothesisTree), 'Hypothesis elimination — how competing explanations were tested and killed');
+    }
+
+    if (r.aiPrompt) {
+        html += `
+        <div class="ai-prompt-block">
+            <h3>🤖 Deterministic AI Fix Prompt</h3>
+            <p class="meta">Paste this directly into Cursor / Bolt / Copilot to apply the fix:</p>
+            <pre>${esc(r.aiPrompt)}</pre>
+        </div>`;
+    }
+
+    if (r.minimalFix) {
+        html += sectionBlock('🔧 Minimal Code Fix', '#ffaa00', `
+            <div class="meta mono">File: ${esc(typeof r.codeLocation === 'object' ? JSON.stringify(r.codeLocation) : r.codeLocation)}</div>
+            <pre class="code">${esc(r.minimalFix)}</pre>
+            ${r.whyFixWorks ? `<p class="why">${esc(r.whyFixWorks)}</p>` : ''}`);
+    }
+
+    return html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main HTML builder
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildReportHTML(report, fileName, mode) {
+    const r = report || {};
+
+    const modeColor = mode === 'explain' ? '#00ffff' : mode === 'security' ? '#ffaa00' : '#ff003c';
+    const modeLabel = mode === 'explain' ? 'CODE EXPLANATION' : mode === 'security' ? 'SECURITY AUDIT' : 'DIAGNOSIS';
+    const modeBadge = mode === 'explain' ? 'EXPLAIN' : mode === 'security' ? 'SECURITY' : (r.bugType || 'DEBUG');
+    const confidence = r.confidence != null ? Math.round(r.confidence <= 1 ? r.confidence * 100 : r.confidence) : null;
+
+    const contentHTML = mode === 'explain' ? renderExplain(r)
+        : mode === 'security' ? renderSecurity(r)
+            : renderDebug(r);
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:;">
 <style>
+    * { box-sizing: border-box; }
     body {
-        font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
-        font-size: var(--vscode-font-size, 13px);
-        color: var(--vscode-foreground);
-        background: var(--vscode-editor-background);
+        font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+        font-size: 13px;
+        color: var(--vscode-foreground, #ccc);
+        background: var(--vscode-editor-background, #050505);
         padding: 16px;
-        line-height: 1.5;
+        line-height: 1.6;
+        margin: 0;
     }
-    h1 { font-size: 1.4em; margin: 0 0 8px; }
-    h2 { font-size: 1.1em; margin: 20px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; }
-    .badge {
-        display: inline-block;
-        padding: 2px 10px;
-        border-radius: 12px;
-        font-size: 0.85em;
-        font-weight: bold;
-        color: #fff;
-    }
-    .badge-error { background: #ff003c; }
-    .badge-confidence { background: #448aff; margin-left: 6px; }
-    .meta { color: var(--vscode-descriptionForeground); font-size: 0.9em; margin: 4px 0 16px; }
-    section { margin-bottom: 16px; }
-    pre, code {
-        font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
-        font-size: var(--vscode-editor-font-size, 12px);
-    }
-    pre {
-        background: var(--vscode-textBlockQuote-background, #1e1e1e);
-        padding: 12px;
-        border-radius: 4px;
-        overflow-x: auto;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-    }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-    th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--vscode-panel-border); }
-    th { font-weight: bold; opacity: 0.7; }
-    .time { white-space: nowrap; font-family: monospace; opacity: 0.8; }
-    ul, ol { padding-left: 20px; }
-    li { margin: 4px 0; }
-    .analogy { background: var(--vscode-textBlockQuote-background); padding: 8px 12px; border-radius: 4px; border-left: 3px solid #ffaa00; }
-    .ai-prompt { background: var(--vscode-textBlockQuote-background); padding: 10px; border-radius: 4px; font-size: 0.85em; }
+    .report-header { border-bottom: 3px solid #fff; padding-bottom: 12px; margin-bottom: 24px; }
+    .report-header h1 { font-size: 1.6em; margin: 0 0 6px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; }
+    .meta-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 4px; }
+    .badge { display: inline-block; padding: 2px 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; font-family: 'Consolas', monospace; }
+    .file-path { font-family: 'Consolas', monospace; font-size: 11px; color: #666; margin: 4px 0 0; word-break: break-all; }
+
+    .section { background: #0e0e0e; border: 1px solid #2a2a2a; padding: 20px; margin-bottom: 12px; border-left: 8px solid #444; }
+    .section h2 { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid #2a2a2a; font-family: 'Consolas', monospace; display: flex; align-items: center; gap: 6px; }
+    p { margin: 0 0 8px; color: #d0d0d0; }
+    h4 { margin: 0 0 8px; font-size: 14px; }
+    pre { background: #080808; padding: 14px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-family: 'Consolas', monospace; font-size: 12px; border: 1px solid #2a2a2a; margin: 8px 0; color: #00ffff; }
+    code { font-family: 'Consolas', monospace; font-size: 12px; }
+    .mono { font-family: 'Consolas', monospace !important; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #2a2a2a; vertical-align: top; }
+    th { font-weight: 700; color: #777; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; }
+    .tbl-wrap { overflow-x: auto; }
+    ul, ol { padding-left: 20px; margin: 8px 0; }
+    li { margin: 4px 0; color: #ccc; }
+    .mono-list { font-family: 'Consolas', monospace; font-size: 12px; }
+    .inner-block { background: #080808; padding: 12px; border: 1px solid #2a2a2a; margin-top: 10px; }
+    .sub-h { font-family: 'Consolas', monospace; font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 6px; }
+
+    /* Explain mode */
+    .summary-text { font-size: 15px; color: #e0e0e0; line-height: 1.8; }
+    .card { background: #080808; border: 1px solid #2a2a2a; padding: 14px; margin-bottom: 8px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .tag { display: inline-block; font-family: 'Consolas', monospace; font-size: 10px; padding: 2px 6px; border: 1px solid #444; color: #888; }
+    .loc { display: block; font-size: 11px; color: #555; margin-top: 4px; }
+    .layers-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .layer-card { background: #111; border: 1px solid #2a2a2a; padding: 14px; }
+    .layer-card h4 { color: #fff; margin: 0 0 6px; font-size: 14px; font-family: 'Consolas', monospace; }
+    .layer-desc { color: #aaa; font-size: 13px; margin-bottom: 10px; }
+    .layer-comps { background: #050505; padding: 10px; border: 1px solid #1a1a1a; }
+    .layer-comp { color: #d0d0d0; font-family: 'Consolas', monospace; font-size: 12px; padding: 3px 0; border-bottom: 1px solid #1a1a1a; }
+    .layer-comp:last-child { border-bottom: none; }
+    .dep-card { background: #080808; border-left: 3px solid #ccff00; padding: 12px; margin-bottom: 8px; margin-top: 8px; }
+    .insight-item { color: #e0e0e0; font-size: 14px; padding: 10px 0; border-bottom: 1px solid #1a1a1a; }
+    .gotcha { background: rgba(255,0,60,0.04); border-left: 3px solid #ff003c; padding: 12px; margin-bottom: 8px; }
+    .gotcha-title { font-family: 'Consolas', monospace; font-size: 13px; color: #ff003c; font-weight: 700; margin-bottom: 4px; }
+    .onboard-card { background: #080808; border: 1px solid #2a2a2a; padding: 14px; margin-bottom: 8px; }
+    .onboard-task { font-family: 'Consolas', monospace; font-size: 13px; color: #00ffff; font-weight: 700; margin-bottom: 6px; }
+    .arch-decision { background: #0a0a0a; border-left: 3px solid #ffaa00; padding: 12px; margin-bottom: 8px; }
+    .arch-title { font-family: 'Consolas', monospace; font-size: 14px; color: #fff; font-weight: 700; margin-bottom: 6px; }
+
+    /* Security mode */
+    .risk-banner { display: flex; justify-content: space-between; align-items: center; background: #110a00; border: 2px solid #ffaa00; padding: 14px 20px; margin-bottom: 12px; }
+    .vuln { background: #080808; border: 1px solid #2a2a2a; border-left: 4px solid #888; padding: 14px; margin-bottom: 8px; }
+    .vuln-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .vuln h4 { margin: 0; color: #fff; font-size: 13px; font-family: 'Consolas', monospace; }
+    .fix { color: #22c55e; font-size: 12px; font-family: 'Consolas', monospace; margin-top: 6px; }
+
+    /* Debug mode */
+    .symptom-text { font-size: 16px; color: #fff; font-weight: 700; line-height: 1.5; }
+    .verified-label { font-family: 'Consolas', monospace; font-size: 11px; color: #22c55e; font-weight: 700; }
+    .uncertain-block { margin-top: 10px; }
+    .uncertain-label { font-family: 'Consolas', monospace; font-size: 11px; color: #ffaa00; font-weight: 700; }
+    .avoid-block { background: rgba(204,255,0,0.05); border-left: 3px solid #ccff00; padding: 10px; margin: 8px 0; }
+    .avoid-label { font-family: 'Consolas', monospace; font-size: 10px; color: #ccff00; font-weight: 700; }
+    .analogy { color: #aaa; font-style: italic; }
+    .loop-block { background: rgba(255,0,255,0.06); border: 1px solid rgba(255,0,255,0.2); padding: 12px; margin-top: 8px; }
+    .loop-step { color: #ccc; font-family: 'Consolas', monospace; font-size: 12px; padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+    .timeline { padding-left: 20px; border-left: 2px solid #444; }
+    .tl-item { position: relative; margin-bottom: 12px; padding-left: 12px; }
+    .tl-dot { font-family: 'Consolas', monospace; font-size: 10px; color: #ccff00; font-weight: 700; margin-bottom: 2px; }
+    .tl-event { background: #111; padding: 8px 12px; border: 1px solid #2a2a2a; font-size: 12px; color: #ccc; }
+    .code-loc { background: #080808; padding: 8px 12px; border: 1px solid #2a2a2a; font-family: 'Consolas', monospace; color: #00ffff; font-size: 12px; margin-top: 8px; }
+    .ai-prompt-block { background: rgba(255,0,255,0.06); border: 2px solid #ff00ff; padding: 20px; margin-bottom: 12px; }
+    .ai-prompt-block h3 { color: #ff00ff; font-family: 'Consolas', monospace; text-transform: uppercase; font-size: 14px; margin: 0 0 10px; }
+    .ai-prompt-block pre { background: #050505; color: #fff; border-color: rgba(255,0,255,0.2); }
+    .why { color: #ccc; font-style: italic; margin-top: 10px; font-size: 13px; }
+    .code { color: #00ffff; }
+    .meta { color: #777 !important; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Consolas', monospace; }
+
+    /* Mermaid */
+    .mermaid-wrap { background: #060606; border: 1px solid #2a2a2a; padding: 14px; margin: 10px 0; overflow-x: auto; }
+    .mermaid svg { max-width: 100%; }
+    .merm-caption { font-family: 'Consolas', monospace; font-size: 10px; color: #555; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
 </style>
 </head>
 <body>
-    <h1>🔍 Unravel Report</h1>
-    <p class="meta">${escapeHtml(fileName)}</p>
-    <div>
-        <span class="badge badge-error">${bugType}</span>
-        <span class="badge badge-confidence">${confidence}% confidence</span>
+<div class="report-header">
+    <div class="meta-bar">
+        <span class="badge" style="background:${modeColor};color:${mode === 'explain' ? '#000' : '#fff'}">${esc(modeBadge)}</span>
+        ${confidence != null ? `<span class="badge" style="background:#1a1a1a;color:#ccff00;border:1px solid #ccff00">CFD: ${confidence}%</span>` : ''}
     </div>
+    <h1 style="color:#fff">${esc(modeLabel)}</h1>
+    <p class="file-path">${esc(fileName)}</p>
+</div>
 
-    ${symptom ? `<section><h2>🐛 Symptom</h2><p>${symptom}</p></section>` : ''}
+${contentHTML}
 
-    ${reproHTML ? `<section><h2>📋 Reproduction</h2>${reproHTML}</section>` : ''}
-
-    <section>
-        <h2>🎯 Root Cause</h2>
-        <p>${rootCause}</p>
-        <p><strong>Location:</strong> <code>${codeLocation}</code></p>
-    </section>
-
-    ${evidenceHTML ? `<section><h2>📌 Evidence</h2><ul>${evidenceHTML}</ul></section>` : ''}
-
-    ${uncertaintiesHTML ? `<section><h2>❓ Uncertainties</h2><ul>${uncertaintiesHTML}</ul></section>` : ''}
-
-    <section>
-        <h2>🔧 Minimal Fix</h2>
-        <pre>${minimalFix}</pre>
-        ${whyFixWorks ? `<p><strong>Why it works:</strong> ${whyFixWorks}</p>` : ''}
-    </section>
-
-    ${varsHTML ? `
-    <section>
-        <h2>📊 Variable State</h2>
-        <table><tr><th>Variable</th><th>Role</th><th>Mutated At</th></tr>${varsHTML}</table>
-    </section>` : ''}
-
-    ${timelineHTML ? `
-    <section>
-        <h2>⏱️ Execution Timeline</h2>
-        <table><tr><th>Time</th><th>Event</th></tr>${timelineHTML}</table>
-    </section>` : ''}
-
-    ${aiLoopHTML}
-    ${conceptHTML}
-
-    ${aiPrompt ? `
-    <section>
-        <h2>🤖 AI Fix Prompt</h2>
-        <div class="ai-prompt">${aiPrompt}</div>
-    </section>` : ''}
 </body>
+<script type="module">
+    // Load Mermaid from CDN and initialize
+    try {
+        const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            securityLevel: 'loose',
+            flowchart: { htmlLabels: true, curve: 'basis' },
+            sequence: { useMaxWidth: true },
+        });
+        const nodes = document.querySelectorAll('.mermaid');
+        for (const node of nodes) {
+            try {
+                const { svg } = await mermaid.render('m_' + Math.random().toString(36).slice(2), node.textContent);
+                node.innerHTML = svg;
+            } catch(e) {
+                node.innerHTML = '<p style="color:#555;font-size:11px;font-family:Consolas,monospace">⚠️ Chart could not be rendered</p>';
+            }
+        }
+    } catch(e) {
+        console.warn('Mermaid CDN load failed:', e.message);
+    }
+</script>
 </html>`;
-}
-
-function escapeHtml(str) {
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
 }
 
 module.exports = { showReportPanel };

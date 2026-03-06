@@ -1,15 +1,15 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Code2, AlertTriangle, CheckSquare, Zap, Search, Loader2,
     Plus, Globe2, TerminalSquare, UploadCloud, Activity, Copy, Check,
     BrainCircuit, User, FolderTree, FileCode, Network, PauseCircle,
     Clock, Database, AlertOctagon, GitMerge, BookOpen, RefreshCw,
     ShieldAlert, Lightbulb, Key, ChevronRight, Baby, Palette, Book, Code, MessageSquare, Languages,
-    Github, X, Link
+    Github, X, Link, Shield, Bug, Eye, Layers
 } from 'lucide-react';
 import {
     PROVIDERS, BUG_TAXONOMY, LEVELS, LANGUAGES,
-    buildSystemPrompt, buildRouterPrompt, ENGINE_SCHEMA, ENGINE_SCHEMA_INSTRUCTION,
+    buildRouterPrompt, SECTION_REGISTRY, PRESETS, estimateRuntime,
     callProvider, orchestrate, parseAIJson,
 } from './core/index.js';
 
@@ -46,6 +46,171 @@ const SectionBlock = ({ icon, title, color, borderSide = 'left', children, copyT
     </div>
 );
 
+// ─── Mermaid Utilities ───────────────────────────────────────────────────────
+
+// Sanitize any string into a valid Mermaid node ID
+const mId = (s) => String(s).replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+
+// Escape double quotes for use inside Mermaid text labels ["..."]
+const mLabel = (s) => String(s || '').replace(/"/g, '#quot;');
+
+// Detect cycles in an edge list — returns true if cycle exists
+function hasCycle(edges) {
+    if (!edges || edges.length === 0) return false;
+    const graph = {};
+    edges.forEach(({ from, to }) => {
+        if (!graph[from]) graph[from] = [];
+        graph[from].push(to);
+    });
+    const visited = new Set();
+    const check = (node, path) => {
+        if (path.has(node)) return true;
+        if (visited.has(node)) return false;
+        visited.add(node); path.add(node);
+        for (const next of (graph[node] || [])) {
+            if (check(next, path)) return true;
+        }
+        path.delete(node);
+        return false;
+    };
+    return edges.some(({ from }) => check(from, new Set()));
+}
+
+// Build sequence diagram from timelineEdges
+function buildTimelineMermaid(edges) {
+    if (!edges || edges.length === 0) return null;
+    const lines = ['sequenceDiagram'];
+    edges.forEach(({ from, to, label, isBugPoint }) => {
+        const arrow = isBugPoint ? '-->>' : '->>';
+        const prefix = isBugPoint ? '    Note over ' + mId(from) + ',' + mId(to) + ': 🐛 BUG HERE\n' : '';
+        lines.push(`${prefix}    ${mId(from)}${arrow}${mId(to)}: ${mLabel(label)}`);
+    });
+    return lines.join('\n');
+}
+
+// Build hypothesis elimination flowchart from hypothesisTree
+function buildHypothesisMermaid(tree) {
+    if (!tree || tree.length === 0) return null;
+    const lines = ['flowchart TD'];
+    tree.forEach(({ id, text, status, reason }, idx) => {
+        const nodeId = mId(id);
+        const shortText = mLabel(text.slice(0, 40));
+        if (status === 'survived') {
+            const survivedId = `SURVIVED_${idx}`;
+            lines.push(`    ${nodeId}["${mLabel(id)}: ${shortText}"]`);
+            lines.push(`    ${nodeId} --> ${survivedId}["✅ Root Cause Confirmed"]`);
+            lines.push(`    style ${nodeId} fill:#00ff88,color:#000`);
+            lines.push(`    style ${survivedId} fill:#00ff88,color:#000`);
+        } else {
+            const elimId = mId(id + '_elim');
+            lines.push(`    ${nodeId}["${mLabel(id)}: ${shortText}"]`);
+            lines.push(`    ${nodeId} -->|"${mLabel((reason || '').slice(0, 35))}"| ${elimId}["❌ Eliminated"]`);
+            lines.push(`    style ${nodeId} fill:#333,color:#fff`);
+            lines.push(`    style ${elimId} fill:#ff3333,color:#fff`);
+        }
+    });
+    return lines.join('\n');
+}
+
+// Build AI loop cycle diagram from aiLoopEdges
+function buildAILoopMermaid(edges) {
+    if (!edges || edges.length === 0) return null;
+    const lines = ['flowchart LR'];
+    edges.forEach(({ from, to, label, isEscapePath }) => {
+        const f = mId(from); const t = mId(to);
+        lines.push(`    ${f}["${mLabel(from)}"] -->|"${mLabel(label)}"| ${t}["${mLabel(to)}"]`);
+        if (isEscapePath) {
+            lines.push(`    style ${f} fill:#00ff88,color:#000`);
+            lines.push(`    style ${t} fill:#00ff88,color:#000`);
+        }
+    });
+    return lines.join('\n');
+}
+
+// Build variable mutation flow from variableStateEdges (only for complex variables)
+function buildVariableMermaid(varEdges) {
+    if (!varEdges || varEdges.length === 0) return null;
+    const result = [];
+    varEdges.forEach(({ variable, edges }) => {
+        if (!edges || edges.length < 5) return; // only complex variables
+        const lines = [`flowchart LR`];
+        const declId = mId(variable + '_decl');
+        const firstEdgeFrom = mId(edges[0].from + '0');
+        lines.push(`    ${declId}["${mLabel(variable)} declared"]`);
+        lines.push(`    ${declId} --> ${firstEdgeFrom}`);
+        edges.forEach(({ from, to, label, type }, i) => {
+            const f = mId(from + i); const t = mId(to + i);
+            lines.push(`    ${f}["${mLabel(from)}"] -->|"${mLabel(label)}"| ${t}["${mLabel(to)}"]`);
+            if (type === 'write') lines.push(`    style ${f} fill:#ffaa00,color:#000`);
+            if (type === 'read') lines.push(`    style ${t} fill:#448aff,color:#fff`);
+            if (type === 'mutate') lines.push(`    style ${f} fill:#ff003c,color:#fff`);
+        });
+        result.push({ variable, mermaid: lines.join('\n') });
+    });
+    return result;
+}
+
+// Build data flow flowchart from flowchartEdges (Explain Mode)
+function buildDataFlowMermaid(edges) {
+    if (!edges || edges.length === 0) return null;
+    if (hasCycle(edges)) return null; // fall back to table on cycles
+    const lines = ['flowchart TD'];
+    const seen = new Set();
+    edges.forEach(({ from, to, label }) => {
+        const f = mId(from); const t = mId(to);
+        if (!seen.has(f)) { lines.push(`    ${f}["${mLabel(from)}"]`); seen.add(f); }
+        if (!seen.has(t)) { lines.push(`    ${t}["${mLabel(to)}"]`); seen.add(t); }
+        lines.push(`    ${f} -->|"${mLabel(label)}"| ${t}`);
+    });
+    return lines.join('\n');
+}
+
+// Build dependency graph from dependencyEdges (Explain Mode)
+function buildDependencyMermaid(deps) {
+    if (!deps || deps.length === 0) return null;
+    const lines = ['graph LR'];
+    deps.forEach(({ file, imports }) => {
+        (imports || []).forEach(imp => {
+            lines.push(`    ${mId(file)}["${mLabel(file)}"] --> ${mId(imp)}["${mLabel(imp)}"]`);
+        });
+    });
+    return lines.join('\n');
+}
+
+// Mermaid renderer component — renders the diagram or falls back gracefully
+function MermaidChart({ chart, caption }) {
+    const ref = React.useRef(null);
+    React.useEffect(() => {
+        if (!ref.current || !chart) return;
+        ref.current.removeAttribute('data-processed');
+        ref.current.innerHTML = chart;
+        try {
+            const result = window.mermaid?.run({ nodes: [ref.current] });
+            // mermaid.run returns a promise — catch render errors silently
+            if (result && typeof result.catch === 'function') {
+                result.catch(err => {
+                    console.warn('[MERMAID] Chart render failed:', err);
+                    if (ref.current) {
+                        ref.current.innerHTML = '<p style="color:#666;font-size:12px;font-family:monospace">⚠️ Chart could not be rendered</p>';
+                    }
+                });
+            }
+        } catch (err) {
+            console.warn('[MERMAID] Chart render error:', err);
+            if (ref.current) {
+                ref.current.innerHTML = '<p style="color:#666;font-size:12px;font-family:monospace">⚠️ Chart could not be rendered</p>';
+            }
+        }
+    }, [chart]);
+    if (!chart) return null;
+    return (
+        <div style={{ background: '#0a0a0a', border: '1px solid #333', padding: 16, marginTop: 12, borderRadius: 0, overflow: 'auto' }}>
+            <div className="mermaid" ref={ref}>{chart}</div>
+            {caption && <p style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: '#666', marginTop: 8, textTransform: 'uppercase', letterSpacing: 1 }}>{caption}</p>}
+        </div>
+    );
+}
+
 // ─── Main App ───────────────────────────────────────────
 export default function App() {
     // State
@@ -76,8 +241,47 @@ export default function App() {
     const [copiedSection, setCopiedSection] = useState(null);
     const [routerSelectedPaths, setRouterSelectedPaths] = useState([]);
 
+    // ── Phase 4A: Mode + Preset State ──
+    const [analysisMode, setAnalysisMode] = useState('debug');
+    const [preset, setPreset] = useState('full');
+    const [outputSections, setOutputSections] = useState(null); // null = use preset default
+    const [progressStages, setProgressStages] = useState([]);
+
     const dirInputRef = useRef(null);
     const githubRepoContext = useRef(null); // Stores { owner, repo, branch, tree } for missing-files callback
+
+    // ── localStorage Persistence ──
+    useEffect(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem('unravel_prefs') || '{}');
+            if (saved.analysisMode) setAnalysisMode(saved.analysisMode);
+            if (saved.preset) setPreset(saved.preset);
+            if (saved.outputSections) setOutputSections(saved.outputSections);
+            if (saved.level) setLevel(saved.level);
+            if (saved.language) setLanguage(saved.language);
+        } catch { /* ignore corrupt localStorage */ }
+    }, []);
+
+    // ── Mermaid Init ──
+    useEffect(() => {
+        import('mermaid').then(m => {
+            m.default.initialize({
+                startOnLoad: false,
+                theme: 'dark',
+                flowchart: { curve: 'basis', htmlLabels: true },
+                sequence: { actorMargin: 50, useMaxWidth: true },
+            });
+            window.mermaid = m.default;
+        });
+    }, []);
+
+    const savePrefs = useCallback((overrides = {}) => {
+        const prefs = { analysisMode, preset, outputSections, level, language, ...overrides };
+        localStorage.setItem('unravel_prefs', JSON.stringify(prefs));
+    }, [analysisMode, preset, outputSections, level, language]);
+
+    // Save prefs whenever they change
+    useEffect(() => { savePrefs(); }, [savePrefs]);
 
     // Init model from provider
     React.useEffect(() => {
@@ -167,7 +371,7 @@ export default function App() {
             try {
                 onProgress?.(`ROUTER AGENT: Selecting from ${allCandidates.length} files...`);
                 const allPaths = allCandidates.map(f => `${repo}/${f.path}`);
-                const routerPrompt = buildRouterPrompt(allPaths, symptom);
+                const routerPrompt = buildRouterPrompt(allPaths, symptom, analysisMode);
                 const routerRaw = await callProvider({
                     provider, apiKey, model,
                     systemPrompt: 'You are a file routing agent. Return JSON only.',
@@ -246,6 +450,7 @@ export default function App() {
         setIsAnalyzing(true);
         setAnalysisError('');
         setStep(3);
+        setProgressStages([]);
         if (!resumeWithExtra) { setViewMode(null); setMissingFileRequest(null); }
 
         try {
@@ -278,7 +483,7 @@ export default function App() {
                 projectContext = `Project tree: ${filePaths.length} files total.`;
 
                 if (!resumeWithExtra) {
-                    const routerPrompt = buildRouterPrompt(filePaths, userError);
+                    const routerPrompt = buildRouterPrompt(filePaths, userError, analysisMode);
                     const routerRaw = await callProvider({
                         provider, apiKey, model,
                         systemPrompt: 'You are a file routing agent. Return JSON only.',
@@ -314,7 +519,26 @@ export default function App() {
                 level,
                 language,
                 projectContext,
-                onProgress: (stage) => setLoadingStage(stage),
+                mode: analysisMode,
+                preset,
+                outputSections,
+                onProgress: (msg) => {
+                    // Handle both string and structured progress
+                    if (typeof msg === 'string') {
+                        setLoadingStage(msg);
+                    } else if (msg && typeof msg === 'object') {
+                        setLoadingStage(msg.label || '');
+                        setProgressStages(prev => {
+                            const existing = prev.findIndex(s => s.stage === msg.stage);
+                            if (existing >= 0) {
+                                const updated = [...prev];
+                                updated[existing] = msg;
+                                return updated;
+                            }
+                            return [...prev, msg];
+                        });
+                    }
+                },
                 onMissingFiles: async (request) => {
                     const filesNeeded = request.filesNeeded || [];
                     if (filesNeeded.length === 0) return null;
@@ -369,14 +593,21 @@ export default function App() {
             });
 
             // If orchestrate returned with a report, show it
-            // Handle both { report: {...} } and flat { bugType, rootCause, ... } shapes
-            if (result?.report) {
+            // Handle debug report shape (nested or flat)
+            if (analysisMode === 'explain' || analysisMode === 'security') {
+                // Explain/Security results are directly the output
+                setReport(result);
+                setViewMode('all');
+                setStep(5);
+            } else if (result?.report) {
                 setReport(result.report);
-                setStep(4);
+                setViewMode('all');
+                setStep(5);
             } else if (result?.bugType || result?.rootCause) {
                 // Model returned report fields at top level instead of nested
                 setReport(result);
-                setStep(4);
+                setViewMode('all');
+                setStep(5);
             } else if (!result?.needsMoreInfo) {
                 throw new Error('Unexpected engine response format. The model returned data we could not display.');
             }
@@ -690,11 +921,98 @@ export default function App() {
                                 </div>
                             )}
 
-                            {/* Symptom */}
+                            {/* ═══ MODE + PRESET SELECTOR (Phase 4A) ═══ */}
                             <div style={{ borderTop: '2px solid #333', paddingTop: 20, marginTop: 20 }}>
-                                <div style={{ ...S.label, color: '#ff003c' }}><Activity size={14} /> Define The Symptom <span style={{ color: '#666', fontWeight: 'normal', fontSize: 11 }}>(optional — leave empty to scan for any issues)</span></div>
-                                <textarea style={S.codeInput} placeholder="E.g., Timer resets to wrong value after pause. Include stack traces if you have them... Or leave empty and we'll find issues for you."
-                                    value={userError} onChange={(e) => setUserError(e.target.value)} />
+                                <div style={{ ...S.label, color: '#ff00ff' }}><BrainCircuit size={14} /> Analysis Mode</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20 }}>
+                                    {[
+                                        { key: 'debug', label: 'Debug', icon: <Bug size={20} />, color: '#ff003c', desc: 'Find & fix bugs' },
+                                        { key: 'explain', label: 'Explain', icon: <Eye size={20} />, color: '#00ffff', desc: 'Understand code' },
+                                        { key: 'security', label: 'Security', icon: <Shield size={20} />, color: '#ffaa00', desc: 'Audit vulnerabilities', beta: true },
+                                    ].map(m => (
+                                        <button key={m.key} onClick={() => { setAnalysisMode(m.key); if (m.key !== 'debug') setPreset('full'); }}
+                                            style={{
+                                                padding: '16px 14px', border: '2px solid', position: 'relative',
+                                                borderColor: analysisMode === m.key ? m.color : '#333',
+                                                background: analysisMode === m.key ? m.color + '18' : 'transparent',
+                                                color: analysisMode === m.key ? '#fff' : '#888',
+                                                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center', transition: 'all 0.15s',
+                                            }}>
+                                            {m.beta && <span style={{ position: 'absolute', top: 4, right: 6, fontSize: 9, fontWeight: 800, color: m.color, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 1 }}>BETA</span>}
+                                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6, color: analysisMode === m.key ? m.color : '#555' }}>{m.icon}</div>
+                                            <div style={{ fontWeight: 800, fontSize: 14, textTransform: 'uppercase', letterSpacing: 1 }}>{m.label}</div>
+                                            <div style={{ fontSize: 11, opacity: 0.6, fontWeight: 400, marginTop: 4 }}>{m.desc}</div>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Preset Selector — only for Debug mode */}
+                                {analysisMode === 'debug' && (
+                                    <div style={{ marginBottom: 16 }}>
+                                        <div style={{ ...S.label, color: '#ccff00', marginBottom: 8 }}><Zap size={14} /> Output Preset</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                                            {Object.entries(PRESETS).map(([key, p]) => (
+                                                <button key={key} onClick={() => { setPreset(key); if (key !== 'custom') setOutputSections(null); }}
+                                                    style={{
+                                                        padding: '10px 8px', border: '2px solid',
+                                                        borderColor: preset === key ? '#ccff00' : '#333',
+                                                        background: preset === key ? '#ccff0018' : 'transparent',
+                                                        color: preset === key ? '#fff' : '#888',
+                                                        cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 700,
+                                                        textTransform: 'uppercase', transition: 'all 0.15s', textAlign: 'center',
+                                                    }}>
+                                                    <div style={{ fontSize: 13, marginBottom: 2 }}>{p.label}</div>
+                                                    <div style={{ fontSize: 9, opacity: 0.6, fontWeight: 400, textTransform: 'none' }}>{p.description}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Section Toggles — only for Custom preset */}
+                                {analysisMode === 'debug' && preset === 'custom' && (
+                                    <div style={{ marginBottom: 16, background: '#0a0a0a', border: '1px solid #333', padding: 14 }}>
+                                        <div style={{ ...S.label, color: '#888', fontSize: 10, marginBottom: 10 }}>Toggle Sections</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
+                                            {Object.entries(SECTION_REGISTRY).filter(([, s]) => s.modes.includes('debug')).map(([key, sec]) => {
+                                                const active = (outputSections || PRESETS.full.sections).includes(key);
+                                                const costColor = sec.tokenCost === 'high' ? '#ff003c' : sec.tokenCost === 'medium' ? '#ffaa00' : '#888';
+                                                return (
+                                                    <button key={key} onClick={() => {
+                                                        const current = outputSections || [...PRESETS.full.sections];
+                                                        setOutputSections(active ? current.filter(s => s !== key) : [...current, key]);
+                                                    }}
+                                                        style={{
+                                                            padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                            border: '1px solid', borderColor: active ? '#ccff00' : '#333',
+                                                            background: active ? '#ccff0010' : 'transparent',
+                                                            color: active ? '#e0e0e0' : '#666',
+                                                            cursor: 'pointer', fontFamily: "'JetBrains Mono',monospace", fontSize: 11, transition: 'all 0.1s',
+                                                        }}>
+                                                        <span>{sec.label}</span>
+                                                        <span style={{ fontSize: 9, color: costColor, fontWeight: 700 }}>{sec.tokenCost.toUpperCase()}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Symptom / Intent field — mode-aware */}
+                            <div style={{ borderTop: '2px solid #333', paddingTop: 20, marginTop: 8 }}>
+                                <div style={{ ...S.label, color: '#ff003c' }}>
+                                    <Activity size={14} />
+                                    {analysisMode === 'debug' ? 'Define The Symptom' : analysisMode === 'explain' ? 'What To Explain' : 'Security Concerns'}
+                                    <span style={{ color: '#666', fontWeight: 'normal', fontSize: 11 }}>(optional)</span>
+                                </div>
+                                <textarea style={S.codeInput} value={userError} onChange={(e) => setUserError(e.target.value)}
+                                    placeholder={analysisMode === 'debug'
+                                        ? "Describe the bug — what happens vs what you expected. Include stack traces if you have them..."
+                                        : analysisMode === 'explain'
+                                            ? "What do you want to understand about this code? Leave empty for full architecture overview."
+                                            : "Any specific security concerns? Leave empty to scan for common vulnerabilities."
+                                    } />
                             </div>
 
                             {analysisError && (
@@ -703,27 +1021,68 @@ export default function App() {
                                 </div>
                             )}
 
-                            <button style={{ ...S.btnPrimary, marginTop: 16, opacity: canExecute ? 1 : 0.4, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10 }}
-                                disabled={!canExecute || isAnalyzing} onClick={() => executeAnalysis(false)}>
-                                Execute Engine <Zap size={20} />
-                            </button>
-                            <p style={{ color: '#555', fontSize: 11, fontFamily: "'JetBrains Mono',monospace", marginTop: 8, textAlign: 'center' }}>
-                                Using: {prov?.models[Object.keys(prov.models).find(k => prov.models[k].id === model)]?.label || model} with extended thinking
-                            </p>
+                            {/* Analyze button with runtime estimate */}
+                            {(() => {
+                                const fileCount = inputType === 'upload' ? directoryFiles.length : inputType === 'paste' ? pastedFiles.filter(f => f.content.trim()).length : 1;
+                                const totalLines = inputType === 'paste' ? pastedFiles.reduce((sum, f) => sum + (f.content.match(/\n/g) || []).length, 0) : fileCount * 80;
+                                const est = estimateRuntime(fileCount, totalLines, provider, preset);
+                                return (
+                                    <>
+                                        <button style={{ ...S.btnPrimary, marginTop: 16, opacity: canExecute ? 1 : 0.4, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10 }}
+                                            disabled={!canExecute || isAnalyzing} onClick={() => executeAnalysis(false)}>
+                                            {analysisMode === 'debug' ? 'Execute Engine' : analysisMode === 'explain' ? 'Explain Code' : 'Run Security Audit'}
+                                            {' '}<Zap size={20} />
+                                            {canExecute && <span style={{ fontWeight: 400, fontSize: 12, opacity: 0.7 }}>— est. {est.min}-{est.max}s</span>}
+                                        </button>
+                                        <p style={{ color: '#555', fontSize: 11, fontFamily: "'JetBrains Mono',monospace", marginTop: 8, textAlign: 'center' }}>
+                                            {analysisMode.toUpperCase()} mode • {prov?.models[Object.keys(prov.models).find(k => prov.models[k].id === model)]?.label || model} • {PRESETS[preset]?.label || preset}
+                                        </p>
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                 )}
 
-                {/* ═══ STEP 3: Loading ═══ */}
+                {/* ═══ STEP 3: Loading with Structured Progress ═══ */}
                 {step === 3 && (
-                    <div className="animate-in" style={{ paddingTop: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-                        <BrainCircuit size={80} color="#ff00ff" className="animate-pulse" style={{ marginBottom: 28 }} />
-                        <h2 style={{ fontSize: 36, fontWeight: 800, textTransform: 'uppercase', color: '#fff', letterSpacing: 3 }}>SYSTEM ACTIVE</h2>
-                        <div style={{ marginTop: 28, width: '100%', maxWidth: 500, border: '2px solid #555', background: '#111', padding: 20, textAlign: 'left', position: 'relative', overflow: 'hidden' }}>
-                            <div style={{ position: 'absolute', top: 0, left: 0, height: 2, background: '#ccff00', width: '100%' }} className="animate-pulse" />
-                            <p style={{ fontFamily: "'JetBrains Mono',monospace", color: '#00ffff', fontSize: 14, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <Loader2 size={16} className="animate-spin" /> {loadingStage || 'Initializing...'}
-                            </p>
+                    <div className="animate-in" style={{ paddingTop: 60, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                        <BrainCircuit size={64} color="#ff00ff" className="animate-pulse" style={{ marginBottom: 20 }} />
+                        <h2 style={{ fontSize: 32, fontWeight: 800, textTransform: 'uppercase', color: '#fff', letterSpacing: 3, marginBottom: 6 }}>
+                            {analysisMode === 'debug' ? 'ENGINE ACTIVE' : analysisMode === 'explain' ? 'EXPLAINING' : 'AUDITING'}
+                        </h2>
+                        <p style={{ fontFamily: "'JetBrains Mono',monospace", color: '#888', fontSize: 12, marginBottom: 24 }}>
+                            {analysisMode.toUpperCase()} mode • {PRESETS[preset]?.label || preset}
+                        </p>
+
+                        {/* Structured Progress Bar */}
+                        <div style={{ width: '100%', maxWidth: 540, border: '2px solid #333', background: '#111', padding: 20, textAlign: 'left' }}>
+                            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 12, letterSpacing: 1 }}>Pipeline Progress</div>
+                            <div style={{ borderTop: '1px solid #333', paddingTop: 10 }}>
+                                {['input', 'ast', 'engine', 'parse', 'complete'].map(stageId => {
+                                    const stg = progressStages.find(s => s.stage === stageId);
+                                    const labels = { input: 'Input Validation', ast: 'AST Pre-Analysis', engine: 'AI Engine', parse: 'Parse Response', complete: 'Complete' };
+                                    const isActive = stg && !stg.complete;
+                                    const isDone = stg && stg.complete;
+                                    return (
+                                        <div key={stageId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>
+                                            <span style={{ width: 20, textAlign: 'center', fontSize: 14 }}>
+                                                {isDone ? '✅' : isActive ? <Loader2 size={14} className="animate-spin" style={{ color: '#ccff00' }} /> : '⬚'}
+                                            </span>
+                                            <span style={{ flex: 1, color: isDone ? '#aaa' : isActive ? '#fff' : '#555' }}>
+                                                {labels[stageId] || stageId}
+                                            </span>
+                                            {stg && <span style={{ color: '#555', fontSize: 10 }}>{stg.elapsed}s</span>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {/* Current text status */}
+                            <div style={{ borderTop: '1px solid #333', marginTop: 10, paddingTop: 10 }}>
+                                <p style={{ fontFamily: "'JetBrains Mono',monospace", color: '#00ffff', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                                    <Loader2 size={14} className="animate-spin" /> {loadingStage || 'Initializing...'}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -757,250 +1116,466 @@ export default function App() {
                     </div>
                 )}
 
-                {/* ═══ STEP 4: Output Menu ═══ */}
-                {step === 4 && report && (
-                    <div className="animate-slide-up" style={{ maxWidth: 1100, margin: '0 auto', paddingTop: 20 }}>
-                        <div style={{ textAlign: 'center', marginBottom: 32, borderBottom: '2px solid #333', paddingBottom: 24 }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#ccff00', color: '#000', fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", padding: '4px 16px', border: '2px solid #000', marginBottom: 14 }}>
-                                ENGINE CONFIDENCE: {displayConfidence(report.confidence)}%
-                                {displayConfidence(report.confidence) > 80 ? <CheckSquare size={14} /> : <AlertTriangle size={14} />}
-                            </div>
-                            <h2 style={{ fontSize: 42, fontWeight: 800, color: '#fff', textTransform: 'uppercase', margin: '10px 0 6px' }}>Diagnosis Ready</h2>
-                            <p style={{ color: '#aaa', fontFamily: "'JetBrains Mono',monospace" }}>Root cause identified. Choose output format:</p>
-                        </div>
-
-                        <div style={{ display: 'grid', gap: 12 }}>
-                            {[
-                                { mode: 'plain', label: '1. Human Explanation', desc: 'Symptoms, Metaphors, Concepts to learn', icon: <User size={24} />, accent: '#ccff00' },
-                                { mode: 'tech', label: '2. Technical Breakdown', desc: 'State Mutation Tables, Timelines, Invariants', icon: <Database size={24} />, accent: '#00ffff' },
-                                { mode: 'prompt', label: '3. Agent Prompt', desc: 'Prompt for Cursor/Bolt to apply fix safely', icon: <TerminalSquare size={24} />, accent: '#ff00ff' },
-                                { mode: 'code', label: '4. Minimal Code Fix', desc: 'The exact snippet required, no massive refactors', icon: <Code2 size={24} />, accent: '#ffaa00' },
-                            ].map(({ mode, label, desc, icon, accent }) => (
-                                <button key={mode} onClick={() => { setViewMode(mode); setStep(5); }}
-                                    style={{ ...S.card, padding: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', border: '2px solid #333', transition: 'all 0.15s', textAlign: 'left' }}>
-                                    <div>
-                                        <h3 style={{ fontSize: 20, fontWeight: 800, color: '#fff', textTransform: 'uppercase', margin: 0 }}>{label}</h3>
-                                        <p style={{ color: '#888', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, marginTop: 4 }}>{desc}</p>
-                                    </div>
-                                    <span style={{ color: '#555' }}>{icon}</span>
-                                </button>
-                            ))}
-                            <button onClick={() => { setViewMode('all'); setStep(5); }}
-                                style={{ padding: 18, border: '2px dashed #555', background: 'transparent', color: '#aaa', fontWeight: 700, fontSize: 17, textTransform: 'uppercase', cursor: 'pointer', marginTop: 8 }}>
-                                5. Show Me Everything
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* ═══ STEP 5: The Report ═══ */}
-                {step === 5 && report && viewMode && (
+                {/* ═══ STEP 5: The Report (renders immediately — no Output Menu) ═══ */}
+                {step === 5 && report && (
                     <div className="animate-slide-up" style={{ paddingBottom: 80 }}>
-                        {/* Sticky header */}
+                        {/* Sticky header — mode-aware */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid #fff', paddingBottom: 14, marginBottom: 28, position: 'sticky', top: 72, background: '#050505f2', backdropFilter: 'blur(8px)', zIndex: 15, paddingTop: 12, gap: 12, flexWrap: 'wrap' }}>
                             <div>
                                 <div style={{ display: 'flex', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, background: bugMeta?.color || '#888', color: '#fff', padding: '3px 10px', textTransform: 'uppercase', fontWeight: 700 }}>{bugMeta?.label || report.bugType}</span>
-                                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, background: '#222', color: '#ccff00', border: '1px solid #ccff00', padding: '3px 10px', textTransform: 'uppercase' }}>CFD: {displayConfidence(report.confidence)}%</span>
+                                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, background: analysisMode === 'debug' ? (bugMeta?.color || '#888') : analysisMode === 'explain' ? '#00ffff' : '#ffaa00', color: analysisMode === 'explain' ? '#000' : '#fff', padding: '3px 10px', textTransform: 'uppercase', fontWeight: 700 }}>
+                                        {analysisMode === 'debug' ? (bugMeta?.label || report.bugType || 'DEBUG') : analysisMode === 'explain' ? 'EXPLAIN' : 'SECURITY AUDIT'}
+                                    </span>
+                                    {report.confidence != null && (
+                                        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, background: '#222', color: '#ccff00', border: '1px solid #ccff00', padding: '3px 10px', textTransform: 'uppercase' }}>CFD: {displayConfidence(report.confidence)}%</span>
+                                    )}
                                 </div>
                                 <h2 style={{ fontSize: 32, fontWeight: 800, color: '#fff', textTransform: 'uppercase', margin: 0 }}>
-                                    Mode: <span style={{ color: '#ccff00' }}>{viewMode}</span>
+                                    {analysisMode === 'debug' ? 'Diagnosis' : analysisMode === 'explain' ? 'Code Explanation' : 'Security Report'}
                                 </h2>
                             </div>
-                            <button style={S.btnOutline} onClick={() => setStep(4)}>← Output Menu</button>
+                            <button style={S.btnOutline} onClick={reset}>← New Analysis</button>
                         </div>
 
-                        {/* --- HUMAN VIEW --- */}
-                        {(viewMode === 'plain' || viewMode === 'tech' || viewMode === 'all') && report.symptom && (
-                            <SectionBlock icon={<AlertOctagon size={14} />} title="Observed Symptom" color="#ff003c" copyText={`Symptom: ${report.symptom}\nReproduction:\n${(report.reproduction || []).join('\n')}`} copyId="symp" copiedId={copiedSection} onCopy={handleCopy}>
-                                <p style={{ fontSize: 20, color: '#fff', fontWeight: 700, lineHeight: 1.5, marginBottom: 16 }}>{report.symptom}</p>
-                                {report.reproduction?.length > 0 && (
-                                    <div style={{ background: '#050505', padding: 14, border: '1px solid #333' }}>
-                                        <h4 style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#888', textTransform: 'uppercase', marginBottom: 8 }}>Reproduction Path</h4>
-                                        <ol style={{ listStylePosition: 'inside', color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.8 }}>
-                                            {report.reproduction.map((s, i) => <li key={i}>{s}</li>)}
-                                        </ol>
-                                    </div>
+                        {/* ── Explain Mode Report ── */}
+                        {analysisMode === 'explain' && (
+                            <div>
+                                {report.summary && (
+                                    <SectionBlock icon={<BookOpen size={14} />} title="Summary" color="#00ffff" copyText={report.summary} copyId="expl-sum" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <p style={{ fontSize: 18, color: '#e0e0e0', lineHeight: 1.8 }}>{report.summary}</p>
+                                    </SectionBlock>
                                 )}
-                            </SectionBlock>
-                        )}
-
-                        {/* Evidence */}
-                        {(viewMode === 'plain' || viewMode === 'all') && report.evidence?.length > 0 && (
-                            <SectionBlock icon={<CheckSquare size={14} />} title="Confidence Evidence" color="#22c55e" copyId="evi" copiedId={copiedSection} onCopy={handleCopy}
-                                copyText={(report.evidence || []).join('\n')}>
-                                <div style={{ marginBottom: 10 }}>
-                                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#22c55e', fontWeight: 700 }}>VERIFIED:</span>
-                                    <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.8 }}>
-                                        {report.evidence.map((e, i) => <li key={i}>{e}</li>)}
-                                    </ul>
-                                </div>
-                                {report.uncertainties?.length > 0 && (
-                                    <div>
-                                        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#ffaa00', fontWeight: 700 }}>UNCERTAIN:</span>
-                                        <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: '#888', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.8 }}>
-                                            {report.uncertainties.map((u, i) => <li key={i}>{u}</li>)}
-                                        </ul>
-                                    </div>
-                                )}
-                            </SectionBlock>
-                        )}
-
-                        {/* Concept Extraction */}
-                        {(viewMode === 'plain' || viewMode === 'all') && report.conceptExtraction && (
-                            <SectionBlock icon={<BookOpen size={14} />} title="Concept To Learn" color="#00ffff" copyId="concept" copiedId={copiedSection} onCopy={handleCopy}
-                                copyText={`Concept: ${report.conceptExtraction.concept}\nWhy: ${report.conceptExtraction.whyItMatters}\nPattern: ${report.conceptExtraction.patternToAvoid}`}>
-                                <div style={{ marginBottom: 12 }}>
-                                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, background: bugMeta?.color + '22' || '#333', color: bugMeta?.color || '#aaa', padding: '2px 8px', fontWeight: 700, textTransform: 'uppercase' }}>{report.conceptExtraction.bugCategory}</span>
-                                </div>
-                                <h4 style={{ fontSize: 18, color: '#fff', fontWeight: 700, marginBottom: 8 }}>{report.conceptExtraction.concept}</h4>
-                                <p style={{ color: '#ccc', lineHeight: 1.7, marginBottom: 10 }}>{report.conceptExtraction.whyItMatters}</p>
-                                <div style={{ background: '#ccff0018', borderLeft: '3px solid #ccff00', padding: 12, marginBottom: 10 }}>
-                                    <span style={{ color: '#ccff00', fontWeight: 700, fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }}>PATTERN TO AVOID:</span>
-                                    <p style={{ color: '#ddd', marginTop: 4 }}>{report.conceptExtraction.patternToAvoid}</p>
-                                </div>
-                                {report.conceptExtraction.realWorldAnalogy && (
-                                    <p style={{ color: '#aaa', fontStyle: 'italic', lineHeight: 1.7 }}>💡 {report.conceptExtraction.realWorldAnalogy}</p>
-                                )}
-                            </SectionBlock>
-                        )}
-
-                        {/* Metaphor / Analogy */}
-                        {(viewMode === 'plain' || viewMode === 'all') && report.conceptExtraction?.realWorldAnalogy && (
-                            <SectionBlock icon={<Lightbulb size={14} />} title="Real World Analogy" color="#ccff00" copyId="analogy" copiedId={copiedSection} onCopy={handleCopy}
-                                copyText={report.conceptExtraction.realWorldAnalogy}>
-                                <p style={{ fontSize: 18, color: '#e0e0e0', lineHeight: 1.7, fontStyle: 'italic' }}>
-                                    "{report.conceptExtraction.realWorldAnalogy}"
-                                </p>
-                            </SectionBlock>
-                        )}
-
-                        {/* Why AI Looped */}
-                        {(viewMode === 'plain' || viewMode === 'all') && report.whyAILooped && (
-                            <SectionBlock icon={<RefreshCw size={14} />} title="Why AI Keeps Breaking It" color="#ff00ff" copyId="ailoop" copiedId={copiedSection} onCopy={handleCopy}
-                                copyText={`Pattern: ${report.whyAILooped.pattern}\n\n${report.whyAILooped.explanation}\n\nLoop:\n${(report.whyAILooped.loopSteps || []).join('\n')}`}>
-                                <p style={{ color: '#e0e0e0', lineHeight: 1.7, marginBottom: 14 }}>{report.whyAILooped.explanation}</p>
-                                {report.whyAILooped.loopSteps?.length > 0 && (
-                                    <div style={{ background: '#ff00ff11', border: '1px solid #ff00ff33', padding: 14 }}>
-                                        <h4 style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: '#ff00ff', textTransform: 'uppercase', marginBottom: 8 }}>The AI Fix Loop</h4>
-                                        {report.whyAILooped.loopSteps.map((s, i) => (
-                                            <div key={i} style={{ color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, padding: '4px 0', borderBottom: i < report.whyAILooped.loopSteps.length - 1 ? '1px solid #333' : 'none' }}>
-                                                {i + 1}. {s}
+                                {report.entryPoints?.length > 0 && (
+                                    <SectionBlock icon={<Zap size={14} />} title="Entry Points" color="#ff00ff" copyId="expl-entry" copiedId={copiedSection} onCopy={handleCopy}>
+                                        {report.entryPoints.map((ep, i) => (
+                                            <div key={i} style={{ background: '#050505', border: '1px solid #333', padding: 14, marginBottom: 8 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                                    <h4 style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: '#ff00ff', margin: 0 }}>{ep.name}</h4>
+                                                    <span style={{ fontSize: 11, color: '#aaa', border: '1px solid #555', padding: '2px 6px', fontFamily: "'JetBrains Mono',monospace" }}>{ep.type}</span>
+                                                </div>
+                                                <p style={{ color: '#d0d0d0', fontSize: 15, lineHeight: 1.7, marginBottom: 6 }}>{ep.description}</p>
+                                                {ep.file && <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#777' }}>📍 {ep.file}{ep.line ? `:${ep.line}` : ''}</div>}
                                             </div>
                                         ))}
-                                    </div>
+                                    </SectionBlock>
                                 )}
-                            </SectionBlock>
-                        )}
-
-                        {/* --- TECH VIEW --- */}
-                        {(viewMode === 'tech' || viewMode === 'all') && report.variableState?.length > 0 && (
-                            <SectionBlock icon={<Database size={14} />} title="State Mutation Tracker" color="#00ffff" borderSide="top"
-                                copyText={JSON.stringify(report.variableState, null, 2)} copyId="state" copiedId={copiedSection} onCopy={handleCopy}>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', textAlign: 'left', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, borderCollapse: 'collapse' }}>
-                                        <thead>
-                                            <tr style={{ background: '#222', color: '#00ffff', borderBottom: '2px solid #00ffff' }}>
-                                                <th style={{ padding: 12, borderRight: '1px solid #444', width: '25%' }}>Variable</th>
-                                                <th style={{ padding: 12, borderRight: '1px solid #444', width: '45%' }}>Meaning / Role</th>
-                                                <th style={{ padding: 12, width: '30%' }}>Where Mutated</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {report.variableState.map((st, i) => (
-                                                <tr key={i} style={{ borderBottom: '1px solid #333' }}>
-                                                    <td style={{ padding: 12, borderRight: '1px solid #444', color: '#ccff00', fontWeight: 700 }}>{st.variable}</td>
-                                                    <td style={{ padding: 12, borderRight: '1px solid #444', color: '#ccc' }}>{st.meaning}</td>
-                                                    <td style={{ padding: 12, color: '#ffaa00' }}>{st.whereChanged}</td>
-                                                </tr>
+                                {/* Architecture Layers */}
+                                {report.architectureLayers?.length > 0 && (
+                                    <SectionBlock icon={<Layers size={14} />} title="Architecture Layers" color="#ccff00" copyId="expl-layers" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <p style={{ color: '#aaa', fontSize: 13, marginBottom: 16, fontFamily: "'JetBrains Mono',monospace" }}>High-level semantic grouping of the system</p>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                                            {report.architectureLayers.map((layer, i) => (
+                                                <div key={i} style={{ background: '#111', border: '1px solid #333', borderTop: `4px solid ${['#00ffff', '#ffaa00', '#ff00ff', '#ccff00', '#22c55e'][i % 5]}`, padding: 16, display: 'flex', flexDirection: 'column' }}>
+                                                    <h4 style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 16, color: '#fff', margin: '0 0 8px' }}>Layer {i + 1} — {layer.name}</h4>
+                                                    <p style={{ color: '#aaa', fontSize: 14, lineHeight: 1.6, marginBottom: 16, flexGrow: 1 }}>{layer.description}</p>
+                                                    {layer.components?.length > 0 && (
+                                                        <div style={{ background: '#050505', padding: 12, border: '1px solid #222' }}>
+                                                            {layer.components.map((comp, j) => (
+                                                                <div key={j} style={{ color: '#d0d0d0', fontSize: 14, fontFamily: "'JetBrains Mono',monospace", padding: '4px 0', borderBottom: j < layer.components.length - 1 ? '1px solid #222' : 'none' }}>
+                                                                    <span style={{ color: '#777', marginRight: 8 }}>•</span>{comp}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </SectionBlock>
-                        )}
-
-                        {(viewMode === 'tech' || viewMode === 'all') && report.timeline?.length > 0 && (
-                            <SectionBlock icon={<Clock size={14} />} title="Execution Timeline" color="#ccff00"
-                                copyText={report.timeline.map(t => `${t.time}: ${t.event}`).join('\n')} copyId="timeline" copiedId={copiedSection} onCopy={handleCopy}>
-                                <div style={{ position: 'relative', paddingLeft: 40 }}>
-                                    <div style={{ position: 'absolute', left: 16, top: 0, bottom: 0, width: 2, background: 'linear-gradient(to bottom, #ccff00, #ff00ff)' }} />
-                                    {report.timeline.map((item, i) => (
-                                        <div key={i} style={{ position: 'relative', marginBottom: 16, paddingLeft: 20 }}>
-                                            <div style={{ position: 'absolute', left: -30, top: 4, width: 28, height: 28, borderRadius: '50%', border: '3px solid #111', background: '#222', color: '#ccff00', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                {item.time}
-                                            </div>
-                                            <div style={{ background: '#222', padding: 12, border: '1px solid #444' }}>
-                                                <p style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: '#fff' }}>{item.event}</p>
-                                            </div>
                                         </div>
-                                    ))}
-                                </div>
-                            </SectionBlock>
-                        )}
-
-                        {(viewMode === 'tech' || viewMode === 'all') && report.invariants?.length > 0 && (
-                            <SectionBlock icon={<ShieldAlert size={14} />} title="Invariant Violations" color="#ff003c"
-                                copyText={report.invariants.join('\n')} copyId="inv" copiedId={copiedSection} onCopy={handleCopy}>
-                                <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.8 }}>
-                                    {report.invariants.map((inv, i) => <li key={i}>{inv}</li>)}
-                                </ul>
-                            </SectionBlock>
-                        )}
-
-                        {(viewMode === 'tech' || viewMode === 'all') && (
-                            <SectionBlock icon={<GitMerge size={14} />} title="Technical Root Cause" color="#fff"
-                                copyText={report.rootCause} copyId="root" copiedId={copiedSection} onCopy={handleCopy}>
-                                <p style={{ color: '#e0e0e0', lineHeight: 1.7, marginBottom: 12 }}>{report.rootCause}</p>
-                                <div style={{ background: '#050505', padding: 10, border: '1px solid #333', fontFamily: "'JetBrains Mono',monospace", color: '#00ffff', fontSize: 13 }}>
-                                    Location: {report.codeLocation}
-                                </div>
-                            </SectionBlock>
-                        )}
-
-                        {(viewMode === 'tech' || viewMode === 'all') && report.hypotheses?.length > 0 && (
-                            <SectionBlock icon={<BrainCircuit size={14} />} title="Alternative Hypotheses" color="#888" borderSide="top">
-                                <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: '#888', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, lineHeight: 1.8 }}>
-                                    {report.hypotheses.map((h, i) => <li key={i}>{h}</li>)}
-                                </ul>
-                            </SectionBlock>
-                        )}
-
-                        {/* --- PROMPT VIEW --- */}
-                        {(viewMode === 'prompt' || viewMode === 'all') && report.aiPrompt && (
-                            <div style={{ background: '#ff00ff18', border: '2px solid #ff00ff', padding: 28, marginBottom: 14 }} className="brutal-shadow-magenta">
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #ff00ff44' }}>
-                                    <h3 style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, textTransform: 'uppercase', color: '#ff00ff', fontSize: 18 }}>Deterministic AI Fix Prompt</h3>
-                                    <button onClick={() => handleCopy(report.aiPrompt, 'ai-prompt')}
-                                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, textTransform: 'uppercase', fontSize: 12, background: '#ff00ff', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                                        {copiedSection === 'ai-prompt' ? <Check size={14} /> : <Copy size={14} />}
-                                        {copiedSection === 'ai-prompt' ? 'COPIED!' : 'COPY PROMPT'}
-                                    </button>
-                                </div>
-                                <p style={{ color: '#aaa', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, marginBottom: 12 }}>
-                                    Paste this directly into Cursor / Bolt / Copilot to apply the fix:
-                                </p>
-                                <pre style={{ background: '#050505', padding: 20, color: '#fff', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, border: '1px solid #ff00ff33', lineHeight: 1.6, overflow: 'auto' }}>
-                                    {report.aiPrompt}
-                                </pre>
+                                    </SectionBlock>
+                                )}
+                                {/* Data Flow + Mermaid Chart */}
+                                {report.dataFlow?.length > 0 && (
+                                    <SectionBlock icon={<GitMerge size={14} />} title="Data Flow" color="#ffaa00" copyId="expl-flow" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <MermaidChart
+                                            chart={buildDataFlowMermaid(report.flowchartEdges || [])}
+                                            caption="How data moves through the system"
+                                        />
+                                        <div style={{ overflowX: 'auto', marginTop: 12 }}>
+                                            <table style={{ width: '100%', textAlign: 'left', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, borderCollapse: 'collapse' }}>
+                                                <thead>
+                                                    <tr style={{ background: '#222', color: '#ffaa00', borderBottom: '2px solid #ffaa00' }}>
+                                                        <th style={{ padding: 10, width: '25%' }}>From</th>
+                                                        <th style={{ padding: 10, width: '45%' }}>Mechanism</th>
+                                                        <th style={{ padding: 10, width: '25%' }}>To</th>
+                                                        <th style={{ padding: 10, width: '5%' }}>Line</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {report.dataFlow.map((flow, i) => (
+                                                        <tr key={i} style={{ borderBottom: '1px solid #333' }}>
+                                                            <td style={{ padding: 10, color: '#e0e0e0' }}>{flow.from}</td>
+                                                            <td style={{ padding: 10, color: '#ccc', fontStyle: 'italic' }}>→ {flow.mechanism} →</td>
+                                                            <td style={{ padding: 10, color: '#e0e0e0' }}>{flow.to}</td>
+                                                            <td style={{ padding: 10, color: '#aaa' }}>{flow.line ? `L${flow.line}` : '—'}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </SectionBlock>
+                                )}
+                                {/* Component & Dependency Map + Mermaid Chart */}
+                                {report.componentMap?.length > 0 && (
+                                    <SectionBlock icon={<FolderTree size={14} />} title="Component & Dependency Map" color="#ccff00" copyId="expl-comp" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <MermaidChart
+                                            chart={buildDependencyMermaid(report.dependencyEdges || [])}
+                                            caption="File-level import dependencies — explicit imports only"
+                                        />
+                                        {report.componentMap.map((comp, i) => (
+                                            <div key={i} style={{ background: '#111', borderLeft: '3px solid #ccff00', padding: 12, marginBottom: 10, marginTop: 10 }}>
+                                                <h4 style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 15, color: '#ccff00', margin: '0 0 8px' }}>{comp.name}</h4>
+                                                {comp.children?.length > 0 && (
+                                                    <div style={{ marginBottom: 6 }}>
+                                                        <span style={{ color: '#aaa', fontSize: 12, textTransform: 'uppercase', marginRight: 8 }}>Dependencies:</span>
+                                                        <span style={{ color: '#e0e0e0', fontSize: 14 }}>{comp.children.join(', ')}</span>
+                                                    </div>
+                                                )}
+                                                {comp.stateOwned?.length > 0 && (
+                                                    <div>
+                                                        <span style={{ color: '#aaa', fontSize: 12, textTransform: 'uppercase', marginRight: 8 }}>State:</span>
+                                                        <span style={{ color: '#ffaa00', fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }}>{comp.stateOwned.join(', ')}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </SectionBlock>
+                                )}
+                                {/* Key Patterns */}
+                                {report.keyPatterns?.length > 0 && (
+                                    <SectionBlock icon={<Lightbulb size={14} />} title="Key Patterns" color="#22c55e" copyId="expl-pattern" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <ul style={{ listStyleType: 'square', paddingLeft: 20, color: '#e0e0e0', fontSize: 15, lineHeight: 1.9 }}>
+                                            {report.keyPatterns.map((p, i) => <li key={i}>{p}</li>)}
+                                        </ul>
+                                    </SectionBlock>
+                                )}
+                                {/* Non-Obvious Insights */}
+                                {report.nonObviousInsights?.length > 0 && (
+                                    <SectionBlock icon={<Eye size={14} />} title="Non-Obvious Insights" color="#ff00ff" copyId="expl-insights" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <p style={{ color: '#aaa', fontSize: 12, marginBottom: 10, textTransform: 'uppercase', fontFamily: "'JetBrains Mono',monospace" }}>Things that would surprise a developer reading this for the first time</p>
+                                        <ul style={{ listStyleType: 'none', padding: 0 }}>
+                                            {report.nonObviousInsights.map((insight, i) => (
+                                                <li key={i} style={{ color: '#e0e0e0', fontSize: 15, lineHeight: 1.8, padding: '10px 0', borderBottom: '1px solid #222' }}>💡 {insight}</li>
+                                            ))}
+                                        </ul>
+                                    </SectionBlock>
+                                )}
+                                {/* Gotchas */}
+                                {report.gotchas?.length > 0 && (
+                                    <SectionBlock icon={<AlertTriangle size={14} />} title="Gotchas" color="#ff003c" copyId="expl-gotchas" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <p style={{ color: '#aaa', fontSize: 12, marginBottom: 10, textTransform: 'uppercase', fontFamily: "'JetBrains Mono',monospace" }}>Hidden landmines — things that break when changed</p>
+                                        {report.gotchas.map((g, i) => (
+                                            <div key={i} style={{ background: '#ff003c08', borderLeft: '3px solid #ff003c', padding: 14, marginBottom: 10 }}>
+                                                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: '#ff003c', fontWeight: 700, marginBottom: 6 }}>⚠️ {g.title}</div>
+                                                <p style={{ color: '#ddd', fontSize: 14, lineHeight: 1.7, marginBottom: 6 }}>{g.description}</p>
+                                                {g.location && <code style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#777' }}>📍 {g.location}</code>}
+                                            </div>
+                                        ))}
+                                    </SectionBlock>
+                                )}
+                                {/* Onboarding Guide */}
+                                {report.onboarding?.length > 0 && (
+                                    <SectionBlock icon={<User size={14} />} title="Onboarding Guide" color="#00ffff" copyId="expl-onboard" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <p style={{ color: '#aaa', fontSize: 12, marginBottom: 10, textTransform: 'uppercase', fontFamily: "'JetBrains Mono',monospace" }}>Exactly where to go for the most common tasks</p>
+                                        {report.onboarding.map((item, i) => (
+                                            <div key={i} style={{ background: '#050505', border: '1px solid #333', padding: 16, marginBottom: 10 }}>
+                                                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: '#00ffff', fontWeight: 700, marginBottom: 6 }}>🎯 {item.task}</div>
+                                                <div style={{ color: '#ddd', fontSize: 14, marginBottom: 4 }}><strong style={{ color: '#aaa' }}>Where:</strong> <code style={{ color: '#ccff00' }}>{item.whereToLook}</code></div>
+                                                <div style={{ color: '#ddd', fontSize: 14 }}><strong style={{ color: '#aaa' }}>Model after:</strong> {item.patternToFollow}</div>
+                                            </div>
+                                        ))}
+                                    </SectionBlock>
+                                )}
+                                {/* Architecture Decisions */}
+                                {report.architectureDecisions?.length > 0 && (
+                                    <SectionBlock icon={<Network size={14} />} title="Architecture Decisions" color="#ffaa00" copyId="expl-arch" copiedId={copiedSection} onCopy={handleCopy}>
+                                        {report.architectureDecisions.map((d, i) => (
+                                            <div key={i} style={{ background: '#111', borderLeft: '3px solid #ffaa00', padding: 12, marginBottom: 10 }}>
+                                                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 15, color: '#fff', fontWeight: 700, marginBottom: 6 }}>{d.decision}</div>
+                                                {d.visibleReason && <div style={{ color: '#ddd', fontSize: 14, marginBottom: 4 }}><strong style={{ color: '#aaa' }}>Why (visible in code):</strong> {d.visibleReason}</div>}
+                                                {d.tradeoff && <div style={{ color: '#ffaa00', fontSize: 14 }}><strong style={{ color: '#aaa' }}>Tradeoff:</strong> {d.tradeoff}</div>}
+                                            </div>
+                                        ))}
+                                    </SectionBlock>
+                                )}
                             </div>
                         )}
 
-                        {/* --- CODE VIEW --- */}
-                        {(viewMode === 'code' || viewMode === 'all') && report.minimalFix && (
-                            <>
-                                <SectionBlock icon={<Code2 size={14} />} title="Minimal Code Fix" color="#ffaa00"
-                                    copyText={report.minimalFix} copyId="cfix" copiedId={copiedSection} onCopy={handleCopy}>
-                                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#888', textTransform: 'uppercase', marginBottom: 10 }}>
-                                        File: {report.codeLocation}
+                        {/* ── Security Mode Report ── */}
+                        {analysisMode === 'security' && (
+                            <div>
+                                {report.overallRisk && (
+                                    <div style={{ background: '#111', border: '2px solid #ffaa00', borderLeftWidth: 8, padding: 20, marginBottom: 14 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <h3 style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, textTransform: 'uppercase', color: '#ffaa00', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                                                <ShieldAlert size={16} /> Overall Risk: {report.overallRisk}
+                                            </h3>
+                                            <span style={{ background: '#ff003c22', color: '#ff003c', fontFamily: "'JetBrains Mono',monospace", fontSize: 11, padding: '4px 10px', fontWeight: 700 }}>
+                                                REQUIRES HUMAN VERIFICATION
+                                            </span>
+                                        </div>
                                     </div>
-                                    <pre style={{ background: '#050505', padding: 20, color: '#00ffff', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, border: '1px solid #333', overflow: 'auto' }}>
-                                        {report.minimalFix}
-                                    </pre>
-                                </SectionBlock>
-                                <SectionBlock icon={<CheckSquare size={14} />} title="Why This Works" color="#fff">
-                                    <p style={{ fontSize: 17, color: '#fff', lineHeight: 1.7 }}>{report.whyFixWorks}</p>
-                                </SectionBlock>
+                                )}
+                                {report.summary && (
+                                    <SectionBlock icon={<Shield size={14} />} title="Security Summary" color="#ffaa00" copyText={report.summary} copyId="sec-sum" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <p style={{ fontSize: 15, color: '#e0e0e0', lineHeight: 1.7 }}>{report.summary}</p>
+                                    </SectionBlock>
+                                )}
+                                {report.vulnerabilities?.length > 0 && (
+                                    <SectionBlock icon={<AlertTriangle size={14} />} title={`Vulnerabilities (${report.vulnerabilities.length})`} color="#ff003c" copyId="sec-vuln" copiedId={copiedSection} onCopy={handleCopy}>
+                                        {report.vulnerabilities.map((v, i) => (
+                                            <div key={i} style={{ background: '#050505', border: '1px solid #333', borderLeftWidth: 4, borderLeftColor: v.severity === 'critical' ? '#ff003c' : v.severity === 'high' ? '#ffaa00' : '#888', padding: 14, marginBottom: 8 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                                    <h4 style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: '#fff', margin: 0 }}>{v.type || v.title}</h4>
+                                                    <span style={{
+                                                        fontFamily: "'JetBrains Mono',monospace", fontSize: 10, padding: '2px 8px', fontWeight: 700, textTransform: 'uppercase',
+                                                        background: v.severity === 'critical' ? '#ff003c33' : v.severity === 'high' ? '#ffaa0033' : '#88888833',
+                                                        color: v.severity === 'critical' ? '#ff003c' : v.severity === 'high' ? '#ffaa00' : '#888',
+                                                    }}>{v.severity}</span>
+                                                </div>
+                                                <p style={{ color: '#aaa', fontSize: 13, lineHeight: 1.6, marginBottom: 6 }}>{v.description}</p>
+                                                {v.location && <p style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: '#555' }}>📍 {v.location}</p>}
+                                                {v.remediation && <p style={{ color: '#22c55e', fontSize: 12, fontFamily: "'JetBrains Mono',monospace", marginTop: 6 }}>✅ Fix: {v.remediation}</p>}
+                                            </div>
+                                        ))}
+                                    </SectionBlock>
+                                )}
+                                {report.positives?.length > 0 && (
+                                    <SectionBlock icon={<CheckSquare size={14} />} title="Security Positives" color="#22c55e" copyId="sec-pos" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <ul style={{ listStylePosition: 'inside', color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 2 }}>
+                                            {report.positives.map((p, i) => <li key={i}>{p}</li>)}
+                                        </ul>
+                                    </SectionBlock>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── Debug Mode Report (existing views, now shown as "all") ── */}
+                        {analysisMode === 'debug' && (
+                            <>
+                                {report.symptom && (
+                                    <SectionBlock icon={<AlertOctagon size={14} />} title="Observed Symptom" color="#ff003c" copyText={`Symptom: ${report.symptom}\nReproduction:\n${(report.reproduction || []).join('\n')}`} copyId="symp" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <p style={{ fontSize: 20, color: '#fff', fontWeight: 700, lineHeight: 1.5, marginBottom: 16 }}>{report.symptom}</p>
+                                        {report.reproduction?.length > 0 && (
+                                            <div style={{ background: '#050505', padding: 14, border: '1px solid #333' }}>
+                                                <h4 style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#888', textTransform: 'uppercase', marginBottom: 8 }}>Reproduction Path</h4>
+                                                <ol style={{ listStylePosition: 'inside', color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.8 }}>
+                                                    {report.reproduction.map((s, i) => <li key={i}>{s}</li>)}
+                                                </ol>
+                                            </div>
+                                        )}
+                                    </SectionBlock>
+                                )}
+
+                                {/* Evidence */}
+                                {report.evidence?.length > 0 && (
+                                    <SectionBlock icon={<CheckSquare size={14} />} title="Confidence Evidence" color="#22c55e" copyId="evi" copiedId={copiedSection} onCopy={handleCopy}
+                                        copyText={(report.evidence || []).join('\n')}>
+                                        <div style={{ marginBottom: 10 }}>
+                                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#22c55e', fontWeight: 700 }}>VERIFIED:</span>
+                                            <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.8 }}>
+                                                {report.evidence.map((e, i) => <li key={i}>{e}</li>)}
+                                            </ul>
+                                        </div>
+                                        {report.uncertainties?.length > 0 && (
+                                            <div>
+                                                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#ffaa00', fontWeight: 700 }}>UNCERTAIN:</span>
+                                                <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: '#888', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.8 }}>
+                                                    {report.uncertainties.map((u, i) => <li key={i}>{u}</li>)}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </SectionBlock>
+                                )}
+
+                                {/* Concept Extraction */}
+                                {report.conceptExtraction && (
+                                    <SectionBlock icon={<BookOpen size={14} />} title="Concept To Learn" color="#00ffff" copyId="concept" copiedId={copiedSection} onCopy={handleCopy}
+                                        copyText={`Concept: ${report.conceptExtraction.concept}\nWhy: ${report.conceptExtraction.whyItMatters}\nPattern: ${report.conceptExtraction.patternToAvoid}`}>
+                                        <div style={{ marginBottom: 12 }}>
+                                            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, background: bugMeta?.color + '22' || '#333', color: bugMeta?.color || '#aaa', padding: '2px 8px', fontWeight: 700, textTransform: 'uppercase' }}>{report.conceptExtraction.bugCategory}</span>
+                                        </div>
+                                        <h4 style={{ fontSize: 18, color: '#fff', fontWeight: 700, marginBottom: 8 }}>{report.conceptExtraction.concept}</h4>
+                                        <p style={{ color: '#ccc', lineHeight: 1.7, marginBottom: 10 }}>{report.conceptExtraction.whyItMatters}</p>
+                                        <div style={{ background: '#ccff0018', borderLeft: '3px solid #ccff00', padding: 12, marginBottom: 10 }}>
+                                            <span style={{ color: '#ccff00', fontWeight: 700, fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }}>PATTERN TO AVOID:</span>
+                                            <p style={{ color: '#ddd', marginTop: 4 }}>{report.conceptExtraction.patternToAvoid}</p>
+                                        </div>
+                                        {report.conceptExtraction.realWorldAnalogy && (
+                                            <p style={{ color: '#aaa', fontStyle: 'italic', lineHeight: 1.7 }}>💡 {report.conceptExtraction.realWorldAnalogy}</p>
+                                        )}
+                                    </SectionBlock>
+                                )}
+
+                                {/* Metaphor / Analogy */}
+                                {report.conceptExtraction?.realWorldAnalogy && (
+                                    <SectionBlock icon={<Lightbulb size={14} />} title="Real World Analogy" color="#ccff00" copyId="analogy" copiedId={copiedSection} onCopy={handleCopy}
+                                        copyText={report.conceptExtraction.realWorldAnalogy}>
+                                        <p style={{ fontSize: 18, color: '#e0e0e0', lineHeight: 1.7, fontStyle: 'italic' }}>
+                                            "{report.conceptExtraction.realWorldAnalogy}"
+                                        </p>
+                                    </SectionBlock>
+                                )}
+
+                                {/* Why AI Looped */}
+                                {report.whyAILooped && (
+                                    <SectionBlock icon={<RefreshCw size={14} />} title="Why AI Keeps Breaking It" color="#ff00ff" copyId="ailoop" copiedId={copiedSection} onCopy={handleCopy}
+                                        copyText={`Pattern: ${report.whyAILooped.pattern}\n\n${report.whyAILooped.explanation}\n\nLoop:\n${(report.whyAILooped.loopSteps || []).join('\n')}`}>
+                                        <p style={{ color: '#e0e0e0', lineHeight: 1.7, marginBottom: 14 }}>{report.whyAILooped.explanation}</p>
+                                        {report.whyAILooped.loopSteps?.length > 0 && (
+                                            <div style={{ background: '#ff00ff11', border: '1px solid #ff00ff33', padding: 14 }}>
+                                                <h4 style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: '#ff00ff', textTransform: 'uppercase', marginBottom: 8 }}>The AI Fix Loop</h4>
+                                                {report.whyAILooped.loopSteps.map((s, i) => (
+                                                    <div key={i} style={{ color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, padding: '4px 0', borderBottom: i < report.whyAILooped.loopSteps.length - 1 ? '1px solid #333' : 'none' }}>
+                                                        {i + 1}. {s}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </SectionBlock>
+                                )}
+                                {/* AI Loop Chart */}
+                                {report.aiLoopEdges?.length > 0 && (
+                                    <MermaidChart
+                                        chart={buildAILoopMermaid(report.aiLoopEdges)}
+                                        caption="The fix loop AI tools fall into — green path is how Unravel escapes it"
+                                    />
+                                )}
+
+                                {/* --- TECH VIEW --- */}
+                                {report.variableState?.length > 0 && (
+                                    <SectionBlock icon={<Database size={14} />} title="State Mutation Tracker" color="#00ffff" borderSide="top"
+                                        copyText={JSON.stringify(report.variableState, null, 2)} copyId="state" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table style={{ width: '100%', textAlign: 'left', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, borderCollapse: 'collapse' }}>
+                                                <thead>
+                                                    <tr style={{ background: '#222', color: '#00ffff', borderBottom: '2px solid #00ffff' }}>
+                                                        <th style={{ padding: 12, borderRight: '1px solid #444', width: '25%' }}>Variable</th>
+                                                        <th style={{ padding: 12, borderRight: '1px solid #444', width: '45%' }}>Meaning / Role</th>
+                                                        <th style={{ padding: 12, width: '30%' }}>Where Mutated</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {report.variableState.map((st, i) => (
+                                                        <tr key={i} style={{ borderBottom: '1px solid #333' }}>
+                                                            <td style={{ padding: 12, borderRight: '1px solid #444', color: '#ccff00', fontWeight: 700 }}>{st.variable}</td>
+                                                            <td style={{ padding: 12, borderRight: '1px solid #444', color: '#ccc' }}>{st.meaning}</td>
+                                                            <td style={{ padding: 12, color: '#ffaa00' }}>{st.whereChanged}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </SectionBlock>
+                                )}
+                                {/* Variable State Chart */}
+                                {(() => {
+                                    const charts = buildVariableMermaid(report.variableStateEdges);
+                                    if (!charts || charts.length === 0) return null;
+                                    return charts.map(({ variable, mermaid }) => (
+                                        <MermaidChart
+                                            key={variable}
+                                            chart={mermaid}
+                                            caption={`Mutation flow for ${variable}`}
+                                        />
+                                    ));
+                                })()}
+
+                                {report.timeline?.length > 0 && (
+                                    <SectionBlock icon={<Clock size={14} />} title="Execution Timeline" color="#ccff00"
+                                        copyText={report.timeline.map(t => `${t.time}: ${t.event}`).join('\n')} copyId="timeline" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <div style={{ position: 'relative', paddingLeft: 40 }}>
+                                            <div style={{ position: 'absolute', left: 16, top: 0, bottom: 0, width: 2, background: 'linear-gradient(to bottom, #ccff00, #ff00ff)' }} />
+                                            {report.timeline.map((item, i) => (
+                                                <div key={i} style={{ position: 'relative', marginBottom: 16, paddingLeft: 20 }}>
+                                                    <div style={{ position: 'absolute', left: -30, top: 4, width: 28, height: 28, borderRadius: '50%', border: '3px solid #111', background: '#222', color: '#ccff00', fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        {item.time}
+                                                    </div>
+                                                    <div style={{ background: '#222', padding: 12, border: '1px solid #444' }}>
+                                                        <p style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: '#fff' }}>{item.event}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </SectionBlock>
+                                )}
+                                {/* Timeline Chart */}
+                                {report.timelineEdges?.length > 0 && (
+                                    <MermaidChart
+                                        chart={buildTimelineMermaid(report.timelineEdges)}
+                                        caption="Execution sequence — 🐛 marks where the bug manifests"
+                                    />
+                                )}
+
+                                {report.invariants?.length > 0 && (
+                                    <SectionBlock icon={<ShieldAlert size={14} />} title="Invariant Violations" color="#ff003c"
+                                        copyText={report.invariants.join('\n')} copyId="inv" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.8 }}>
+                                            {report.invariants.map((inv, i) => <li key={i}>{inv}</li>)}
+                                        </ul>
+                                    </SectionBlock>
+                                )}
+
+                                {report.rootCause && (
+                                    <SectionBlock icon={<GitMerge size={14} />} title="Technical Root Cause" color="#fff"
+                                        copyText={report.rootCause} copyId="root" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <p style={{ color: '#e0e0e0', lineHeight: 1.7, marginBottom: 12 }}>{report.rootCause}</p>
+                                        <div style={{ background: '#050505', padding: 10, border: '1px solid #333', fontFamily: "'JetBrains Mono',monospace", color: '#00ffff', fontSize: 13 }}>
+                                            Location: {report.codeLocation}
+                                        </div>
+                                    </SectionBlock>
+                                )}
+
+                                {report.hypotheses?.length > 0 && (
+                                    <SectionBlock icon={<BrainCircuit size={14} />} title="Alternative Hypotheses" color="#888" borderSide="top">
+                                        <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: '#888', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, lineHeight: 1.8 }}>
+                                            {report.hypotheses.map((h, i) => <li key={i}>{h}</li>)}
+                                        </ul>
+                                    </SectionBlock>
+                                )}
+                                {/* Hypothesis Chart */}
+                                {report.hypothesisTree?.length > 0 && (
+                                    <MermaidChart
+                                        chart={buildHypothesisMermaid(report.hypothesisTree)}
+                                        caption="Hypothesis elimination — how competing explanations were tested and killed"
+                                    />
+                                )}
+
+                                {/* --- PROMPT VIEW --- */}
+                                {report.aiPrompt && (
+                                    <div style={{ background: '#ff00ff18', border: '2px solid #ff00ff', padding: 28, marginBottom: 14 }} className="brutal-shadow-magenta">
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #ff00ff44' }}>
+                                            <h3 style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, textTransform: 'uppercase', color: '#ff00ff', fontSize: 18 }}>Deterministic AI Fix Prompt</h3>
+                                            <button onClick={() => handleCopy(report.aiPrompt, 'ai-prompt')}
+                                                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, textTransform: 'uppercase', fontSize: 12, background: '#ff00ff', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                {copiedSection === 'ai-prompt' ? <Check size={14} /> : <Copy size={14} />}
+                                                {copiedSection === 'ai-prompt' ? 'COPIED!' : 'COPY PROMPT'}
+                                            </button>
+                                        </div>
+                                        <p style={{ color: '#aaa', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, marginBottom: 12 }}>
+                                            Paste this directly into Cursor / Bolt / Copilot to apply the fix:
+                                        </p>
+                                        <pre style={{ background: '#050505', padding: 20, color: '#fff', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, border: '1px solid #ff00ff33', lineHeight: 1.6, overflow: 'auto' }}>
+                                            {report.aiPrompt}
+                                        </pre>
+                                    </div>
+                                )}
+
+                                {/* --- CODE VIEW --- */}
+                                {report.minimalFix && (
+                                    <>
+                                        <SectionBlock icon={<Code2 size={14} />} title="Minimal Code Fix" color="#ffaa00"
+                                            copyText={report.minimalFix} copyId="cfix" copiedId={copiedSection} onCopy={handleCopy}>
+                                            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#888', textTransform: 'uppercase', marginBottom: 10 }}>
+                                                File: {report.codeLocation}
+                                            </div>
+                                            <pre style={{ background: '#050505', padding: 20, color: '#00ffff', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, border: '1px solid #333', overflow: 'auto' }}>
+                                                {report.minimalFix}
+                                            </pre>
+                                        </SectionBlock>
+                                        <SectionBlock icon={<CheckSquare size={14} />} title="Why This Works" color="#fff">
+                                            <p style={{ fontSize: 17, color: '#fff', lineHeight: 1.7 }}>{report.whyFixWorks}</p>
+                                        </SectionBlock>
+                                    </>
+                                )}
                             </>
                         )}
 
@@ -1012,9 +1587,10 @@ export default function App() {
                             </button>
                         </div>
                     </div>
-                )}
+                )
+                }
 
-            </main>
-        </div>
+            </main >
+        </div >
     );
 }

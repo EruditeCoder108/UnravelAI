@@ -490,7 +490,7 @@ Right now the warning is buried in one evidence item. It must be top-level. A di
 
 ---
 
-### Phase 4A — "Analysis Modes & Output Control" 📋 PLANNED
+### Phase 4A — "Analysis Modes & Output Control" ✅ COMPLETE
 
 **Goal:** Transform Unravel from a single-mode debugger into a multi-mode analysis platform with user-controlled output. Users pick what they need; the engine delivers only that.
 
@@ -498,7 +498,7 @@ Right now the warning is buried in one evidence item. It must be top-level. A di
 
 **Why this comes first:** Every feature after this (security scan, project explainer, web search) needs the mode system to exist. Building them without it means every new mode dumps a novel. This is the architectural foundation for Phase 4B and beyond.
 
-#### 4A.1 — Analysis Mode Selector
+#### 4A.1 — Analysis Mode Selector ✅ BUILT
 
 Three modes, each with a different system prompt and output schema:
 
@@ -530,7 +530,7 @@ Three modes, each with a different system prompt and output schema:
 
 **VS Code:** Mode selector dropdown in extension settings + quick-pick popup before analysis.
 
-#### 4A.2 — Output Section Controls
+#### 4A.2 — Output Section Controls ✅ BUILT
 
 Before running the analysis, user picks which sections they want in the report:
 
@@ -564,11 +564,9 @@ Before running the analysis, user picks which sections they want in the report:
 
 **VS Code:** Configurable in `settings.json` under `unravel.outputSections` and `unravel.outputPreset`. Default: `"developer"`. This means users set their preference once and it applies to every analysis.
 
-#### 4A.3 — Web App UX Redesign
+#### 4A.3 — Web App UX Redesign ✅ BUILT
 
-Current: all inputs on one page, all outputs dump at once.
-
-New: structured flow with clear panels.
+Current: structured flow with clear panels across 5 visual steps.
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -597,7 +595,7 @@ New: structured flow with clear panels.
 - Output preset is a dropdown, not a long checklist (but "Custom" opens the checklist)
 - Symptom is the LAST step, after mode — because the mode affects what the engine looks for
 
-#### 4A.4 — VS Code Extension Settings
+#### 4A.4 — VS Code Extension Settings ✅ BUILT
 
 ```json
 {
@@ -637,6 +635,12 @@ New: structured flow with clear panels.
 - `Unravel: Debug This File` (existing)
 - `Unravel: Explain This File` (new — shortcut for explain mode)
 - `Unravel: Security Scan This File` (new — shortcut for security mode)
+
+#### 4A.5 — VS Code Output Integration (Sidebars & Charts) ✅ BUILT
+
+- **Self-Healing Callback**: Implemented `onMissingFiles` in VS Code using `vscode.workspace.findFiles` with both exact and fuzzy filename matching, enabling the recursive fetch loop locally without relying on GitHub APIs.
+- **Mermaid JS Webview Support**: Ported 5 Mermaid builders (Timeline, Data Flow, Dependency, AI Loop, Hypothesis) from React to Vanilla JS formatting inside the `sidebar.js` Webview. Loads Mermaid via an ESM CDN (`mermaid@10`) directly into the panel with `try/catch` per-node error boundaries to gracefully degrade if the model generates invalid graph syntax.
+- **Dynamic Mode Formatting**: Completely rewrote the HTML builder in `sidebar.js` to branch based on `report._mode`. Generates 3 entirely structurally unique reports: Explain (Architecture Layers grid, data flow tables), Security (vulnerability list with severity coloring), and Debug (VERIFIED/UNCERTAIN segregation, AI loop flowchart, Variable State).
 
 ---
 

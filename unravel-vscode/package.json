@@ -1,8 +1,8 @@
 {
     "name": "unravel-vscode",
     "displayName": "Unravel — Live Bug Lens",
-    "description": "Deterministic AI debugging with inline bug overlays. Right-click → Debug This File.",
-    "version": "0.2.0",
+    "description": "Deterministic AI debugging with inline bug overlays. Right-click → Debug, Explain, or Security Scan any file.",
+    "version": "0.3.0",
     "publisher": "unravel",
     "repository": {
         "type": "git",
@@ -22,6 +22,14 @@
             {
                 "command": "unravel.debugFile",
                 "title": "Unravel: Debug This File"
+            },
+            {
+                "command": "unravel.explainFile",
+                "title": "Unravel: Explain This File"
+            },
+            {
+                "command": "unravel.securityFile",
+                "title": "Unravel: Security Scan This File"
             }
         ],
         "menus": {
@@ -29,7 +37,17 @@
                 {
                     "command": "unravel.debugFile",
                     "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact",
-                    "group": "navigation"
+                    "group": "unravel@1"
+                },
+                {
+                    "command": "unravel.explainFile",
+                    "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python || editorLangId == css || editorLangId == html",
+                    "group": "unravel@2"
+                },
+                {
+                    "command": "unravel.securityFile",
+                    "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == python",
+                    "group": "unravel@3"
                 }
             ]
         },
@@ -55,6 +73,46 @@
                     "type": "string",
                     "default": "gemini-2.5-flash",
                     "description": "Model ID to use for analysis."
+                },
+                "unravel.mode": {
+                    "type": "string",
+                    "enum": [
+                        "debug",
+                        "explain",
+                        "security"
+                    ],
+                    "default": "debug",
+                    "description": "Default analysis mode: debug (find bugs), explain (understand code), security (find vulnerabilities). Right-click commands override this."
+                },
+                "unravel.outputPreset": {
+                    "type": "string",
+                    "enum": [
+                        "quick",
+                        "developer",
+                        "full"
+                    ],
+                    "default": "developer",
+                    "description": "How much detail to include in debug reports. quick=root cause+fix only, developer=+variables+timeline, full=everything."
+                },
+                "unravel.level": {
+                    "type": "string",
+                    "enum": [
+                        "beginner",
+                        "intermediate",
+                        "vibe"
+                    ],
+                    "default": "intermediate",
+                    "description": "Your coding level — affects explanation depth and analogy style."
+                },
+                "unravel.language": {
+                    "type": "string",
+                    "enum": [
+                        "english",
+                        "hinglish",
+                        "hindi"
+                    ],
+                    "default": "english",
+                    "description": "Output language for the analysis report."
                 }
             }
         }

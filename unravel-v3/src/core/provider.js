@@ -3,7 +3,7 @@
 // Extracted from App.jsx for reuse across web + VSCode
 // ═══════════════════════════════════════════════════
 
-import { PROVIDERS, ENGINE_SCHEMA, ENGINE_SCHEMA_INSTRUCTION } from './config.js';
+import { PROVIDERS } from './config.js';
 
 /**
  * Fetch with exponential backoff retry.
@@ -34,15 +34,16 @@ async function fetchWithRetry(url, options, retries = 4) {
  * Call any supported AI provider's API.
  *
  * @param {Object} opts
- * @param {string} opts.provider      - 'anthropic' | 'google' | 'openai'
- * @param {string} opts.apiKey        - The user's API key
- * @param {string} opts.model         - Model ID string
- * @param {string} opts.systemPrompt  - System/instruction prompt
- * @param {string} opts.userPrompt    - User prompt with code + symptom
- * @param {boolean} opts.useSchema    - Whether to attach the ENGINE_SCHEMA
- * @returns {Promise<string>}         - Raw text response from the model
+ * @param {string} opts.provider       - 'anthropic' | 'google' | 'openai'
+ * @param {string} opts.apiKey         - The user's API key
+ * @param {string} opts.model          - Model ID string
+ * @param {string} opts.systemPrompt   - System/instruction prompt
+ * @param {string} opts.userPrompt     - User prompt (schema instruction already appended by orchestrate.js)
+ * @param {boolean} opts.useSchema     - Whether to attach structured output schema (Google only)
+ * @param {Object} [opts.responseSchema] - Dynamic schema object for Gemini structured output
+ * @returns {Promise<string>}          - Raw text response from the model
  */
-export async function callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema = false }) {
+export async function callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema = false, responseSchema = null }) {
     const prov = PROVIDERS[provider];
     if (!prov) throw new Error(`Invalid provider: ${provider}`);
 
@@ -52,19 +53,19 @@ export async function callProvider({ provider, apiKey, model, systemPrompt, user
         url = prov.endpoint(apiKey, model);
         headers = prov.headers();
         body = prov.buildBody(model, systemPrompt, userPrompt);
-        if (useSchema) {
-            body.generationConfig.responseSchema = ENGINE_SCHEMA;
+        if (useSchema && responseSchema) {
+            body.generationConfig.responseSchema = responseSchema;
         }
     } else if (provider === 'anthropic') {
         url = prov.endpoint;
         headers = prov.headers(apiKey);
-        const schemaInstruction = useSchema ? ENGINE_SCHEMA_INSTRUCTION : '';
-        body = prov.buildBody(model, systemPrompt, userPrompt + schemaInstruction);
+        // Schema instruction is already in userPrompt (appended by orchestrate.js)
+        body = prov.buildBody(model, systemPrompt, userPrompt);
     } else if (provider === 'openai') {
         url = prov.endpoint;
         headers = prov.headers(apiKey);
-        const schemaInstruction = useSchema ? ENGINE_SCHEMA_INSTRUCTION : '';
-        body = prov.buildBody(model, systemPrompt, userPrompt + schemaInstruction);
+        // Schema instruction is already in userPrompt (appended by orchestrate.js)
+        body = prov.buildBody(model, systemPrompt, userPrompt);
     }
 
     const data = await fetchWithRetry(url, {

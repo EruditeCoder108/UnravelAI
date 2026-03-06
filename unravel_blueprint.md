@@ -759,14 +759,15 @@ console.log(result.report.minimalFix);
 - **3.6.1 — Router-first GitHub repo import:** Uses the Router Agent to select relevant files from the repo tree before fetching raw file content to save tokens/time.
 - **3.6.2 — Empty-Symptom Support:** Ensures users can submit an empty symptom field in both the Web App and VS Code Extension, allowing the engine to scan for issues autonomously.
 
-## Phase 4A: Analysis Modes & Output Control (Planned)
+## Phase 4A: Analysis Modes & Output Control (Complete)
 
-Transform from a single-mode debugger to a multi-mode platform. New modes:
-- **🐛 Debug:** Find bugs, trace root cause, provide fix
-- **🔍 Explain:** Architecture, data flow, how components connect
-- **🛡️ Security Scan:** Injection vulnerabilities, hardcoded secrets, CSRF
+Transformed from a single-mode debugger into a multi-mode analysis platform with user-controlled output. The engine now delivers dynamic JSON schemas based on the selected mode:
 
-Includes Web App UX redesign (Input → Mode → Configure flow) and VS Code settings for output presets (Quick Fix vs Full Report).
+- **🐛 Debug:** Enhanced with Mermaid charts (Timeline, Hypothesis Elimination, AI Loop, Variable State) and VERIFIED vs UNCERTAIN evidence segregation.
+- **🔍 Explain:** Complete project understanding with Architecture Layers, Data Flow mapping, Entry Points, Gotchas, and Onboarding Guides.
+- **🛡️ Security Scan:** Vulnerability lists with severity coloring, Risk banners, and Positives analysis.
+
+Included a Web App UX complete redesign (5-step flow) and VS Code extension update to v0.3.0 with Webview Mermaid CDN support and self-healing local context fetch loops.
 
 ## Phase 4B: Intelligence Layer (Planned)
 

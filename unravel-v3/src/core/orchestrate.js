@@ -4,7 +4,14 @@
 // Used by both the web app and VS Code extension.
 // ═══════════════════════════════════════════════════
 
-import { buildSystemPrompt } from './config.js';
+import {
+    buildDebugPrompt, buildExplainPrompt, buildSecurityPrompt,
+    ENGINE_SCHEMA, ENGINE_SCHEMA_INSTRUCTION,
+    EXPLAIN_SCHEMA, EXPLAIN_SCHEMA_INSTRUCTION,
+    SECURITY_SCHEMA, SECURITY_SCHEMA_INSTRUCTION,
+    PRESETS,
+    buildDynamicSchema, buildDynamicSchemaInstruction,
+} from './config.js';
 import { runMultiFileAnalysis } from './ast-engine.js';
 import { parseAIJson } from './parse-json.js';
 import { callProvider } from './provider.js';
@@ -21,9 +28,12 @@ import { callProvider } from './provider.js';
  * @param {string} [options.level]        - User coding level (default: 'intermediate')
  * @param {string} [options.language]     - Output language (default: 'english')
  * @param {string} [options.projectContext] - Optional project context string
- * @param {function} [options.onProgress] - Progress callback: (stage: string) => void
+ * @param {string} [options.mode]         - 'debug' | 'explain' | 'security' (default: 'debug')
+ * @param {string} [options.preset]       - 'quick' | 'developer' | 'full' | 'custom' (default: 'full')
+ * @param {Array}  [options.outputSections] - Array of section keys (overrides preset)
+ * @param {function} [options.onProgress] - Progress callback: (msg: string | object) => void
  * @param {function} [options.onMissingFiles] - Missing files callback: (request) => Promise<Array|null>
- * @returns {Promise<Object>} - The parsed analysis result { needsMoreInfo, report, ... }
+ * @returns {Promise<Object>} - The parsed analysis result
  */
 export async function orchestrate(codeFiles, symptom, options = {}) {
     const {
@@ -33,16 +43,26 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         level = 'intermediate',
         language = 'english',
         projectContext = '',
+        mode = 'debug',
+        preset = 'full',
+        outputSections = null,
         onProgress,
         onMissingFiles,
         _depth = 0,
     } = options;
 
+    // Resolve which sections to request for debug mode
+    const sections = outputSections || PRESETS[preset]?.sections || PRESETS.full.sections;
+
     if (!provider || !apiKey || !model) {
         throw new Error('Missing required options: provider, apiKey, model');
     }
 
+    const startTime = Date.now();
+    const elapsed = () => ((Date.now() - startTime) / 1000).toFixed(1);
+
     // ── Phase 0: Input Completeness Check ──
+    onProgress?.({ stage: 'input', label: 'Input Validation', complete: true, elapsed: 0 });
     const contextWarnings = checkFileCompleteness(codeFiles);
     if (contextWarnings.length > 0) {
         console.warn('[INPUT] Completeness warnings:', contextWarnings);
@@ -50,7 +70,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     }
 
     // ── Phase 1: AST Pre-Analysis ──
-    onProgress?.('AST ANALYZER: Extracting variable mutations, closures, timing nodes...');
+    onProgress?.('AST ANALYZER: Extracting verified ground truth from code...');
     const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
     let astContext = '';
     if (jsFiles.length > 0) {
@@ -62,6 +82,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
             console.warn('[AST] Analysis failed, proceeding without:', astErr.message);
         }
     }
+    onProgress?.({ stage: 'ast', label: 'AST Pre-Analysis', complete: true, elapsed: elapsed() });
 
     // Prepend input warnings to AST context so the model sees them
     if (contextWarnings.length > 0) {
@@ -72,11 +93,43 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         astContext = warningBlock + astContext;
     }
 
-    // ── Phase 2: Build Prompts ──
-    onProgress?.('DEEP ENGINE: Reconstructing execution timeline and state invariants...');
-    const systemPrompt = buildSystemPrompt(level, language, provider);
-    const astBlock = astContext ? `${astContext}\n\n` : '';
-    const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${codeFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 8000)}`).join('\n\n')}\n\nUSER'S BUG REPORT:\n${symptom || 'No specific error described. Analyze for any issues.'}`;
+    // Frame AST as verified ground truth (not a checklist)
+    const astBlock = astContext
+        ? `VERIFIED GROUND TRUTH — confirmed by static analysis\nThe following facts about this code are certain. Use them as evidence when reasoning. Do not contradict them.\n\n${astContext}\n\n`
+        : '';
+
+    // ── Phase 2: Build Prompts (mode-specific) ──
+    onProgress?.('DEEP ENGINE: Building analysis pipeline...');
+    onProgress?.({ stage: 'engine', label: `AI Engine (${mode} mode)`, complete: false, elapsed: elapsed() });
+
+    let systemPrompt, schemaInstruction, responseSchema;
+
+    if (mode === 'explain') {
+        systemPrompt = buildExplainPrompt(level, language, provider);
+        schemaInstruction = EXPLAIN_SCHEMA_INSTRUCTION;
+        responseSchema = EXPLAIN_SCHEMA;
+    } else if (mode === 'security') {
+        systemPrompt = buildSecurityPrompt(level, language, provider);
+        schemaInstruction = SECURITY_SCHEMA_INSTRUCTION;
+        responseSchema = SECURITY_SCHEMA;
+    } else {
+        // Debug mode — use dynamic schema based on selected sections
+        systemPrompt = buildDebugPrompt(level, language, provider);
+        const allSections = PRESETS.full.sections.filter(s => s !== 'architecture' && s !== 'vulnerabilities');
+        const isFullSchema = sections.length >= allSections.length;
+        schemaInstruction = isFullSchema ? ENGINE_SCHEMA_INSTRUCTION : buildDynamicSchemaInstruction(sections);
+        responseSchema = isFullSchema ? ENGINE_SCHEMA : buildDynamicSchema(sections);
+    }
+
+    // Build the user-facing prompt with symptom context
+    const symptomLabel = mode === 'debug' ? "USER'S BUG REPORT" : mode === 'explain' ? "USER'S QUESTION" : "USER'S SECURITY CONCERN";
+    const symptomDefault = mode === 'debug'
+        ? 'No specific error described. Analyze for any issues.'
+        : mode === 'explain'
+            ? 'Explain what this code does and how it works.'
+            : 'Analyze this code for security vulnerabilities.';
+
+    const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${codeFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 8000)}`).join('\n\n')}\n\n${symptomLabel}:\n${symptom || symptomDefault}${schemaInstruction}`;
 
     // ── Phase 3: Call AI ──
     const raw = await callProvider({
@@ -86,9 +139,12 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         systemPrompt,
         userPrompt: enginePrompt,
         useSchema: true,
+        responseSchema,
     });
 
-    // ── Phase 3: Parse Response ──
+    onProgress?.({ stage: 'parse', label: 'Parse Response', complete: false, elapsed: elapsed() });
+
+    // ── Phase 4: Parse Response ──
     // raw might be a string (most cases) or already an object (Gemini structured output)
     let result;
     if (raw && typeof raw === 'object') {
@@ -119,6 +175,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         }
     }
 
+    onProgress?.({ stage: 'parse', label: 'Parse Response', complete: true, elapsed: elapsed() });
     if (!result) throw new Error('Engine failed to produce structured output after retry. The model may be overloaded — try again or use a different model.');
 
     // ── Phase 4: Handle missing files or return ──
@@ -140,11 +197,14 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         }
     }
 
-    // Attach context warnings to result so UI can show a top-level banner
+    // Attach context warnings and mode to result so UI can show a top-level banner
     if (contextWarnings.length > 0) {
         result.contextWarnings = contextWarnings;
     }
+    result._mode = mode;
+    result._sections = sections;
 
+    onProgress?.({ stage: 'complete', label: 'Analysis Complete', complete: true, elapsed: elapsed() });
     return result;
 }
 
