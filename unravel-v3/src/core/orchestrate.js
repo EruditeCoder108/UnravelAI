@@ -203,6 +203,14 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     }
     result._mode = mode;
     result._sections = sections;
+    result._provenance = {
+        engineVersion: '3.2',
+        astVersion: '2.1',
+        routerStrategy: 'llm-heuristic', // becomes 'graph-frontier' in Phase 4B
+        model: options.model || 'unknown',
+        provider: options.provider || 'unknown',
+        timestamp: new Date().toISOString(),
+    };
 
     onProgress?.({ stage: 'complete', label: 'Analysis Complete', complete: true, elapsed: elapsed() });
     return result;

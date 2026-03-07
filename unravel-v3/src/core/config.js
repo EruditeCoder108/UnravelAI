@@ -326,6 +326,7 @@ export function buildSecurityPrompt(level, language, provider = 'anthropic') {
 Where could those assumptions be violated by someone acting with malicious intent?
 For each finding, cite the exact code that creates the risk and the exact change that would remove it.
 Rate severity honestly: Critical / High / Medium / Low / Informational.
+Rate exploitability honestly: TRIVIAL (any script kiddie could exploit it), MODERATE (requires a skilled attacker), COMPLEX (requires expert knowledge + specific pre-conditions), THEORETICAL (possible in theory but no practical attack vector found).
 If you are not certain something is a vulnerability, classify it as INFORMATIONAL — not as a vulnerability.
 A confident wrong finding is worse than no finding at all.
 Every finding must have a confidence score. If confidence is below 0.7, it must be INFORMATIONAL regardless of severity rating.
@@ -480,7 +481,9 @@ export const ENGINE_SCHEMA = {
         report: {
             type: "OBJECT",
             properties: {
-                bugType: { type: "STRING", description: "One of the BUG_TAXONOMY values" },
+                bugType: { type: "STRING", description: "One of the BUG_TAXONOMY values — use closest match" },
+                secondaryTags: { type: "ARRAY", items: { type: "STRING" }, description: "Optional secondary classification tags for rare/complex bugs not fully captured by bugType (e.g. regex-catastrophic-backtracking, floating-point-precision, serialization-mismatch). Omit if bugType alone is sufficient." },
+                customLabel: { type: "STRING", description: "Optional short human label when none of the 12 taxonomy categories fit well. Only use if bugType=OTHER. Keep under 5 words." },
                 confidence: { type: "NUMBER", description: "0.0 to 1.0" },
                 evidence: { type: "ARRAY", items: { type: "STRING" }, description: "What evidence supports this diagnosis" },
                 uncertainties: { type: "ARRAY", items: { type: "STRING" }, description: "What could not be verified" },
@@ -594,7 +597,7 @@ export const ENGINE_SCHEMA = {
 
 // --- Schema Instruction (for Claude / OpenAI inline prompt injection) ---
 // This mirrors ENGINE_SCHEMA so that changes to one are reflected in both.
-export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, whyAILooped: {pattern, explanation, loopSteps[]}, aiPrompt, timelineEdges: [{from, to, label, isBugPoint}], hypothesisTree: [{id, text, status, reason}], aiLoopEdges: [{from, to, label, isEscapePath}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}] } }`;
+export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, secondaryTags?: string[], customLabel?: string, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, whyAILooped: {pattern, explanation, loopSteps[]}, aiPrompt, timelineEdges: [{from, to, label, isBugPoint}], hypothesisTree: [{id, text, status, reason}], aiLoopEdges: [{from, to, label, isEscapePath}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}] } }`;
 
 // ═══════════════════════════════════════════════════
 // PHASE 4A: Mode-Specific Schemas
@@ -741,6 +744,7 @@ export const SECURITY_SCHEMA = {
                 properties: {
                     type: { type: "STRING" },
                     severity: { type: "STRING", description: "Critical / High / Medium / Low / Informational" },
+                    exploitability: { type: "STRING", description: "TRIVIAL (script kiddie), MODERATE (skilled attacker), COMPLEX (expert + specific conditions), THEORETICAL (no practical attack vector found)" },
                     confidence: { type: "NUMBER", description: "0.0 to 1.0" },
                     cweId: { type: "STRING" },
                     location: { type: "STRING", description: "file + line number" },
@@ -776,7 +780,7 @@ export const SECURITY_SCHEMA = {
     required: ["vulnerabilities", "disclaimer"]
 };
 
-export const SECURITY_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences) matching this structure: { vulnerabilities: [{type, severity, confidence, cweId, location, description, evidence, remediation, requiresHumanVerification}], overallRisk: string, summary: string, positives: string[], attackVectorEdges: [{from, to, label, isExploitStep}], disclaimer: string }`;
+export const SECURITY_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences) matching this structure: { vulnerabilities: [{type, severity, exploitability, confidence, cweId, location, description, evidence, remediation, requiresHumanVerification}], overallRisk: string, summary: string, positives: string[], attackVectorEdges: [{from, to, label, isExploitStep}], disclaimer: string }`;
 
 // ═══════════════════════════════════════════════════
 // PHASE 4A: Section Registry & Presets
