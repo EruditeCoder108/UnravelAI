@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: "Jain"
+    given-names: "Sambhav"
+    email: "Eruditespartan@gmail.com"
+title: "Unravel AI: Deterministic Pre-Analysis and Hypothesis Elimination Engine"
+version: 0.3.0
+date-released: 2024-03-07
+url: "https://github.com/EruditeCoder108/UnravelAI"
+repository-code: "https://github.com/EruditeCoder108/UnravelAI"
+keywords:
+  - ai
+  - debugging
+  - ast
+  - babel
+  - javascript

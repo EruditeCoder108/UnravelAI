@@ -4,6 +4,7 @@
     "description": "Deterministic AI debugging with inline bug overlays. Right-click → Debug, Explain, or Security Scan any file.",
     "version": "0.3.0",
     "publisher": "unravel",
+    "license": "BUSL-1.1",
     "repository": {
         "type": "git",
         "url": "https://github.com/EruditeCoder108/UnravelAI"

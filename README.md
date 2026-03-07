@@ -7,7 +7,7 @@
   <p>
     <a href="#-quick-start"><img alt="Get Started" src="https://img.shields.io/badge/Get_Started-ccff00?style=for-the-badge&logo=rocket&logoColor=black" /></a>
     <a href="#-vs-code-extension--live-bug-lens"><img alt="VS Code" src="https://img.shields.io/badge/VS_Code_Extension-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white" /></a>
-    <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" /></a>
+    <a href="LICENSE"><img alt="BSL-1.1 License" src="https://img.shields.io/badge/License-BSL--1.1-blue?style=for-the-badge" /></a>
   </p>
 </div>
 
@@ -142,16 +142,17 @@ Every phase builds on the last. The model cannot skip to conclusions.
 
 ```mermaid
 graph TD
-    classDef user fill:#050505,stroke:#ccff00,stroke-width:2px,color:#fff
-    classDef browser fill:#111,stroke:#00ffff,stroke-width:2px,color:#fff
-    classDef agent fill:#111,stroke:#ff00ff,stroke-width:2px,color:#fff
-    classDef sota fill:#111,stroke:#ccff00,stroke-width:3px,color:#fff
-    classDef output fill:#0a0a0a,stroke:#333,stroke-width:2px,color:#ccc
+    classDef input fill:#050505,stroke:#ccff00,stroke-width:2px,color:#fff
+    classDef ast fill:#111,stroke:#00ffff,stroke-width:2px,color:#fff
+    classDef router fill:#111,stroke:#ff00ff,stroke-width:2px,color:#fff
+    classDef engine fill:#111,stroke:#ccff00,stroke-width:3px,color:#fff
+    classDef presentation fill:#0a0a0a,stroke:#333,stroke-width:2px,color:#ccc
+    classDef action fill:#111,stroke:#ff003c,stroke-width:2px,color:#fff
 
-    U[User Code + Bug Symptom]:::user --> A
+    U[Local Files / Paste / GitHub Issue]:::input --> A
 
-    subgraph Browser Layer [Instant & Free]
-        A(AST ANALYZER\n@babel/parser):::browser
+    subgraph Pre-Analysis [Deterministic Ground Truth]
+        A(AST ANALYZER\n@babel/parser):::ast
         A -.->|Extracts Mutation Chains| A
         A -.->|Finds Timing Nodes| A
         A -.->|Detects Closure Captures| A
@@ -159,24 +160,30 @@ graph TD
 
     A --> R
 
-    subgraph Intelligence Layer [Multi-Agent]
-        R(ROUTER AGENT\nFlash / Haiku):::agent
-        R -.->|Provides Function Slices| D
-        D{DEEP DEBUGGER\nOpus 4.6 / GPT 5.3}:::sota
-        D -.->|8-Phase Pipeline| D
-        D -.->|Anti-Sycophancy Limits| D
-        D -->|Requests Missing Files| U
-        D --> E(EXPLAINER\nSonnet 4.6):::agent
-        E -.->|Concept Extraction| E
+    subgraph Intelligence Layer [Multi-Mode Orchestrator]
+        R(ROUTER AGENT\nFlash / Haiku):::router
+        R -.->|Filters 12k lines → 350| D
+        D{CORE ENGINE\nOpus / GPT-5}:::engine
+        D -.->|9-Phase Hypothesis Pipeline| D
+        D -.->|Mode: Debug/Explain/Security| D
+        D -->|Self-Heal: Requests Missing Files| U
     end
 
-    E --> O
+    D --> O
 
-    subgraph Final Output
-        O[Structured Multi-View Report]:::output
-        O -.->|Root Cause + State Table| O
-        O -.->|Timeline + Visual Diff| O
-        O -.->|AI Fix Prompt + Learning Path| O
+    subgraph Presentation Layer
+        O[Dynamic JSON Schema]:::presentation
+        O -.->|Renders Multi-View UI| O
+        O -.->|Mermaid Flowcharts & Diffs| O
+    end
+    
+    O --> E
+
+    subgraph Action Center [Read/Write Execution]
+        E(Fix Execution):::action
+        E -.->|VS Code: Apply Fix Locally| E
+        E -.->|VS Code: Give Fix to Copilot| E
+        E -.->|Web: Create GitHub PR| E
     end
 ```
 
@@ -186,11 +193,12 @@ graph TD
 
 |   | ChatGPT / Copilot | Unravel |
 |---|-------------------|---------| 
-| **Analysis Method** | Symptom-based guessing | 8-phase deterministic pipeline |
+| **Analysis Method** | Symptom-based guessing | 9-phase deterministic pipeline |
 | **Context Handling** | File-level context dumps | Function-level AST slicing |
 | **Hallucination** | Frequent "plausible" invention | Anti-Sycophancy guards (proof required) |
 | **Confidence** | Confidently wrong / Generic | Evidence-backed (Verified vs Uncertain) |
 | **Fix Quality** | Full-file rewrites | Minimal surgical fix |
+| **Action Center** | Copy-paste only | Natively generates PRs / Split-pane IDE patches |
 | **Teaching** | "Here is the code" | Concept extraction & learning paths |
 | **AI Awareness** | Zero self-reflection | "Why AI Loops" loop analysis |
 | **Bug Classification** | Free-text | Formal 12-category taxonomy |
@@ -355,8 +363,11 @@ VS Code Extension updated to v0.3.0 with complete multi-mode reporting and self-
 ### Phase 4B — Intelligence Layer `PLANNED`
 Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom contradiction check. Function-level code slicing. **Adversarial multi-agent debate** — three agents independently diagnose the same bug and attack hypotheses. Variable Trace UI and Visual diff output. *(Note: **Self-Healing Context** — where the engine automatically fetches missing files from GitHub mid-analysis — was ✅ **BUILT EARLY**).*
 
-### Phase 5 — The Breakthrough `PLANNED`
-Web Search integration (finds GitHub issues/version mismatches based on error signatures). WebContainers for live in-browser code execution. Real instrumented bug replay. Interactive D3.js dependency graph. Debug Journal ("What did I learn?"). CLI tool + OpenClaw integration. Desktop app.
+### Phase 5 — GitHub Integration & Action Center `COMPLETE`
+- **GitHub Issue URL Parsing:** Paste a GitHub issue URL, and Unravel automatically fetches the issue body, comments, and related context to use as the debugging symptom.
+- **Security Attack Vector Flowcharts:** Security Scan mode generates Mermaid flowcharts explaining exact attack vectors and exploitation flows visually.
+- **Action Center (Web App):** Generate a Git patch, copy the fix to CLI, or create a Pull Request directly after an analysis completes.
+- **Action Center (VS Code):** Non-destructive **Apply Fix Locally** opens split-pane diffs for review, and **Give Fix to AI** passes the analysis directly to VS Code's built-in Copilot Chat.
 
 ---
 
@@ -460,7 +471,7 @@ Open `http://localhost:3000`. Or use the live version on Netlify.
 |-----|-------------|
 | **Folder Upload** | Upload a project folder. AI router selects relevant files automatically. |
 | **Raw Paste** | Paste code blocks manually with filenames. |
-| **GitHub Import** | Paste a public repo URL → files are fetched automatically. |
+| **GitHub Import** | Paste a public repo URL or a **GitHub Issue URL** → files/context are fetched automatically. |
 
 Enter your API key → describe the bug → run the engine → choose your output view.
 
@@ -511,6 +522,31 @@ Unravel exists to make that possible.
 
 ---
 
+## Author
+
+Created and maintained by **Sambhav Jain**.
+* **Location:** Jabalpur (M.P), INDIA
+* **Contact:** [Eruditespartan@gmail.com](mailto:Eruditespartan@gmail.com)
+
+If you have questions, feedback, or want to discuss the project, feel free to email me.
+
+---
+
+## Citation
+
+If you use Unravel AI in your research or project, please cite it using the included `CITATION.cff` file, or use the following BibTeX:
+
+```bibtex
+@software{Jain_Unravel_AI,
+  author = {Jain, Sambhav},
+  title = {Unravel AI: Deterministic Pre-Analysis and Hypothesis Elimination Engine},
+  url = {https://github.com/EruditeCoder108/UnravelAI},
+  year = {2024}
+}
+```
+
+---
+
 ## License
 
-MIT
+Released under the [Business Source License 1.1 (BSL-1.1)](LICENSE).

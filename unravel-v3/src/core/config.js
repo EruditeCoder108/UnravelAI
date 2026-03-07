@@ -328,7 +328,14 @@ For each finding, cite the exact code that creates the risk and the exact change
 Rate severity honestly: Critical / High / Medium / Low / Informational.
 If you are not certain something is a vulnerability, classify it as INFORMATIONAL — not as a vulnerability.
 A confident wrong finding is worse than no finding at all.
-Every finding must have a confidence score. If confidence is below 0.7, it must be INFORMATIONAL regardless of severity rating.`
+Every finding must have a confidence score. If confidence is below 0.7, it must be INFORMATIONAL regardless of severity rating.
+
+For each vulnerability, also produce attackVectorEdges — a short array of directed edges showing HOW an attacker would exploit it step by step.
+Each edge has: from (attacker action or system component), to (next step), label (short description), isExploitStep (true if this is the critical exploitation moment).
+Keep each attack chain to 3-6 edges. These will be rendered as Mermaid flowcharts.
+
+Also list positives — things the code does RIGHT from a security perspective (input validation, parameterized queries, etc.).
+Set overallRisk to one of: Critical / High / Medium / Low / Secure.`
     };
 
     const allPhases = [...sharedPhases, securityPhase];
@@ -744,13 +751,32 @@ export const SECURITY_SCHEMA = {
                 }
             }
         },
+        overallRisk: { type: "STRING", description: "Critical / High / Medium / Low / Secure" },
         summary: { type: "STRING" },
+        positives: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Things the code does correctly from a security perspective"
+        },
+        attackVectorEdges: {
+            type: "ARRAY",
+            description: "Directed edges for Mermaid attack vector flowchart — shows HOW each vulnerability could be exploited step by step",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    from: { type: "STRING", description: "Attacker action or system component" },
+                    to: { type: "STRING", description: "Next step in the attack chain" },
+                    label: { type: "STRING", description: "Short description, max 6 words" },
+                    isExploitStep: { type: "BOOLEAN", description: "True if this is the critical exploitation moment" }
+                }
+            }
+        },
         disclaimer: { type: "STRING" }
     },
     required: ["vulnerabilities", "disclaimer"]
 };
 
-export const SECURITY_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences) matching this structure: { vulnerabilities: [{type, severity, confidence, cweId, location, description, evidence, remediation, requiresHumanVerification}], summary: string, disclaimer: string }`;
+export const SECURITY_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences) matching this structure: { vulnerabilities: [{type, severity, confidence, cweId, location, description, evidence, remediation, requiresHumanVerification}], overallRisk: string, summary: string, positives: string[], attackVectorEdges: [{from, to, label, isExploitStep}], disclaimer: string }`;
 
 // ═══════════════════════════════════════════════════
 // PHASE 4A: Section Registry & Presets
@@ -769,6 +795,7 @@ export const SECTION_REGISTRY = {
     hypotheses: { label: 'Hypotheses', modes: ['debug'], defaultOn: false, tokenCost: 'low' },
     architecture: { label: 'Architecture + Flow', modes: ['explain'], defaultOn: true, tokenCost: 'high' },
     vulnerabilities: { label: 'Vulnerability List', modes: ['security'], defaultOn: true, tokenCost: 'high' },
+    attackVectorFlowchart: { label: 'Attack Vector Flowchart', modes: ['security'], defaultOn: true, tokenCost: 'medium' },
 };
 
 export const PRESETS = {

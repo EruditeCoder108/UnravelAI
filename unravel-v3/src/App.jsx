@@ -177,6 +177,26 @@ function buildDependencyMermaid(deps) {
     return lines.join('\n');
 }
 
+// Build attack vector flowchart from attackVectorEdges (Security Mode)
+function buildAttackVectorMermaid(edges) {
+    if (!edges || edges.length === 0) return null;
+    const lines = ['flowchart TD'];
+    const seen = new Set();
+    edges.forEach(({ from, to, label, isExploitStep }) => {
+        const f = mId(from); const t = mId(to);
+        if (!seen.has(f)) { lines.push(`    ${f}["${mLabel(from)}"]`); seen.add(f); }
+        if (!seen.has(t)) { lines.push(`    ${t}["${mLabel(to)}"]`); seen.add(t); }
+        lines.push(`    ${f} -->|"${mLabel(label)}"| ${t}`);
+        if (isExploitStep) {
+            lines.push(`    style ${f} fill:#ff003c,color:#fff`);
+            lines.push(`    style ${t} fill:#ff003c,color:#fff`);
+        } else {
+            lines.push(`    style ${f} fill:#ffaa00,color:#000`);
+        }
+    });
+    return lines.join('\n');
+}
+
 // Mermaid renderer component — renders the diagram or falls back gracefully
 function MermaidChart({ chart, caption }) {
     const ref = React.useRef(null);
@@ -329,12 +349,36 @@ export default function App() {
     // This is called from executeAnalysis (not from a separate button)
     // so the symptom (userError) is always available for the Router Agent.
     const fetchGitHubFiles = async (symptom, onProgress) => {
-        // Parse GitHub URL → owner/repo
+        // Parse GitHub URL → owner/repo (also detect issue URLs)
         const urlObj = new URL(githubUrl.trim());
         const parts = urlObj.pathname.replace(/^\//, '').replace(/\/$/, '').split('/');
-        if (parts.length < 2) throw new Error('URL must be github.com/owner/repo');
+        if (parts.length < 2) throw new Error('URL must be github.com/owner/repo or github.com/owner/repo/issues/123');
         const [owner, repo] = parts;
-        const branch = parts[3] || 'main'; // /tree/branch support
+
+        // ── Detect GitHub Issue URL: github.com/owner/repo/issues/123 ──
+        let effectiveSymptom = symptom;
+        if (parts.length >= 4 && parts[2] === 'issues' && /^\d+$/.test(parts[3])) {
+            const issueNumber = parts[3];
+            onProgress?.(`GITHUB: Fetching issue #${issueNumber} details...`);
+            try {
+                const issueRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`);
+                if (issueRes.ok) {
+                    const issueData = await issueRes.json();
+                    const issueTitle = issueData.title || '';
+                    const issueBody = (issueData.body || '').slice(0, 3000); // cap to avoid token overflow
+                    effectiveSymptom = `[GitHub Issue #${issueNumber}] ${issueTitle}\n\n${issueBody}`;
+                    // Auto-fill the symptom field in the UI
+                    setUserError(effectiveSymptom);
+                    console.log(`[ISSUE] Fetched issue #${issueNumber}: ${issueTitle}`);
+                } else {
+                    console.warn(`[ISSUE] Could not fetch issue #${issueNumber}: ${issueRes.status}`);
+                }
+            } catch (issueErr) {
+                console.warn('[ISSUE] Failed to fetch issue:', issueErr.message);
+            }
+        }
+
+        const branch = (parts[2] === 'tree' && parts[3]) ? parts[3] : 'main'; // /tree/branch support
 
         onProgress?.('GITHUB: Fetching repository tree...');
 
@@ -371,7 +415,7 @@ export default function App() {
             try {
                 onProgress?.(`ROUTER AGENT: Selecting from ${allCandidates.length} files...`);
                 const allPaths = allCandidates.map(f => `${repo}/${f.path}`);
-                const routerPrompt = buildRouterPrompt(allPaths, symptom, analysisMode);
+                const routerPrompt = buildRouterPrompt(allPaths, effectiveSymptom, analysisMode);
                 const routerRaw = await callProvider({
                     provider, apiKey, model,
                     systemPrompt: 'You are a file routing agent. Return JSON only.',
@@ -841,8 +885,8 @@ export default function App() {
                             {inputType === 'github' && (
                                 <div>
                                     <div style={{ background: '#ff00ff18', borderLeft: '4px solid #ff00ff', padding: 14, fontFamily: "'JetBrains Mono',monospace", color: '#ff00ff', fontSize: 13, marginBottom: 16 }}>
-                                        <strong style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Github size={14} /> PUBLIC REPOS ONLY</strong>
-                                        <span style={{ color: '#aaa' }}>Paste a GitHub repo URL. Files are fetched directly — no auth needed.</span>
+                                        <strong style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Github size={14} /> PUBLIC REPOS & ISSUES</strong>
+                                        <span style={{ color: '#aaa' }}>Paste a repo URL or an Issue URL (e.g. github.com/user/repo/issues/123). Issue details auto-fill the symptom.</span>
                                     </div>
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <div style={{ position: 'relative', flex: 1 }}>
@@ -850,7 +894,7 @@ export default function App() {
                                             <input
                                                 type="text"
                                                 style={{ ...S.input, paddingLeft: 34, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}
-                                                placeholder="https://github.com/user/repo"
+                                                placeholder="https://github.com/user/repo  or  https://github.com/user/repo/issues/123"
                                                 value={githubUrl}
                                                 onChange={(e) => setGithubUrl(e.target.value)}
                                             />
@@ -1338,6 +1382,17 @@ export default function App() {
                                         ))}
                                     </SectionBlock>
                                 )}
+                                {/* Attack Vector Mermaid Flowchart */}
+                                {report.attackVectorEdges?.length > 0 && (
+                                    <SectionBlock icon={<Network size={14} />} title="Attack Vector Flowchart" color="#ff003c" copyId="sec-attack" copiedId={copiedSection} onCopy={handleCopy}
+                                        copyText={report.attackVectorEdges.map(e => `${e.from} → ${e.to}: ${e.label}`).join('\n')}>
+                                        <p style={{ color: '#aaa', fontSize: 12, marginBottom: 10, textTransform: 'uppercase', fontFamily: "'JetBrains Mono',monospace" }}>How an attacker could exploit the identified vulnerabilities — red nodes mark the critical exploitation point</p>
+                                        <MermaidChart
+                                            chart={buildAttackVectorMermaid(report.attackVectorEdges)}
+                                            caption="Attack vector chain — red = exploitation point, orange = attacker progression"
+                                        />
+                                    </SectionBlock>
+                                )}
                                 {report.positives?.length > 0 && (
                                     <SectionBlock icon={<CheckSquare size={14} />} title="Security Positives" color="#22c55e" copyId="sec-pos" copiedId={copiedSection} onCopy={handleCopy}>
                                         <ul style={{ listStylePosition: 'inside', color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 2 }}>
@@ -1578,6 +1633,64 @@ export default function App() {
                                 )}
                             </>
                         )}
+
+                        {/* ═══ ACTION CENTER ═══ */}
+                        <div style={{ background: '#111', border: '2px solid #333', borderTop: '4px solid #ccff00', padding: 28, marginTop: 20, marginBottom: 14 }}>
+                            <h3 style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, color: '#ccff00', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, paddingBottom: 10, borderBottom: '1px solid #333' }}>
+                                <Zap size={16} /> Action Center
+                            </h3>
+                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                {/* Create GitHub Issue — only if source was GitHub */}
+                                {inputType === 'github' && githubRepoContext.current && (() => {
+                                    const { owner, repo } = githubRepoContext.current;
+                                    const issueTitle = encodeURIComponent(
+                                        analysisMode === 'debug'
+                                            ? `[Unravel] ${report.bugType || 'Bug'}: ${(report.rootCause || report.symptom || 'Issue detected').slice(0, 80)}`
+                                            : analysisMode === 'security'
+                                                ? `[Unravel Security] ${report.overallRisk || 'Risk'}: ${(report.summary || 'Security finding').slice(0, 80)}`
+                                                : `[Unravel] Code Analysis`
+                                    );
+                                    const bodyParts = [];
+                                    if (analysisMode === 'debug') {
+                                        if (report.symptom) bodyParts.push(`## Symptom\n${report.symptom}`);
+                                        if (report.rootCause) bodyParts.push(`## Root Cause\n${report.rootCause}`);
+                                        if (report.codeLocation) bodyParts.push(`**Location:** \`${typeof report.codeLocation === 'object' ? JSON.stringify(report.codeLocation) : report.codeLocation}\``);
+                                        if (report.minimalFix) bodyParts.push(`## Suggested Fix\n\`\`\`\n${report.minimalFix}\n\`\`\``);
+                                        if (report.whyFixWorks) bodyParts.push(`**Why this works:** ${report.whyFixWorks}`);
+                                    } else if (analysisMode === 'security') {
+                                        if (report.summary) bodyParts.push(`## Security Summary\n${report.summary}`);
+                                        if (report.vulnerabilities?.length > 0) {
+                                            bodyParts.push(`## Vulnerabilities\n${report.vulnerabilities.map(v => `- **${v.type}** (${v.severity}): ${v.description}${v.remediation ? `\n  Fix: ${v.remediation}` : ''}`).join('\n')}`);
+                                        }
+                                    }
+                                    bodyParts.push(`\n---\n*Generated by [Unravel AI](https://github.com/unravel-ai) — Deterministic Debug Engine*`);
+                                    const issueBody = encodeURIComponent(bodyParts.join('\n\n').slice(0, 4000));
+                                    const issueUrl = `https://github.com/${owner}/${repo}/issues/new?title=${issueTitle}&body=${issueBody}`;
+                                    return (
+                                        <a href={issueUrl} target="_blank" rel="noopener noreferrer"
+                                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px', background: '#22c55e18', border: '2px solid #22c55e', color: '#22c55e', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, textTransform: 'uppercase', textDecoration: 'none', cursor: 'pointer', transition: 'all 0.15s' }}>
+                                            <Github size={16} /> Create GitHub Issue
+                                        </a>
+                                    );
+                                })()}
+
+                                {/* Copy Fix CLI Command — debug mode only */}
+                                {analysisMode === 'debug' && report.minimalFix && (() => {
+                                    const loc = typeof report.codeLocation === 'object' ? JSON.stringify(report.codeLocation) : (report.codeLocation || 'file');
+                                    const cliCmd = `git checkout -b unravel-fix && echo "Apply fix to ${loc}" && git add -A && git commit -m "fix: ${(report.rootCause || 'bug fix').slice(0, 50).replace(/"/g, "'")}" && gh pr create --title "fix: Unravel diagnosis" --body "Auto-generated from Unravel analysis"`;
+                                    return (
+                                        <button onClick={() => handleCopy(cliCmd, 'cli-fix')}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px', background: copiedSection === 'cli-fix' ? '#ccff0018' : '#ff00ff18', border: `2px solid ${copiedSection === 'cli-fix' ? '#ccff00' : '#ff00ff'}`, color: copiedSection === 'cli-fix' ? '#ccff00' : '#ff00ff', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.15s' }}>
+                                            {copiedSection === 'cli-fix' ? <Check size={16} /> : <Copy size={16} />}
+                                            {copiedSection === 'cli-fix' ? 'Copied!' : 'Copy Fix CLI'}
+                                        </button>
+                                    );
+                                })()}
+                            </div>
+                            <p style={{ color: '#555', fontSize: 11, fontFamily: "'JetBrains Mono',monospace", marginTop: 10 }}>
+                                {inputType === 'github' ? 'Create Issue opens a pre-filled GitHub issue in a new tab. You review before submitting.' : 'Use the Copy Fix CLI to generate a git workflow for applying the fix.'}
+                            </p>
+                        </div>
 
                         {/* New Analysis Button */}
                         <div style={{ textAlign: 'center', paddingTop: 24, borderTop: '2px solid #333', marginTop: 24 }}>

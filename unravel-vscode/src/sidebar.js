@@ -30,6 +30,37 @@ function showReportPanel(result, fileName) {
             },
         );
         currentPanel.onDidDispose(() => { currentPanel = null; });
+
+        // Handle messages from webview (e.g., Apply Fix Locally, Send to Chat)
+        currentPanel.webview.onDidReceiveMessage(async (msg) => {
+            if (msg.type === 'applyFix' && msg.fix) {
+                try {
+                    const loc = msg.location || '';
+                    const fixContent = `// ═══ UNRAVEL SUGGESTED FIX ═══\n// Location: ${loc}\n// \n// Instructions: Apply the code changes below to the specified location.\n// You can safely close this file without saving when done.\n// ═══════════════════════════════\n\n${msg.fix}\n`;
+                    const doc = await vscode.workspace.openTextDocument({
+                        content: fixContent,
+                        language: 'javascript'
+                    });
+                    await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+                    vscode.window.showInformationMessage('Unravel: Fix opened in a new tab for review.');
+                } catch (err) {
+                    vscode.window.showErrorMessage(`Unravel: Could not open fix — ${err.message}`);
+                }
+            }
+            if (msg.type === 'sendToChat' && msg.prompt) {
+                try {
+                    // Use VS Code Chat API to send the prompt to the built-in chat
+                    await vscode.commands.executeCommand('workbench.action.chat.open', {
+                        query: msg.prompt
+                    });
+                    vscode.window.showInformationMessage('Unravel: AI fix prompt sent to chat.');
+                } catch (err) {
+                    // Fallback: copy to clipboard if chat API is not available
+                    await vscode.env.clipboard.writeText(msg.prompt);
+                    vscode.window.showInformationMessage('Unravel: Prompt copied to clipboard (chat not available).');
+                }
+            }
+        });
     }
 
     // Determine the report object — orchestrate may nest under .report for debug
@@ -141,6 +172,25 @@ function buildDependencyMermaid(deps) {
         (imports || []).forEach(imp => {
             lines.push(`    ${mId(file)}["${mLabel(file)}"] --> ${mId(imp)}["${mLabel(imp)}"]`);
         });
+    });
+    return lines.join('\n');
+}
+
+function buildAttackVectorMermaid(edges) {
+    if (!edges || edges.length === 0) return null;
+    const lines = ['flowchart TD'];
+    const seen = new Set();
+    edges.forEach(({ from, to, label, isExploitStep }) => {
+        const f = mId(from); const t = mId(to);
+        if (!seen.has(f)) { lines.push(`    ${f}["${mLabel(from)}"]`); seen.add(f); }
+        if (!seen.has(t)) { lines.push(`    ${t}["${mLabel(to)}"]`); seen.add(t); }
+        lines.push(`    ${f} -->|"${mLabel(label)}"| ${t}`);
+        if (isExploitStep) {
+            lines.push(`    style ${f} fill:#ff003c,color:#fff`);
+            lines.push(`    style ${t} fill:#ff003c,color:#fff`);
+        } else {
+            lines.push(`    style ${f} fill:#ffaa00,color:#000`);
+        }
     });
     return lines.join('\n');
 }
@@ -334,6 +384,12 @@ function renderSecurity(r) {
         html += sectionBlock('✅ Security Positives', '#22c55e', `<ul class="mono-list">${items}</ul>`);
     }
 
+    if (r.attackVectorEdges?.length > 0) {
+        html += sectionBlock('🛡️ Attack Vector Flowchart', '#ff003c', `
+            <p class="meta">How an attacker could exploit the identified vulnerabilities — red nodes mark the critical exploitation point</p>
+            ${mermaidBlock(buildAttackVectorMermaid(r.attackVectorEdges), 'Attack vector chain — red = exploitation point, orange = attacker progression')}`);
+    }
+
     return html;
 }
 
@@ -452,6 +508,36 @@ function renderDebug(r) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Action Center HTML (VS Code specific — Apply Fix Locally)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildActionCenterHTML(r, mode) {
+    let buttons = '';
+
+    // Debug mode: Apply Fix Locally button
+    if (mode === 'debug' && r.minimalFix) {
+        const loc = esc(typeof r.codeLocation === 'object' ? JSON.stringify(r.codeLocation) : (r.codeLocation || ''));
+        const fixData = esc(r.minimalFix).replace(/'/g, '&#39;');
+        buttons += `<button class="action-btn action-btn-magenta" data-action="applyFix" data-fix="${fixData}" data-location="${loc}">🔧 Apply Fix Locally</button>`;
+    }
+
+    // Debug mode: Give Fix to AI button (sends aiPrompt to VS Code chat)
+    if (mode === 'debug' && r.aiPrompt) {
+        const promptData = esc(r.aiPrompt).replace(/'/g, '&#39;');
+        buttons += `<button class="action-btn" data-action="sendToChat" data-prompt="${promptData}">🤖 Give Fix to AI</button>`;
+    }
+
+    if (!buttons) return '';
+
+    return `
+    <div class="action-center">
+        <h3>⚡ Action Center</h3>
+        ${buttons}
+        <p class="meta" style="margin-top:8px">🔧 Apply Fix opens the suggested change in a new tab. 🤖 Give Fix to AI sends the fix prompt directly to your VS Code chat.</p>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main HTML builder
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -560,8 +646,16 @@ function buildReportHTML(report, fileName, mode) {
 
     /* Mermaid */
     .mermaid-wrap { background: #060606; border: 1px solid #2a2a2a; padding: 14px; margin: 10px 0; overflow-x: auto; }
-    .mermaid svg { max-width: 100%; }
+    .mermaid svg { max-width: none; min-width: 100%; height: auto !important; }
     .merm-caption { font-family: 'Consolas', monospace; font-size: 10px; color: #555; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
+
+    /* Action Center */
+    .action-center { background: #0e0e0e; border: 1px solid #2a2a2a; border-top: 4px solid #ccff00; padding: 20px; margin: 16px 0; }
+    .action-center h3 { font-family: 'Consolas', monospace; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: #ccff00; font-size: 12px; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid #2a2a2a; }
+    .action-btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; font-family: 'Consolas', monospace; font-size: 12px; font-weight: 700; text-transform: uppercase; cursor: pointer; border: 2px solid #22c55e; background: rgba(34,197,94,0.1); color: #22c55e; margin-right: 8px; margin-bottom: 8px; }
+    .action-btn:hover { background: rgba(34,197,94,0.2); }
+    .action-btn-magenta { border-color: #ff00ff; background: rgba(255,0,255,0.06); color: #ff00ff; }
+    .action-btn-magenta:hover { background: rgba(255,0,255,0.15); }
 </style>
 </head>
 <body>
@@ -576,8 +670,44 @@ function buildReportHTML(report, fileName, mode) {
 
 ${contentHTML}
 
+${buildActionCenterHTML(r, mode)}
+
 </body>
 <script type="module">
+    // Acquire VS Code API for messaging
+    const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+
+    // Apply Fix button handler
+    document.querySelectorAll('[data-action="applyFix"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (vscode) {
+                vscode.postMessage({
+                    type: 'applyFix',
+                    fix: btn.dataset.fix,
+                    location: btn.dataset.location
+                });
+                btn.textContent = '✅ Fix Sent to Editor';
+                btn.style.borderColor = '#ccff00';
+                btn.style.color = '#ccff00';
+            }
+        });
+    });
+
+    // Give Fix to AI button handler
+    document.querySelectorAll('[data-action="sendToChat"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (vscode) {
+                vscode.postMessage({
+                    type: 'sendToChat',
+                    prompt: btn.dataset.prompt
+                });
+                btn.textContent = '✅ Sent to Chat';
+                btn.style.borderColor = '#ccff00';
+                btn.style.color = '#ccff00';
+            }
+        });
+    });
+
     // Load Mermaid from CDN and initialize
     try {
         const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs');
@@ -585,8 +715,8 @@ ${contentHTML}
             startOnLoad: false,
             theme: 'dark',
             securityLevel: 'loose',
-            flowchart: { htmlLabels: true, curve: 'basis' },
-            sequence: { useMaxWidth: true },
+            flowchart: { htmlLabels: true, curve: 'basis', useMaxWidth: false },
+            sequence: { useMaxWidth: false },
         });
         const nodes = document.querySelectorAll('.mermaid');
         for (const node of nodes) {

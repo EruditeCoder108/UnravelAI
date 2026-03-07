@@ -2,6 +2,7 @@
   "name": "unravel-v3",
   "private": true,
   "version": "3.0.0",
+  "license": "BUSL-1.1",
   "type": "module",
   "scripts": {
     "dev": "vite",

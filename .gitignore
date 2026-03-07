@@ -19,3 +19,8 @@ desktop.ini
 # Logs
 *.log
 npm-debug.log*
+
+# Internal Planning Docs
+IMPLEMENTATION_PLAN.md
+unravel_blueprint.md
+vision.md
