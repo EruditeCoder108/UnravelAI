@@ -30,19 +30,22 @@ Six files with **zero browser or React dependencies**:
 | File | Purpose |
 |------|---------|
 | `index.js` | Barrel export — single entry point for all core modules |
-| `config.js` | Providers, API models, bug taxonomy, `buildSystemPrompt()`, `buildRouterPrompt()`, `ENGINE_SCHEMA` |
+| `config.js` | Providers, API models, bug taxonomy (12 primary + extensible `secondaryTags`), `buildDebugPrompt()`, `buildExplainPrompt()`, `buildSecurityPrompt()`, `buildRouterPrompt()`, `ENGINE_SCHEMA`, `EXPLAIN_SCHEMA`, `SECURITY_SCHEMA`, `buildSectionSchema()`, `estimateRuntime()` |
 | `ast-engine.js` | Deterministic static analysis using `@babel/parser` + `@babel/traverse`. Produces variable mutation chains, closure captures, and timing/async node maps |
-| `orchestrate.js` | The main pipeline: gathers AST facts → builds prompt → calls LLM → parses response → validates. Also handles the `checkFileCompleteness` retry logic |
+| `orchestrate.js` | The main pipeline: gathers AST facts → builds prompt → calls LLM → parses response → validates. Handles `checkFileCompleteness`, self-healing context (`onMissingFiles` recursion, depth 2), stamps `_provenance` on every result, and runs `verifyClaims()` to flag hallucinated line/file references |
 | `provider.js` | API caller for Anthropic, Google, and OpenAI with retry and error handling |
-| `parse-json.js` | Robust JSON extractor that handles markdown-wrapped responses, partial JSON, and LLM formatting quirks |
+| `parse-json.js` | Robust JSON extractor that handles markdown-wrapped responses, partial JSON, LLM formatting quirks, and **truncated JSON repair** (closes open braces/brackets when LLM hits token limit) |
 
 ### 2. The Web App (`unravel-v3/`)
 
-A React application built with **Vite**. Key file: `src/App.jsx` (927 lines).
+A React application built with **Vite**. Key file: `src/App.jsx` (~1700 lines).
 
+- **Five-step UX flow**: Input (Paste/Upload/GitHub) → Mode (Debug/Explain/Security) → Configure (preset + sections) → Describe → Report
 - **Three input methods:** Paste, Folder Upload, and GitHub URL import
 - **Router Agent:** When a project has many files, `buildRouterPrompt()` selects 5-8 relevant files *before* the main analysis runs. The web app calls the Router Agent in **two places**: once inside `fetchGitHubRepo()` (Router-first fetch, selects before downloading) and once inside `executeAnalysis()` (selects from already-uploaded files)
 - **Missing files flow:** If orchestrate detects incomplete context, it pauses and shows a UI for the user to provide additional files, then resumes
+- **Error Boundary:** `ErrorBoundary.jsx` wraps the report rendering section. If Mermaid or data errors crash rendering, a fallback UI shows raw JSON instead of a white screen
+- **Netlify proxy:** `netlify/functions/anthropic-proxy.mjs` proxies Anthropic API calls from the browser to avoid CORS blocking
 
 ### 3. The VS Code Extension (`unravel-vscode/`)
 
@@ -74,6 +77,8 @@ The core engine files live in `unravel-v3/src/core/`. An **exact copy** lives in
 
 The 6 files to sync: `index.js`, `config.js`, `ast-engine.js`, `orchestrate.js`, `provider.js`, `parse-json.js`.
 
+**Sync guard script:** Run `bash scripts/sync-core.sh` before every VSIX build — it copies all 6 files from `unravel-v3/src/core/` → `unravel-vscode/src/core/` ensuring they stay identical.
+
 ### Rule 2: The VS Code Build & Package Workflow
 
 Changes to the VS Code extension are NOT visible until bundled and packaged:
@@ -97,7 +102,7 @@ This is the core architectural principle. Never bypass it:
 
 ### Rule 4: Output Must Be Surgical
 
-The engine returns a structured JSON report conforming to `ENGINE_SCHEMA` (defined in `config.js`). Every field has a purpose. Do not add freeform text fields or unstructured output. The report schema includes: `bugType`, `confidence`, `symptom`, `reproduction`, `evidence`, `rootCause`, `codeLocation`, `minimalFix`, `whyFixWorks`, `variableState`, `timeline`, `whyAILooped`, `conceptExtraction`, `aiPrompt`, and more.
+The engine returns a structured JSON report conforming to `ENGINE_SCHEMA` (defined in `config.js`). Every field has a purpose. Do not add freeform text fields or unstructured output. The report schema includes: `bugType`, `secondaryTags[]`, `customLabel`, `confidence`, `symptom`, `reproduction`, `evidence`, `rootCause`, `codeLocation`, `minimalFix`, `whyFixWorks`, `variableState`, `timeline`, `whyAILooped`, `conceptExtraction`, `aiPrompt`, Mermaid edge data (`timelineEdges`, `hypothesisTree`, `aiLoopEdges`, `variableStateEdges`), and `_provenance` (engine version, model, timestamp). Security mode adds `exploitability` per vulnerability.
 
 ### Rule 5: File Handling Details
 
@@ -106,14 +111,18 @@ The engine returns a structured JSON report conforming to `ENGINE_SCHEMA` (defin
 - **GitHub Fetch:** Router-first — when >10 candidate files are found in a repo, the Router Agent (`buildRouterPrompt`) picks 5-8 relevant files BEFORE their raw content is downloaded. Falls back to fetching all (capped at 50) if the Router fails.
 - **Empty symptom:** Both Web App and VS Code allow empty symptom input. Orchestrate falls back to `'No specific error described. Analyze for any issues.'`
 
-### Rule 6: Phase 4A Multi-Mode Architecture (Planned)
+### Rule 6: Multi-Mode Architecture (✅ COMPLETE — Phase 4A)
 
-Unravel is evolving from a single-mode debugger to a multi-mode platform:
-- 🐛 **Debug Mode** (current — the only mode that exists today)
-- 🔍 **Explain Mode** (planned — architecture/data flow understanding)
-- 🛡️ **Security Scan** (planned — injection, secrets, auth gaps)
+Unravel is a multi-mode analysis platform with 3 built modes:
+- 🐛 **Debug Mode** — 9-phase pipeline, root cause, fix, hypothesis elimination
+- 🔍 **Explain Mode** — Architecture walkthrough, data flow, entry points, onboarding guide
+- 🛡️ **Security Scan** — Vulnerability audit with severity, exploitability, CWE IDs, attack vector flowcharts
 
-Any new analytical feature you build **MUST** integrate into this mode system via UI controls (Web) or extension settings (VS Code). Do not build one-off features outside the mode architecture.
+**Output presets:** Quick Fix / Developer / Full Report / Custom (per-section checkboxes). Presets control which schema fields are requested — smaller schema = fewer tokens = faster response.
+
+**Action Center (Phase 5):** After analysis, users can apply the fix locally (VS Code), create a GitHub Issue/PR (Web), or pass the fix to Copilot Chat (VS Code).
+
+Any new analytical feature **MUST** integrate into this mode system. Do not build one-off features outside the mode architecture.
 
 ---
 
@@ -123,10 +132,15 @@ Any new analytical feature you build **MUST** integrate into this mode system vi
 |----------|------|-------------|
 | `orchestrate()` | `orchestrate.js` | Main pipeline entry point — takes `(files, symptom, options)` |
 | `runFullAnalysis()` | `ast-engine.js` | AST pre-analysis — returns mutation chains, closures, timing nodes |
-| `buildSystemPrompt()` | `config.js` | Constructs the 9-phase system prompt (provider-specific formatting) |
+| `buildDebugPrompt()` | `config.js` | Constructs the 9-phase debug system prompt (provider-specific formatting) |
+| `buildExplainPrompt()` | `config.js` | Constructs the explain mode system prompt |
+| `buildSecurityPrompt()` | `config.js` | Constructs the security audit system prompt |
 | `buildRouterPrompt()` | `config.js` | Constructs the Router Agent prompt for file selection |
+| `buildSectionSchema()` | `config.js` | Builds a subset of ENGINE_SCHEMA based on selected output sections |
+| `estimateRuntime()` | `config.js` | Estimates analysis time based on file count and section count |
 | `callProvider()` | `provider.js` | Sends prompt to Anthropic/Google/OpenAI API with retry |
-| `parseAIJson()` | `parse-json.js` | Extracts JSON from raw LLM response text |
+| `parseAIJson()` | `parse-json.js` | Extracts JSON from raw LLM response text (includes truncated JSON repair) |
+| `verifyClaims()` | `orchestrate.js` | Post-analysis: flags hallucinated file/line references in evidence |
 | `gatherFiles()` | `imports.js` (VS Code only) | Walks import chains from the active file |
 | `checkFileCompleteness()` | `orchestrate.js` | Detects truncated/incomplete files before analysis |
 

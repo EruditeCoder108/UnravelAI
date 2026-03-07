@@ -99,7 +99,7 @@ function pause(){
 
 1. 🔍 **Resolves imports** — automatically pulls in dependent files (2 levels deep)
 2. 🌳 **AST pre-analysis** — deterministic variable mutation chains, closures, timing nodes
-3. 🧠 **AI diagnosis** — 8-phase pipeline with anti-sycophancy guards
+3. 🧠 **AI diagnosis** — 9-phase pipeline with anti-sycophancy guards
 4. ✨ **Inline results** — red squiggly underlines, `🔴 ROOT CAUSE` overlays, hover tooltips, sidebar report
 
 ```
@@ -111,7 +111,7 @@ Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
 
 ### Install
 
-1. Download [`unravel-vscode-0.1.0.vsix`](https://github.com/EruditeCoder108/UnravelAI/releases) from Releases
+1. Download [`unravel-vscode-0.3.0.vsix`](https://github.com/EruditeCoder108/UnravelAI/releases) from Releases
 2. VS Code → Extensions (`Ctrl+Shift+X`) → `⋯` → **Install from VSIX...**
 3. Right-click any `.js` file → **"Unravel: Debug This File"**
 
@@ -121,7 +121,7 @@ Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
 
 ## ⚙️ How It Works
 
-Unravel runs your code through an **8-phase deterministic pipeline** — the same systematic process a senior engineer uses, but faster:
+Unravel runs your code through a **9-phase deterministic pipeline** — the same systematic process a senior engineer uses, but faster:
 
 ```text
 Phase 1  INGEST          Read all code. Build complete mental model. No theories yet.
@@ -253,7 +253,7 @@ This is injected into the prompt as **verified ground truth**. The AI cannot hal
 
 ## Bug Taxonomy
 
-Every diagnosis is classified into one of 12 formal categories:
+Every diagnosis is classified using a primary category from 12 formal types, with optional `secondaryTags` for complex bugs that don't fit cleanly:
 
 | Category | Description |
 |----------|-------------|
@@ -321,24 +321,25 @@ Three numbers define whether Unravel is working:
 | **TTI** | Time To Insight — how fast does the user *understand* the bug? | < 2 min |
 | **HR** | Hallucination Rate — did it reference code/variables/behavior that doesn't exist? | < 5% |
 
-### Benchmark Results
+### Benchmark Results (Internal Dev Proxy — 10 Bugs)
 
 | Configuration | RCA Score | Hallucination Rate |
 |---|---|---|
-| Standard prompting (no pipeline) | _pending_ | _pending_ |
-| + 9-phase deterministic pipeline | _pending_ | _pending_ |
-| + AST pre-analysis context | _pending_ | _pending_ |
+| Baseline (Gemini 2.5 Flash, no AST) | **100%** | 1.3% |
+| **Unravel Engine** (+ AST pre-analysis) | **100%** | 2.5% |
 
-> The 10-bug proxy benchmark exists only to validate architectural improvements during development. Public claims rely exclusively on the extended 50-bug benchmark (Phase 7).
+**What this means:** Modern models like Gemini 2.5 Flash are already smart enough to achieve 100% RCA on isolated, single-file bugs. This 10-bug suite serves as our internal "green light" that the pipeline and anti-sycophancy guardrails are stable.
 
-> Run `node benchmarks/runner.js --provider google --model gemini-2.5-flash --key YOUR_KEY` to generate these numbers. Results are saved to `benchmarks/results.json`.
+**The Real Benchmark:** The true value of AST pre-analysis emerges in complex, multi-file codebases where standard LLMs lose context. Expansion to a rigorous 50-bug suite (spanning cross-file state mutations and complex timing issues) is currently underway to publicly measure the AST improvement delta.
+
+> Run `node benchmarks/runner.js --provider google --model gemini-2.5-flash --key YOUR_KEY` to reproduce the internal proxy results. Saved to `benchmarks/results.json`.
 
 ---
 
 ## Roadmap
 
 ### Phase 1 — Deep Thinking `COMPLETE`
-BYOK multi-provider support. SOTA models with extended thinking. 8-phase deterministic prompt. Anti-sycophancy guardrails. Evidence-backed confidence. Provider-specific prompt formatting. Concept extraction. Bug taxonomy. "Why AI Loops" analysis.
+BYOK multi-provider support. SOTA models with extended thinking. 9-phase deterministic prompt. Anti-sycophancy guardrails. Evidence-backed confidence. Provider-specific prompt formatting. Concept extraction. Bug taxonomy. "Why AI Loops" analysis.
 
 ### Phase 2 — The Proof `COMPLETE`
 Client-side AST analysis with `@babel/parser`. Variable mutation chains, timing node detection, closure capture tracking. 10-bug benchmark suite with `benchmarks/runner.js`. Pipeline tested end-to-end with Gemini 2.5 Flash.
@@ -385,8 +386,8 @@ Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom c
 |----------|-------------|--------|
 | **Web App** | Paste code, describe bug, get structured report | ✅ Live on Netlify |
 | **VS Code Extension** | Right-click → debug. Inline overlays, hover, sidebar | ✅ Working |
-| **CLI** | `unravel analyze ./src --symptom "..."` | 🔜 Phase 5 |
-| **Desktop App** | Drag-and-drop folders, native file access | 🔜 Phase 5 |
+| **CLI** | `unravel analyze ./src --symptom "..."` | 🔜 Phase 6 |
+| **Desktop App** | Drag-and-drop folders, native file access | 🔜 Phase 6 |
 
 ---
 
@@ -399,7 +400,7 @@ Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom c
 
 ### Option A — Download & Install (Recommended)
 
-1. Go to [**Releases**](https://github.com/EruditeCoder108/UnravelAI/releases) and download `unravel-vscode-0.1.0.vsix`
+1. Go to [**Releases**](https://github.com/EruditeCoder108/UnravelAI/releases) and download `unravel-vscode-0.3.0.vsix`
 2. Open VS Code → Extensions panel (`Ctrl+Shift+X`)
 3. Click `⋯` (top-right) → **Install from VSIX...** → select the downloaded file
 4. Done. Restart VS Code if prompted.
@@ -419,9 +420,12 @@ Then press **F5** to launch the Extension Development Host for testing.
 
 1. **Open any `.js` or `.ts` file** in VS Code
 2. **Right-click** anywhere in the editor
-3. Click **"Unravel: Debug This File"**
-4. **Enter your API key** (first time only — saved to settings, you won't be asked again)
-5. **Describe the bug** in one sentence, e.g. `Timer shows wrong value after pause/resume`
+3. Choose your command:
+   - **"Unravel: Debug This File"** — Find bugs, trace root cause
+   - **"Unravel: Explain This File"** — Understand architecture and data flow
+   - **"Unravel: Security Scan This File"** — Find vulnerabilities
+4. **Enter your API key** (first time only — saved to settings)
+5. **Describe the bug** in one sentence (optional — leave empty for scan mode)
 6. Wait 10-30 seconds...
 
 ### What You'll See
@@ -444,6 +448,10 @@ Open Settings (`Ctrl+,`) → search "unravel":
 | `unravel.apiKey` | *(empty)* | Your API key |
 | `unravel.provider` | `google` | `google`, `anthropic`, `openai` |
 | `unravel.model` | `gemini-2.5-flash` | Any model from your provider |
+| `unravel.mode` | `debug` | `debug`, `explain`, `security` |
+| `unravel.outputPreset` | `developer` | `quick`, `developer`, `full`, `custom` |
+| `unravel.level` | `intermediate` | `beginner`, `vibe`, `basic`, `intermediate` |
+| `unravel.language` | `english` | `english`, `hinglish`, `hindi` |
 
 > 🔒 Keys are stored locally in VS Code `settings.json`. Never sent anywhere except the API provider.
 
@@ -541,7 +549,7 @@ If you use Unravel AI in your research or project, please cite it using the incl
   author = {Jain, Sambhav},
   title = {Unravel AI: Deterministic Pre-Analysis and Hypothesis Elimination Engine},
   url = {https://github.com/EruditeCoder108/UnravelAI},
-  year = {2024}
+  year = {2025}
 }
 ```
 

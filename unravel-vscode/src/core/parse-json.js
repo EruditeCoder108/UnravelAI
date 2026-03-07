@@ -51,6 +51,19 @@ export function parseAIJson(text) {
         } catch { }
     }
 
+    // 4. Truncated JSON repair — LLM hit token limit mid-response
+    //    Try to salvage by closing open braces/brackets
+    const repaired = repairTruncatedJson(text);
+    if (repaired) {
+        try {
+            const parsed = JSON.parse(repaired);
+            if (parsed && typeof parsed === 'object') {
+                console.warn('[parseAIJson] Recovered truncated JSON via repair.');
+                return parsed;
+            }
+        } catch { }
+    }
+
     // If we get here, nothing parsed. Log what we received for debugging.
     console.warn('[parseAIJson] Failed to parse. Raw text preview:', typeof text === 'string' ? text.slice(0, 500) : typeof text);
 
@@ -95,4 +108,57 @@ function findJsonCandidates(text) {
     // Sort by length descending — the full response object is usually largest
     candidates.sort((a, b) => b.length - a.length);
     return candidates;
+}
+
+/**
+ * Attempt to repair truncated JSON from an LLM that hit its token limit.
+ * Strategy:
+ *   1. Strip markdown fences
+ *   2. Find the first `{`
+ *   3. Strip trailing partial values (incomplete strings, trailing commas)
+ *   4. Close any open brackets/braces
+ */
+function repairTruncatedJson(text) {
+    if (!text || typeof text !== 'string') return null;
+
+    // Strip markdown fences
+    let json = text.replace(/```(?:json)?\s*\n?/gi, '').replace(/```\s*$/g, '').trim();
+
+    // Find the first opening brace
+    const firstBrace = json.indexOf('{');
+    if (firstBrace === -1) return null;
+    json = json.slice(firstBrace);
+
+    // Count open braces and brackets
+    let braces = 0;
+    let brackets = 0;
+    let inString = false;
+
+    for (let i = 0; i < json.length; i++) {
+        const ch = json[i];
+        if (ch === '\\' && inString) { i++; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (inString) continue;
+        if (ch === '{') braces++;
+        else if (ch === '}') braces--;
+        else if (ch === '[') brackets++;
+        else if (ch === ']') brackets--;
+    }
+
+    // If balanced already, no repair needed (the normal parser would have handled it)
+    if (braces === 0 && brackets === 0) return null;
+
+    // Strip trailing incomplete value:
+    //   - incomplete string: ..."some partial text
+    //   - trailing comma after last complete value
+    //   - incomplete key: ..."keyName":
+    json = json.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"{}[\]]*$/, '');
+    // Also strip any trailing comma
+    json = json.replace(/,\s*$/, '');
+
+    // Close open brackets and braces
+    while (brackets > 0) { json += ']'; brackets--; }
+    while (braces > 0) { json += '}'; braces--; }
+
+    return json;
 }

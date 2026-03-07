@@ -73,10 +73,12 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     onProgress?.('AST ANALYZER: Extracting verified ground truth from code...');
     const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
     let astContext = '';
+    let astRaw = null; // Preserved for claim verifier
     if (jsFiles.length > 0) {
         try {
             const analysis = runMultiFileAnalysis(jsFiles);
             astContext = analysis.formatted;
+            astRaw = analysis.raw; // { mutations, closures, timingNodes }
             console.log('[AST] Verified context extracted:', astContext);
         } catch (astErr) {
             console.warn('[AST] Analysis failed, proceeding without:', astErr.message);
@@ -129,7 +131,39 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
             ? 'Explain what this code does and how it works.'
             : 'Analyze this code for security vulnerabilities.';
 
-    const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${codeFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 8000)}`).join('\n\n')}\n\n${symptomLabel}:\n${symptom || symptomDefault}${schemaInstruction}`;
+    // ── Phase 2.5: Global Resource Caps ──
+    const MAX_FILES = 25;
+    const MAX_TOTAL_CHARS = 1_500_000;
+    let cappedFiles = codeFiles;
+    if (codeFiles.length > MAX_FILES) {
+        console.warn(`[Engine] File count ${codeFiles.length} exceeds cap of ${MAX_FILES}, truncating`);
+        cappedFiles = codeFiles.slice(0, MAX_FILES);
+        contextWarnings.push(`Only the first ${MAX_FILES} files were sent to the model (${codeFiles.length} total). Lower-priority files were excluded.`);
+    }
+    let totalChars = cappedFiles.reduce((sum, f) => sum + (f.content?.length || 0), 0);
+    if (totalChars > MAX_TOTAL_CHARS) {
+        console.warn(`[Engine] Total chars ${totalChars} exceeds cap of ${MAX_TOTAL_CHARS}, truncating files`);
+        const trimmed = [];
+        let running = 0;
+        for (const f of cappedFiles) {
+            const len = f.content?.length || 0;
+            if (running + len <= MAX_TOTAL_CHARS) {
+                trimmed.push(f);
+                running += len;
+            } else {
+                // Truncate this file to fit
+                const remaining = MAX_TOTAL_CHARS - running;
+                if (remaining > 500) {
+                    trimmed.push({ ...f, content: f.content.slice(0, remaining) + '\n// ... [TRUNCATED by Unravel: file exceeded context budget]' });
+                }
+                break;
+            }
+        }
+        cappedFiles = trimmed;
+        contextWarnings.push(`Total input was truncated to fit the context budget (${MAX_TOTAL_CHARS} chars).`);
+    }
+
+    const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${cappedFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 8000)}`).join('\n\n')}\n\n${symptomLabel}:\n${symptom || symptomDefault}${schemaInstruction}`;
 
     // ── Phase 3: Call AI ──
     const raw = await callProvider({
@@ -178,7 +212,35 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     onProgress?.({ stage: 'parse', label: 'Parse Response', complete: true, elapsed: elapsed() });
     if (!result) throw new Error('Engine failed to produce structured output after retry. The model may be overloaded — try again or use a different model.');
 
-    // ── Phase 4: Handle missing files or return ──
+    // ── Phase 5: Claim Verification ──
+    onProgress?.({ stage: 'verify', label: 'Verifying Claims', complete: false, elapsed: elapsed() });
+    const verification = verifyClaims(result, codeFiles, astRaw, mode);
+    if (verification.failures.length > 0) {
+        result._verification = verification;
+        console.warn('[Verify] Claim failures:', verification.failures);
+    }
+    // Hard reject: if rootCause evidence is fabricated, reject the analysis
+    if (verification.rootCauseRejected) {
+        console.warn('[Verify] Root cause evidence fabricated — hard rejecting');
+        result.needsMoreInfo = true;
+        result._verificationRejected = true;
+        result._rejectionReason = 'Root cause references code that does not exist in provided files.';
+    }
+    // Security mode: enforce confidence → severity mapping
+    if (mode === 'security' && result.vulnerabilities && Array.isArray(result.vulnerabilities)) {
+        for (const vuln of result.vulnerabilities) {
+            if (typeof vuln.confidence === 'number' && vuln.confidence < 0.7) {
+                if (vuln.severity && vuln.severity !== 'INFORMATIONAL') {
+                    vuln._originalSeverity = vuln.severity;
+                    vuln.severity = 'INFORMATIONAL';
+                    vuln.requiresHumanVerification = true;
+                }
+            }
+        }
+    }
+    onProgress?.({ stage: 'verify', label: 'Verifying Claims', complete: true, elapsed: elapsed() });
+
+    // ── Phase 6: Handle missing files or return ──
     if (result.needsMoreInfo && result.missingFilesRequest && onMissingFiles && _depth < 2) {
         onProgress?.(`SELF-HEAL: Engine requesting additional files (attempt ${_depth + 1}/2)...`);
         const additionalFiles = await onMissingFiles(result.missingFilesRequest);
@@ -186,7 +248,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
             // Recursive call with the additional files appended
             return orchestrate([...codeFiles, ...additionalFiles], symptom, { ...options, _depth: _depth + 1 });
         }
-    } else if (result.needsMoreInfo && _depth >= 2) {
+    } else if (result.needsMoreInfo && !result._verificationRejected && _depth >= 2) {
         console.warn('[Engine] Max self-heal depth (2) reached, proceeding with available files.');
         onProgress?.('⚠️ Max file-fetch attempts reached. Analyzing with available context...');
         // If the LLM only returned needsMoreInfo with no report after max retries,
@@ -256,3 +318,209 @@ function checkFileCompleteness(codeFiles) {
     }
     return warnings;
 }
+
+// ═══════════════════════════════════════════════════
+// Claim Verifier — Trust Layer (Sprint 1)
+// Cross-checks model evidence against actual files and AST data.
+// Two-tier policy:
+//   - Evidence items fail → degrade confidence, flag _verified: false
+//   - RootCause fails    → hard reject (needsMoreInfo = true)
+// ═══════════════════════════════════════════════════
+
+function verifyClaims(result, codeFiles, astRaw, mode) {
+    const failures = [];
+    let rootCauseRejected = false;
+    let confidencePenalty = 0;
+
+    // Build a lookup: filename → lines array (for quick line checks)
+    const fileLookup = {};
+    for (const f of codeFiles) {
+        const shortName = f.name.split(/[\\/]/).pop();
+        const fullName = f.name;
+        const lines = (f.content || '').split('\n');
+        fileLookup[shortName] = { lines, content: f.content || '' };
+        fileLookup[fullName] = fileLookup[shortName];
+        // Also index without extension for fuzzy matching
+        const noExt = shortName.replace(/\.[^.]+$/, '');
+        if (!fileLookup[noExt]) fileLookup[noExt] = fileLookup[shortName];
+    }
+
+    // Helper: find a file in lookup by partial name
+    function findFile(name) {
+        if (!name) return null;
+        const clean = name.trim();
+        if (fileLookup[clean]) return fileLookup[clean];
+        // Try short name
+        const short = clean.split(/[\\/]/).pop();
+        if (fileLookup[short]) return fileLookup[short];
+        // Fuzzy: find any key that ends with referenced name
+        for (const key of Object.keys(fileLookup)) {
+            if (key.endsWith(clean) || clean.endsWith(key)) return fileLookup[key];
+        }
+        return null;
+    }
+
+    // Helper: check if a code fragment appears near a line number (±3 lines)
+    function fragmentNearLine(fileData, lineNum, fragment) {
+        if (!fileData || !fragment) return true; // Can't verify → pass
+        const frag = fragment.trim();
+        if (frag.length < 5) return true; // Too short to verify meaningfully
+        const start = Math.max(0, lineNum - 4);
+        const end = Math.min(fileData.lines.length, lineNum + 3);
+        const window = fileData.lines.slice(start, end).join('\n');
+        // Normalize whitespace for comparison
+        return window.replace(/\s+/g, ' ').includes(frag.replace(/\s+/g, ' '));
+    }
+
+    // Helper: extract line numbers from a text string
+    function extractLineRefs(text) {
+        if (!text) return [];
+        const refs = [];
+        // Patterns: "line 42", "L42", "line:42", ":42", "at line 42"
+        const linePattern = /(?:line\s*[:.]?\s*|[Ll]|:)(\d{1,5})\b/g;
+        let m;
+        while ((m = linePattern.exec(text)) !== null) {
+            const num = parseInt(m[1], 10);
+            if (num > 0 && num < 100000) refs.push(num);
+        }
+        return refs;
+    }
+
+    // Helper: extract file references from text
+    function extractFileRefs(text) {
+        if (!text) return [];
+        const refs = [];
+        // Pattern: common file extensions
+        const filePattern = /[\w\-./\\]+\.(js|jsx|ts|tsx|json|html|css|py|vue|svelte)\b/gi;
+        let m;
+        while ((m = filePattern.exec(text)) !== null) {
+            refs.push(m[0].split(/[\\/]/).pop());
+        }
+        return [...new Set(refs)];
+    }
+
+    // Skip verification for explain mode (no claims about bugs)
+    // NOTE: Vague evidence strings without file/line references (e.g. "duration mutated
+    // inside pause() — confirmed by AST") pass the verifier silently. This is intentional:
+    // the verifier catches *specific wrong claims*, not *vague non-claims*.
+    if (mode === 'explain') return { failures, rootCauseRejected, confidencePenalty };
+
+    // === Check 1: Evidence array (debug mode) ===
+    const report = result.report || result; // report may be nested or flat
+    const evidenceList = report.evidence || result.evidence;
+    if (Array.isArray(evidenceList)) {
+        for (const e of evidenceList) {
+            if (typeof e !== 'string') continue;
+            const lineRefs = extractLineRefs(e);
+            const fileRefs = extractFileRefs(e);
+            for (const fileName of fileRefs) {
+                const fileData = findFile(fileName);
+                if (!fileData) {
+                    failures.push({ claim: e, reason: `references file "${fileName}" not in provided inputs` });
+                    confidencePenalty += 0.2;
+                    continue;
+                }
+                for (const lineNum of lineRefs) {
+                    if (lineNum > fileData.lines.length) {
+                        failures.push({ claim: e, reason: `line ${lineNum} exceeds file length (${fileData.lines.length} lines)` });
+                        confidencePenalty += 0.2;
+                    }
+                }
+            }
+        }
+    }
+
+    // === Check 2: codeLocation ===
+    const codeLocation = report.codeLocation || result.codeLocation;
+    if (codeLocation && typeof codeLocation === 'string') {
+        const locFileRefs = extractFileRefs(codeLocation);
+        const locLineRefs = extractLineRefs(codeLocation);
+        for (const fileName of locFileRefs) {
+            const fileData = findFile(fileName);
+            if (!fileData) {
+                failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `file "${fileName}" not in inputs` });
+                confidencePenalty += 0.3;
+            } else {
+                for (const lineNum of locLineRefs) {
+                    if (lineNum > fileData.lines.length) {
+                        failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `line ${lineNum} exceeds ${fileData.lines.length}` });
+                        confidencePenalty += 0.3;
+                    }
+                }
+            }
+        }
+    }
+
+    // === Check 3: rootCause — hard reject if fabricated ===
+    const rootCause = report.rootCause || result.rootCause;
+    if (rootCause && typeof rootCause === 'string') {
+        const rcFileRefs = extractFileRefs(rootCause);
+        const rcLineRefs = extractLineRefs(rootCause);
+        for (const fileName of rcFileRefs) {
+            const fileData = findFile(fileName);
+            if (!fileData) {
+                failures.push({ claim: `rootCause: ${rootCause.slice(0, 100)}`, reason: `references nonexistent file "${fileName}"` });
+                rootCauseRejected = true;
+            } else {
+                for (const lineNum of rcLineRefs) {
+                    if (lineNum > fileData.lines.length + 2) {
+                        // Allow small slack (+2) since models sometimes miscount by 1-2 lines
+                        failures.push({ claim: `rootCause line ${lineNum}`, reason: `line exceeds file length (${fileData.lines.length})` });
+                        rootCauseRejected = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // === Check 4: variableStateEdges — cross-check with AST ===
+    const varEdges = report.variableStateEdges || result.variableStateEdges;
+    if (Array.isArray(varEdges) && astRaw?.mutations) {
+        const knownVars = new Set();
+        for (const key of Object.keys(astRaw.mutations)) {
+            // Keys are like "varName [filename]" — extract the variable name
+            const varName = key.split(/\s*\[/)[0].trim();
+            knownVars.add(varName);
+        }
+        for (const vEdge of varEdges) {
+            if (vEdge.variable && !knownVars.has(vEdge.variable)) {
+                // Variable claimed in edges but not found in AST
+                // This could be a non-JS variable, so don't hard reject — just flag
+                failures.push({ claim: `variableStateEdge: ${vEdge.variable}`, reason: 'variable not found in AST mutation chains' });
+            }
+        }
+    }
+
+    // === Check 5: Security mode — verify vulnerability file references ===
+    if (mode === 'security' && Array.isArray(result.vulnerabilities)) {
+        for (const vuln of result.vulnerabilities) {
+            if (vuln.location && typeof vuln.location === 'string') {
+                const vulnFileRefs = extractFileRefs(vuln.location);
+                for (const fileName of vulnFileRefs) {
+                    if (!findFile(fileName)) {
+                        failures.push({ claim: `vulnerability: ${vuln.type}`, reason: `location references file "${fileName}" not in inputs` });
+                        confidencePenalty += 0.2;
+                    }
+                }
+            }
+        }
+    }
+
+    // Apply confidence penalty
+    if (confidencePenalty > 0) {
+        const originalConf = report.confidence ?? result.confidence;
+        if (typeof originalConf === 'number') {
+            const adjusted = Math.max(0, originalConf - confidencePenalty);
+            if (report.confidence !== undefined) {
+                report._originalConfidence = originalConf;
+                report.confidence = adjusted;
+            } else if (result.confidence !== undefined) {
+                result._originalConfidence = originalConf;
+                result.confidence = adjusted;
+            }
+        }
+    }
+
+    return { failures, rootCauseRejected, confidencePenalty };
+}
+

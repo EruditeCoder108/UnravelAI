@@ -38,6 +38,9 @@ const PROVIDER = getArg('provider') || 'anthropic';
 const MODEL = getArg('model') || 'claude-sonnet-4-6-20260301';
 const API_KEY = getArg('key') || process.env.UNRAVEL_API_KEY;
 const OUTPUT_FILE = getArg('output') || join(__dirname, 'results.json');
+const SKIP_BASELINE = args.includes('--no-baseline');
+const SKIP_AST = args.includes('--no-ast');
+const BUG_FILTER = getArg('bugs') ? getArg('bugs').split(',').map(s => s.trim()) : null;
 
 if (!API_KEY) {
     console.error('❌ Pass --key YOUR_API_KEY or set UNRAVEL_API_KEY env var.');
@@ -57,6 +60,20 @@ async function loadBugs() {
         bugs.push({ ...mod.metadata, code: mod.code, file });
     }
     return bugs;
+}
+
+// ── Confidence Normalizer ────────────────────────
+// Gemini sometimes returns "HIGH"/"MEDIUM"/"LOW" strings instead of 1-10 numbers
+function normalizeConfidence(raw) {
+    if (raw == null) return null;
+    if (typeof raw === 'number') return raw;
+    const str = String(raw).toUpperCase().trim();
+    const map = { 'HIGH': 0.9, 'MEDIUM': 0.6, 'MED': 0.6, 'LOW': 0.3, 'VERY HIGH': 0.95, 'VERY LOW': 0.1 };
+    if (map[str] !== undefined) return map[str];
+    // Try parsing as number in case it's "5" as string
+    const num = parseFloat(str);
+    if (!isNaN(num)) return num > 1 ? num / 10 : num; // normalize 1-10 scale to 0-1
+    return raw;
 }
 
 // ── API Call ─────────────────────────────────────────
@@ -106,7 +123,7 @@ async function callUnravel(code, symptom, systemPrompt) {
         body = {
             systemInstruction: { parts: [{ text: systemPrompt }] },
             contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 16384 },
+            generationConfig: { temperature: 0.2, maxOutputTokens: 65536 },
         };
     } else if (PROVIDER === 'openai') {
         url = 'https://api.openai.com/v1/chat/completions';
@@ -124,22 +141,34 @@ async function callUnravel(code, symptom, systemPrompt) {
         };
     }
 
+    const startTime = Date.now();
+    let ttft = null;
+
     const data = await fetchWithRetry(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
     });
 
+    const endTime = Date.now();
+    // Since we are not streaming right now, TTFT is the same as total time.
+    // In a streaming setup, TTFT would be captured when the first chunk arrives.
+    ttft = endTime - startTime;
+    const timeToFinalAnswer = endTime - startTime;
+
+    let textOut = '';
     // Extract text from response
     if (PROVIDER === 'anthropic') {
-        return data.content?.map(c => c.text).join('') || '';
+        textOut = data.content?.map(c => c.text).join('') || '';
     } else if (PROVIDER === 'google') {
         // Gemini 2.5 Flash returns 'thought' parts alongside 'text' parts — filter for text only
         const parts = data.candidates?.[0]?.content?.parts || [];
-        return parts.filter(p => p.text != null).map(p => p.text).join('') || '';
+        textOut = parts.filter(p => !!p.text).map(p => p.text).join('') || '';
     } else if (PROVIDER === 'openai') {
-        return data.choices?.[0]?.message?.content || '';
+        textOut = data.choices?.[0]?.message?.content || '';
     }
+
+    return { raw: textOut, timeToFirstToken: ttft, timeToFinalAnswer };
 }
 
 
@@ -293,56 +322,80 @@ async function run() {
     const results = [];
 
     for (const bug of bugs) {
+        // Skip bugs not in the filter (if filter is set)
+        if (BUG_FILTER && !BUG_FILTER.some(f => bug.id.includes(f))) {
+            continue;
+        }
         try {
             console.log(`\n━━━ Bug: ${bug.id} (${bug.bugCategory}) ━━━`);
             console.log(`  Symptom: ${bug.userSymptom.slice(0, 80)}...`);
 
             const systemPrompt = buildSystemPrompt('intermediate', 'english', PROVIDER);
+            const bugResult = {};
 
             // ── Run 1: WITHOUT AST context ──
-            console.log('  📊 Run 1: WITHOUT AST context...');
-            let baselineResult = null;
-            let baselineRaw = '';
-            try {
-                baselineRaw = await callUnravel(bug.code, bug.userSymptom, systemPrompt);
-                baselineResult = parseAIJson(baselineRaw);
-                if (!baselineResult) console.log('  ⚠️ Baseline: Could not parse JSON from response');
-            } catch (err) {
-                console.log(`  ❌ Baseline failed: ${err.message}`);
+            if (!SKIP_BASELINE) {
+                console.log('  📊 Run 1: WITHOUT AST context...');
+                let baselineResult = null;
+                let baselineTiming = { timeToFirstToken: 0, timeToFinalAnswer: 0 };
+                try {
+                    const engineResponse = await callUnravel(bug.code, bug.userSymptom, systemPrompt);
+                    baselineTiming = { timeToFirstToken: engineResponse.timeToFirstToken, timeToFinalAnswer: engineResponse.timeToFinalAnswer };
+                    baselineResult = parseAIJson(engineResponse.raw);
+                    if (!baselineResult) console.log('  ⚠️ Baseline: Could not parse JSON from response');
+                } catch (err) {
+                    console.log(`  ❌ Baseline failed: ${err.message}`);
+                }
+                const rca = scoreRCA(baselineResult, bug);
+                const hr = scoreHallucinations(baselineResult, bug.code);
+                const conf = normalizeConfidence(baselineResult?.report?.confidence ?? null);
+
+                console.log(`  Baseline:  RCA=${rca.score} (${rca.reason}) | TTFA=${baselineTiming.timeToFinalAnswer}ms | Conf=${conf}`);
+                bugResult.baseline = {
+                    rca,
+                    hr,
+                    timing: baselineTiming,
+                    confidence: conf,
+                    grading: { rootCauseCorrect: null, fixCorrect: null }
+                };
             }
 
             // ── Run 2: WITH AST context ──
-            console.log('  📊 Run 2: WITH AST context...');
-            let enhancedResult = null;
-            let enhancedRaw = '';
-            try {
-                const analysis = runFullAnalysis(bug.code);
-                const astPrompt = analysis.formatted;
-                const codeWithAST = `${astPrompt}\n\n${bug.code}`;
-                enhancedRaw = await callUnravel(codeWithAST, bug.userSymptom, systemPrompt);
-                enhancedResult = parseAIJson(enhancedRaw);
-                if (!enhancedResult) console.log('  ⚠️ Enhanced: Could not parse JSON from response');
-            } catch (err) {
-                console.log(`  ❌ Enhanced failed: ${err.message}`);
+            if (!SKIP_AST) {
+                console.log('  📊 Run 2: WITH AST context...');
+                let enhancedResult = null;
+                let enhancedTiming = { timeToFirstToken: 0, timeToFinalAnswer: 0 };
+                try {
+                    const analysis = runFullAnalysis(bug.code);
+                    const astPrompt = analysis.formatted;
+                    const codeWithAST = `${astPrompt}\n\n${bug.code}`;
+                    const engineResponse = await callUnravel(codeWithAST, bug.userSymptom, systemPrompt);
+                    enhancedTiming = { timeToFirstToken: engineResponse.timeToFirstToken, timeToFinalAnswer: engineResponse.timeToFinalAnswer };
+                    enhancedResult = parseAIJson(engineResponse.raw);
+                    if (!enhancedResult) console.log('  ⚠️ Enhanced: Could not parse JSON from response');
+                } catch (err) {
+                    console.log(`  ❌ Enhanced failed: ${err.message}`);
+                }
+
+                const rca = scoreRCA(enhancedResult, bug);
+                const hr = scoreHallucinations(enhancedResult, bug.code);
+                const conf = normalizeConfidence(enhancedResult?.report?.confidence ?? null);
+
+                console.log(`  Enhanced:  RCA=${rca.score} (${rca.reason}) | TTFA=${enhancedTiming.timeToFinalAnswer}ms | Conf=${conf}`);
+                bugResult.enhanced = {
+                    rca,
+                    hr,
+                    timing: enhancedTiming,
+                    confidence: conf,
+                    grading: { rootCauseCorrect: null, fixCorrect: null }
+                };
             }
-
-            // ── Score both ──
-            const baselineRCA = scoreRCA(baselineResult, bug);
-            const enhancedRCA = scoreRCA(enhancedResult, bug);
-            const baselineHR = scoreHallucinations(baselineResult, bug.code);
-            const enhancedHR = scoreHallucinations(enhancedResult, bug.code);
-
-            console.log(`  Baseline:  RCA=${baselineRCA.score} (${baselineRCA.reason})`);
-            console.log(`  Enhanced:  RCA=${enhancedRCA.score} (${enhancedRCA.reason})`);
-            console.log(`  Baseline HR: ${(baselineHR.rate * 100).toFixed(1)}% (${baselineHR.hallucinated}/${baselineHR.total})`);
-            console.log(`  Enhanced HR: ${(enhancedHR.rate * 100).toFixed(1)}% (${enhancedHR.hallucinated}/${enhancedHR.total})`);
 
             results.push({
                 id: bug.id,
                 category: bug.bugCategory,
                 difficulty: bug.difficulty,
-                baseline: { rca: baselineRCA, hr: baselineHR },
-                enhanced: { rca: enhancedRCA, hr: enhancedHR },
+                ...bugResult
             });
 
         } catch (outerErr) {
@@ -368,30 +421,44 @@ async function run() {
     console.log('  RESULTS SUMMARY');
     console.log('═══════════════════════════════════════════════════\n');
 
-    const baselineTotal = results.reduce((sum, r) => sum + r.baseline.rca.score, 0);
-    const enhancedTotal = results.reduce((sum, r) => sum + r.enhanced.rca.score, 0);
-    const baselineHRAvg = results.reduce((sum, r) => sum + r.baseline.hr.rate, 0) / results.length;
-    const enhancedHRAvg = results.reduce((sum, r) => sum + r.enhanced.hr.rate, 0) / results.length;
+    let baselineTotal = 0, enhancedTotal = 0;
+    let baselineHRAvg = 0, enhancedHRAvg = 0;
+
+    if (!SKIP_BASELINE) {
+        baselineTotal = results.reduce((sum, r) => sum + (r.baseline?.rca?.score || 0), 0);
+        baselineHRAvg = results.reduce((sum, r) => sum + (r.baseline?.hr?.rate || 0), 0) / results.length;
+    }
+    if (!SKIP_AST) {
+        enhancedTotal = results.reduce((sum, r) => sum + (r.enhanced?.rca?.score || 0), 0);
+        enhancedHRAvg = results.reduce((sum, r) => sum + (r.enhanced?.hr?.rate || 0), 0) / results.length;
+    }
 
     console.log('Bug                          | Baseline RCA | Enhanced RCA | Delta');
     console.log('-----------------------------|-------------|-------------|------');
     for (const r of results) {
-        const delta = r.enhanced.rca.score - r.baseline.rca.score;
-        const deltaStr = delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1);
+        const bScore = r.baseline?.rca?.score ?? 0;
+        const eScore = r.enhanced?.rca?.score ?? 0;
+        const delta = eScore - bScore;
+        const deltaStr = SKIP_BASELINE || SKIP_AST ? 'N/A' : (delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1));
+        const bStr = SKIP_BASELINE ? 'SKIP' : bScore.toFixed(1);
+        const eStr = SKIP_AST ? 'SKIP' : eScore.toFixed(1);
         console.log(
-            `${r.id.padEnd(29)}| ${r.baseline.rca.score.toFixed(1).padEnd(12)}| ${r.enhanced.rca.score.toFixed(1).padEnd(12)}| ${deltaStr}`
+            `${r.id.padEnd(29)}| ${bStr.padEnd(12)}| ${eStr.padEnd(12)}| ${deltaStr}`
         );
     }
 
     console.log('-----------------------------|-------------|-------------|------');
+
+    const bTotalStr = SKIP_BASELINE ? 'SKIP' : `${(baselineTotal / results.length * 100).toFixed(0)}%`;
+    const eTotalStr = SKIP_AST ? 'SKIP' : `${(enhancedTotal / results.length * 100).toFixed(0)}%`;
+    const dTotalStr = SKIP_BASELINE || SKIP_AST ? 'N/A' : `+${((enhancedTotal - baselineTotal) / results.length * 100).toFixed(0)}%`;
+
     console.log(
-        `${'TOTAL'.padEnd(29)}| ${(baselineTotal / results.length * 100).toFixed(0)}%`.padEnd(43) +
-        `| ${(enhancedTotal / results.length * 100).toFixed(0)}%`.padEnd(14) +
-        `| +${((enhancedTotal - baselineTotal) / results.length * 100).toFixed(0)}%`
+        `${'TOTAL'.padEnd(29)}| ${bTotalStr.padEnd(12)}| ${eTotalStr.padEnd(12)}| ${dTotalStr}`
     );
 
-    console.log(`\nBaseline Hallucination Rate: ${(baselineHRAvg * 100).toFixed(1)}%`);
-    console.log(`Enhanced Hallucination Rate: ${(enhancedHRAvg * 100).toFixed(1)}%`);
+    if (!SKIP_BASELINE) console.log(`\nBaseline Hallucination Rate: ${(baselineHRAvg * 100).toFixed(1)}%`);
+    if (!SKIP_AST) console.log(`Enhanced Hallucination Rate: ${(enhancedHRAvg * 100).toFixed(1)}%`);
 
     console.log('\n═══════════════════════════════════════════════════');
 
@@ -401,11 +468,11 @@ async function run() {
         provider: PROVIDER,
         model: MODEL,
         summary: {
-            baselineRCA: `${(baselineTotal / results.length * 100).toFixed(0)}%`,
-            enhancedRCA: `${(enhancedTotal / results.length * 100).toFixed(0)}%`,
-            rcaDelta: `+${((enhancedTotal - baselineTotal) / results.length * 100).toFixed(0)}%`,
-            baselineHR: `${(baselineHRAvg * 100).toFixed(1)}%`,
-            enhancedHR: `${(enhancedHRAvg * 100).toFixed(1)}%`,
+            baselineRCA: SKIP_BASELINE ? 'SKIP' : `${(baselineTotal / results.length * 100).toFixed(0)}%`,
+            enhancedRCA: SKIP_AST ? 'SKIP' : `${(enhancedTotal / results.length * 100).toFixed(0)}%`,
+            rcaDelta: SKIP_BASELINE || SKIP_AST ? 'N/A' : `+${((enhancedTotal - baselineTotal) / results.length * 100).toFixed(0)}%`,
+            baselineHR: SKIP_BASELINE ? 'SKIP' : `${(baselineHRAvg * 100).toFixed(1)}%`,
+            enhancedHR: SKIP_AST ? 'SKIP' : `${(enhancedHRAvg * 100).toFixed(1)}%`,
         },
         bugs: results,
     };
