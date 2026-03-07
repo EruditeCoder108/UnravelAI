@@ -25,7 +25,7 @@ Unravel has three codebases that share one core engine:
 
 ### 1. The Shared Core Engine (`unravel-v3/src/core/`)
 
-Six files with **zero browser or React dependencies**:
+Six files (plus one additive cross-file layer) with **zero browser or React dependencies**:
 
 | File | Purpose |
 |------|---------|
@@ -35,6 +35,7 @@ Six files with **zero browser or React dependencies**:
 | `orchestrate.js` | The main pipeline: gathers AST facts → builds prompt → calls LLM → parses response → validates. Handles `checkFileCompleteness`, self-healing context (`onMissingFiles` recursion, depth 2), stamps `_provenance` on every result, and runs `verifyClaims()` to flag hallucinated line/file references |
 | `provider.js` | API caller for Anthropic, Google, and OpenAI with retry and error handling |
 | `parse-json.js` | Robust JSON extractor that handles markdown-wrapped responses, partial JSON, LLM formatting quirks, and **truncated JSON repair** (closes open braces/brackets when LLM hits token limit) |
+| `ast-project.js` | Cross-file AST resolution: builds module map (imports/exports), resolves symbol origins, expands mutation chains across files, emits deterministic risk signals (`cross_file_mutation`, `async_state_race`, `unawaited_promise`) |
 
 ### 2. The Web App (`unravel-v3/`)
 
@@ -75,7 +76,7 @@ The core engine files live in `unravel-v3/src/core/`. An **exact copy** lives in
 
 **If you update ANY file in `unravel-v3/src/core/`, you MUST copy that exact file to `unravel-vscode/src/core/`.** There are NO VS Code-specific adaptations in the copy — they are raw duplicates.
 
-The 6 files to sync: `index.js`, `config.js`, `ast-engine.js`, `orchestrate.js`, `provider.js`, `parse-json.js`.
+The 7 files to sync: `index.js`, `config.js`, `ast-engine.js`, `orchestrate.js`, `provider.js`, `parse-json.js`, `ast-project.js`.
 
 **Sync guard script:** Run `bash scripts/sync-core.sh` before every VSIX build — it copies all 6 files from `unravel-v3/src/core/` → `unravel-vscode/src/core/` ensuring they stay identical.
 

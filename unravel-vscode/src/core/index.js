@@ -30,6 +30,9 @@ export {
 // AST pre-analysis engine
 export { runFullAnalysis, runMultiFileAnalysis } from './ast-engine.js';
 
+// Cross-file AST resolution
+export { runCrossFileAnalysis, buildModuleMap, resolveSymbolOrigins, expandMutationChains, emitRiskSignals, buildCallGraph, selectFilesByGraph } from './ast-project.js';
+
 // Robust AI JSON parser
 export { parseAIJson } from './parse-json.js';
 

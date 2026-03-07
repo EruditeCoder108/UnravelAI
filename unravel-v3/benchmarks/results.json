@@ -1,77 +1,32 @@
 {
-  "timestamp": "2026-03-07T15:24:08.890Z",
+  "timestamp": "2026-03-07T16:55:15.086Z",
   "provider": "google",
   "model": "gemini-2.5-flash",
   "summary": {
     "baselineRCA": "100%",
-    "enhancedRCA": "100%",
-    "rcaDelta": "+0%",
-    "baselineHR": "3.6%",
-    "enhancedHR": "5.0%"
+    "enhancedRCA": "0%",
+    "rcaDelta": "+-100%",
+    "baselineHR": "30.8%",
+    "enhancedHR": "0.0%"
   },
   "bugs": [
     {
-      "id": "timer_state_mutation",
+      "id": "cross_file_state_mutation",
       "category": "STATE_MUTATION",
-      "difficulty": "medium",
+      "difficulty": "hard",
       "baseline": {
         "rca": {
           "score": 1,
           "reason": "Exact match: correct variable, line, and category"
         },
         "hr": {
-          "hallucinated": 0,
-          "total": 7,
-          "rate": 0
+          "hallucinated": 4,
+          "total": 13,
+          "rate": 0.3076923076923077
         },
         "timing": {
-          "timeToFirstToken": 99468,
-          "timeToFinalAnswer": 99468
-        },
-        "confidence": 5,
-        "grading": {
-          "rootCauseCorrect": null,
-          "fixCorrect": null
-        }
-      },
-      "enhanced": {
-        "rca": {
-          "score": 1,
-          "reason": "Match: correct variable + category/line + cause description"
-        },
-        "hr": {
-          "hallucinated": 1,
-          "total": 10,
-          "rate": 0.1
-        },
-        "timing": {
-          "timeToFirstToken": 68584,
-          "timeToFinalAnswer": 68584
-        },
-        "confidence": 0.9,
-        "grading": {
-          "rootCauseCorrect": null,
-          "fixCorrect": null
-        }
-      }
-    },
-    {
-      "id": "parallel_fetch_race",
-      "category": "RACE_CONDITION",
-      "difficulty": "hard",
-      "baseline": {
-        "rca": {
-          "score": 1,
-          "reason": "Match: correct variable + category/line + cause description"
-        },
-        "hr": {
-          "hallucinated": 1,
-          "total": 14,
-          "rate": 0.07142857142857142
-        },
-        "timing": {
-          "timeToFirstToken": 47960,
-          "timeToFinalAnswer": 47960
+          "timeToFirstToken": 85263,
+          "timeToFinalAnswer": 85263
         },
         "confidence": 0.9,
         "grading": {
@@ -81,19 +36,19 @@
       },
       "enhanced": {
         "rca": {
-          "score": 1,
-          "reason": "Match: correct variable + category/line + cause description"
+          "score": 0,
+          "reason": "No report produced"
         },
         "hr": {
           "hallucinated": 0,
-          "total": 10,
+          "total": 0,
           "rate": 0
         },
         "timing": {
-          "timeToFirstToken": 52475,
-          "timeToFinalAnswer": 52475
+          "timeToFirstToken": 0,
+          "timeToFinalAnswer": 0
         },
-        "confidence": 5,
+        "confidence": null,
         "grading": {
           "rootCauseCorrect": null,
           "fixCorrect": null

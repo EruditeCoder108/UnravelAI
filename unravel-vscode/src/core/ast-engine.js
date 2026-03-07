@@ -23,7 +23,7 @@ const TIMING_APIS = new Set([
 // Safely parse JS/JSX/TS into a Babel AST
 // ═══════════════════════════════════════════════════
 
-function parseCode(code) {
+export function parseCode(code) {
     try {
         return parser.parse(code, {
             sourceType: 'module',

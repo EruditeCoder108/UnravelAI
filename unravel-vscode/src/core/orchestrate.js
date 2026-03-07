@@ -13,6 +13,7 @@ import {
     buildDynamicSchema, buildDynamicSchemaInstruction,
 } from './config.js';
 import { runMultiFileAnalysis } from './ast-engine.js';
+import { runCrossFileAnalysis } from './ast-project.js';
 import { parseAIJson } from './parse-json.js';
 import { callProvider } from './provider.js';
 
@@ -85,6 +86,21 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         }
     }
     onProgress?.({ stage: 'ast', label: 'AST Pre-Analysis', complete: true, elapsed: elapsed() });
+
+    // ── Phase 1b: Cross-File AST Resolution ──
+    let crossFileRaw = null;
+    if (jsFiles.length >= 2 && astRaw) {
+        try {
+            const crossFile = runCrossFileAnalysis(jsFiles, astRaw);
+            if (crossFile.formatted) {
+                astContext += '\n' + crossFile.formatted;
+                crossFileRaw = crossFile.raw;
+                console.log('[AST] Cross-file context added:', crossFile.formatted);
+            }
+        } catch (cfErr) {
+            console.warn('[AST] Cross-file analysis failed, proceeding without:', cfErr.message);
+        }
+    }
 
     // Prepend input warnings to AST context so the model sees them
     if (contextWarnings.length > 0) {
@@ -266,9 +282,9 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     result._mode = mode;
     result._sections = sections;
     result._provenance = {
-        engineVersion: '3.2',
-        astVersion: '2.1',
-        routerStrategy: 'llm-heuristic', // becomes 'graph-frontier' in Phase 4B
+        engineVersion: '3.3',
+        astVersion: '2.2',
+        routerStrategy: crossFileRaw ? 'graph-frontier' : 'llm-heuristic',
         model: options.model || 'unknown',
         provider: options.provider || 'unknown',
         timestamp: new Date().toISOString(),

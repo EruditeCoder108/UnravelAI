@@ -22,7 +22,7 @@ if [ ! -d "$VSCODE_CORE" ]; then
 fi
 
 # Files that should be identical between the two projects
-CORE_FILES=("config.js" "provider.js" "ast-engine.js" "orchestrate.js" "parse-json.js" "index.js")
+CORE_FILES=("config.js" "provider.js" "ast-engine.js" "orchestrate.js" "parse-json.js" "index.js" "ast-project.js")
 
 for file in "${CORE_FILES[@]}"; do
   if [ -f "$V3_CORE/$file" ]; then
