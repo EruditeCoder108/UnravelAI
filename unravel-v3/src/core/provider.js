@@ -57,10 +57,19 @@ export async function callProvider({ provider, apiKey, model, systemPrompt, user
             body.generationConfig.responseSchema = responseSchema;
         }
     } else if (provider === 'anthropic') {
-        url = prov.endpoint;
-        headers = prov.headers(apiKey);
-        // Schema instruction is already in userPrompt (appended by orchestrate.js)
-        body = prov.buildBody(model, systemPrompt, userPrompt);
+        // In browser: route through Netlify Function proxy to avoid CORS
+        // In Node.js (VS Code): call Anthropic directly
+        const isBrowser = typeof window !== 'undefined';
+        if (isBrowser) {
+            url = '/api/anthropic';
+            headers = { 'Content-Type': 'application/json' };
+            body = prov.buildBody(model, systemPrompt, userPrompt);
+            body._apiKey = apiKey; // Proxy extracts this and forwards as x-api-key header
+        } else {
+            url = prov.endpoint;
+            headers = prov.headers(apiKey);
+            body = prov.buildBody(model, systemPrompt, userPrompt);
+        }
     } else if (provider === 'openai') {
         url = prov.endpoint;
         headers = prov.headers(apiKey);

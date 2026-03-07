@@ -9,10 +9,22 @@ export {
     BUG_TAXONOMY,
     LEVELS,
     LANGUAGES,
-    buildSystemPrompt,
+    buildSystemPrompt,      // backward-compat alias for buildDebugPrompt
+    buildDebugPrompt,
+    buildExplainPrompt,
+    buildSecurityPrompt,
     buildRouterPrompt,
     ENGINE_SCHEMA,
     ENGINE_SCHEMA_INSTRUCTION,
+    EXPLAIN_SCHEMA,
+    EXPLAIN_SCHEMA_INSTRUCTION,
+    SECURITY_SCHEMA,
+    SECURITY_SCHEMA_INSTRUCTION,
+    SECTION_REGISTRY,
+    PRESETS,
+    buildDynamicSchema,
+    buildDynamicSchemaInstruction,
+    estimateRuntime,
 } from './config.js';
 
 // AST pre-analysis engine

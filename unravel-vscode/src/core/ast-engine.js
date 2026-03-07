@@ -409,15 +409,26 @@ export function runMultiFileAnalysis(files) {
             failedFiles.push(file.name);
             continue;
         }
-        totalParsed++;
-
-        // Extract per-file analysis
-        const mutations = extractMutationChains(ast);
-        const closures = trackClosureCaptures(ast);
-        const timing = findTimingNodes(ast);
 
         // Get short filename for prefixing (e.g. "UnitDisplay.ts")
         const shortName = file.name.split(/[\\/]/).pop();
+
+        // Wrap per-file analysis in try/catch — Babel traverse can crash on
+        // exotic syntax (e.g. TypeScript decorators, enum merging) even when
+        // parsing succeeds with errorRecovery: true
+        let mutations, closures, timing;
+        try {
+            mutations = extractMutationChains(ast);
+            closures = trackClosureCaptures(ast);
+            timing = findTimingNodes(ast);
+        } catch (analysisErr) {
+            console.warn(`[AST] Analysis failed for ${shortName}:`, analysisErr.message);
+            totalFailed++;
+            failedFiles.push(shortName);
+            continue;
+        }
+
+        totalParsed++;
 
         // Merge mutations — prefix variable names with filename for cross-file clarity
         for (const [varName, data] of Object.entries(mutations)) {
