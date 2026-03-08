@@ -376,9 +376,19 @@ export function runFullAnalysis(code) {
         };
     }
 
-    const mutations = extractMutationChains(ast);
-    const closures = trackClosureCaptures(ast);
-    const timing = findTimingNodes(ast);
+    // Run each analysis independently — same pattern as runMultiFileAnalysis
+    let mutations = {};
+    let closures = {};
+    let timing = [];
+
+    try { mutations = extractMutationChains(ast); }
+    catch (e) { console.warn('[AST] Mutation analysis failed:', e.message); }
+
+    try { closures = trackClosureCaptures(ast); }
+    catch (e) { console.warn('[AST] Closure analysis failed:', e.message); }
+
+    try { timing = findTimingNodes(ast); }
+    catch (e) { console.warn('[AST] Timing analysis failed:', e.message); }
 
     const formatted = formatAnalysis(mutations, closures, timing);
 

@@ -210,7 +210,7 @@ function MermaidChart({ chart, caption }) {
             // mermaid.run returns a promise — catch render errors silently
             if (result && typeof result.catch === 'function') {
                 result.catch(err => {
-                    console.warn('[MERMAID] Chart render failed:', err);
+                    console.warn('[MERMAID] Chart render failed:', err?.message || err);
                     if (ref.current) {
                         ref.current.innerHTML = '<p style="color:#666;font-size:12px;font-family:monospace">⚠️ Chart could not be rendered</p>';
                     }
@@ -585,8 +585,11 @@ export default function App() {
                     }
                 },
                 onPartialResult: (partial) => {
-                    // Progressive rendering: show sections as they arrive
-                    setReport(prev => prev ? { ...prev, ...partial, _streaming: true } : { ...partial, _streaming: true });
+                    // Progressive rendering: unwrap nested report (same as final handler)
+                    // LLM returns { report: { rootCause: ..., evidence: ... } }
+                    // but the UI expects flat { rootCause: ..., evidence: ... }
+                    const reportData = partial.report || partial;
+                    setReport(prev => prev ? { ...prev, ...reportData, _streaming: true } : { ...reportData, _streaming: true });
                     if (step !== 5) {
                         setViewMode('all');
                         setStep(5);

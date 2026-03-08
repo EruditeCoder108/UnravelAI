@@ -11,9 +11,10 @@
 /**
  * Parse JSON from an AI response string.
  * @param {string} text - Raw text from the LLM response.
+ * @param {boolean} [isStreaming=false] - If true, suppress expected intermediate parse failure warnings.
  * @returns {object|null} Parsed JSON object, or null if parsing fails.
  */
-export function parseAIJson(text) {
+export function parseAIJson(text, isStreaming = false) {
     if (!text) return null;
 
     // 1. Direct parse — response is already clean JSON
@@ -58,14 +59,16 @@ export function parseAIJson(text) {
         try {
             const parsed = JSON.parse(repaired);
             if (parsed && typeof parsed === 'object') {
-                console.warn('[parseAIJson] Recovered truncated JSON via repair.');
+                if (!isStreaming) console.warn('[parseAIJson] Recovered truncated JSON via repair.');
                 return parsed;
             }
         } catch { }
     }
 
-    // If we get here, nothing parsed. Log what we received for debugging.
-    console.warn('[parseAIJson] Failed to parse. Raw text preview:', typeof text === 'string' ? text.slice(0, 500) : typeof text);
+    // If we get here, nothing parsed. Log only for non-streaming (final parse) calls.
+    if (!isStreaming) {
+        console.warn('[parseAIJson] Failed to parse. Raw text preview:', typeof text === 'string' ? text.slice(0, 500) : typeof text);
+    }
 
     return null;
 }

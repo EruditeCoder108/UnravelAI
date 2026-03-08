@@ -191,6 +191,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         let streamBuffer = '';
         let chunkCounter = 0;
         let lastHash = '';
+        let lastGoodPartial = {}; // Accumulate last-known-good parsed data
 
         raw = await callProviderStreaming({
             provider,
@@ -209,7 +210,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
                 if (!shouldParse) return;
 
                 try {
-                    const partial = parseAIJson(streamBuffer);
+                    const partial = parseAIJson(streamBuffer, true); // isStreaming=true suppresses warnings
                     if (!partial) return;
 
                     // Dedup: only emit when content actually changes
@@ -232,8 +233,10 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
                     }
 
                     if (Object.keys(safePartial).length > 0) {
-                        safePartial._streaming = true;
-                        onPartialResult(safePartial);
+                        // Merge into last-known-good and emit
+                        lastGoodPartial = { ...lastGoodPartial, ...safePartial };
+                        lastGoodPartial._streaming = true;
+                        onPartialResult(lastGoodPartial);
                     }
                 } catch {
                     // Parse failure during streaming is expected — buffer is still incomplete
