@@ -656,6 +656,22 @@ function buildReportHTML(report, fileName, mode) {
     .action-btn:hover { background: rgba(34,197,94,0.2); }
     .action-btn-magenta { border-color: #ff00ff; background: rgba(255,0,255,0.06); color: #ff00ff; }
     .action-btn-magenta:hover { background: rgba(255,0,255,0.15); }
+
+    /* Streaming */
+    .streaming-indicator {
+        background: linear-gradient(90deg, rgba(204,255,0,0.1), rgba(0,255,255,0.1), rgba(204,255,0,0.1));
+        background-size: 200% 100%;
+        animation: streamPulse 2s ease-in-out infinite;
+        border: 1px solid rgba(204,255,0,0.3);
+        border-radius: 6px;
+        padding: 10px 16px;
+        margin: 16px 0;
+        display: flex;
+        font-family: 'Consolas', monospace;
+        font-size: 12px;
+        color: #ccff00;
+    }
+    @keyframes streamPulse { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 </style>
 </head>
 <body>
@@ -667,6 +683,8 @@ function buildReportHTML(report, fileName, mode) {
     <h1 style="color:#fff">${esc(modeLabel)}</h1>
     <p class="file-path">${esc(fileName)}</p>
 </div>
+
+${r._streaming ? `<div class="streaming-indicator">⏳ Sections appearing as they generate...</div>` : ''}
 
 ${contentHTML}
 

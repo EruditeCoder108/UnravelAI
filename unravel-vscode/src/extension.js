@@ -168,9 +168,16 @@ async function analyzeCurrentFile(forcedMode) {
                 }
             },
             onMissingFiles,
+            onPartialResult: (partialResult) => {
+                // Ensure mode is set so rendering knows how to format
+                partialResult._mode = mode;
+                // Add streaming flag to display the pulse indicator
+                partialResult._streaming = true;
+                showReportPanel(partialResult, fileName);
+            }
         });
 
-        // ── Cache _mode on result so sidebar knows how to render ──
+        // ── Cache _mode on final result so sidebar knows how to render ──
         if (result) result._mode = mode;
 
         // ── Log the raw result ──

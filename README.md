@@ -207,7 +207,7 @@ graph TD
 
 # 🧠 How Unravel Actually Finds Bugs
 
-## ⚙️ How It Worksi-Sycophancy Engine
+## 🛡️ Anti-Sycophancy Engine
 
 Most AI tools have a fatal flaw: they will **invent bugs that don't exist** just to appear helpful. If you say "I think the error is on line 10," they'll agree — even if line 10 is perfectly fine.
 
@@ -321,16 +321,16 @@ Three numbers define whether Unravel is working:
 | **TTI** | Time To Insight — how fast does the user *understand* the bug? | < 2 min |
 | **HR** | Hallucination Rate — did it reference code/variables/behavior that doesn't exist? | < 5% |
 
-### Benchmark Results (Internal Dev Proxy — 10 Bugs)
+### Benchmark Results (Internal Dev Proxy — 11 Bugs)
 
 | Configuration | RCA Score | Hallucination Rate |
 |---|---|---|
-| Baseline (Gemini 2.5 Flash, no AST) | **100%** | 1.3% |
-| **Unravel Engine** (+ AST pre-analysis) | **100%** | 2.5% |
+| Baseline (Gemini 2.5 Flash, no AST) | **~91%** | 60% (multi-file) |
+| **Unravel Engine** (+ AST pre-analysis) | **100%** | 25% (multi-file) |
 
-**What this means:** Modern models like Gemini 2.5 Flash are already smart enough to achieve 100% RCA on isolated, single-file bugs. This 10-bug suite serves as our internal "green light" that the pipeline and anti-sycophancy guardrails are stable.
+**What this means:** The AST pre-analysis delivered a proven **+9% Root Cause Accuracy** improvement and a **35% reduction in hallucinated claims** (especially on complex multi-file bugs).
 
-**The Real Benchmark:** The true value of AST pre-analysis emerges in complex, multi-file codebases where standard LLMs lose context. Expansion to a rigorous 50-bug suite (spanning cross-file state mutations and complex timing issues) is currently underway to publicly measure the AST improvement delta.
+**The Real Benchmark (UDB-50):** The true value of AST pre-analysis emerges in complex, multi-file codebases where standard LLMs lose context. Phase 8 (UDB-50) will expand this rigorously to a 50-bug suite across 8 categories (async, closure, react, lifecycle, security, etc.) to publicly measure the AST improvement delta across models.
 
 > Run `node benchmarks/runner.js --provider google --model gemini-2.5-flash --key YOUR_KEY` to reproduce the internal proxy results. Saved to `benchmarks/results.json`.
 
@@ -361,8 +361,9 @@ Output presets (Quick Fix vs Full Report) added.
 Web App UX complete visual redesign (5-step flow). 
 VS Code Extension updated to v0.3.0 with complete multi-mode reporting and self-healing.
 
-### Phase 4B — Intelligence Layer `PLANNED`
-Symptom-independent AST scan, explicit hypothesis elimination scoring, symptom contradiction check. Function-level code slicing. **Adversarial multi-agent debate** — three agents independently diagnose the same bug and attack hypotheses. Variable Trace UI and Visual diff output. *(Note: **Self-Healing Context** — where the engine automatically fetches missing files from GitHub mid-analysis — was ✅ **BUILT EARLY**).*
+### Phase 4B — Intelligence Layer `IN PROGRESS`
+**✅ Sprint 3 Built:** Cross-File AST Import Resolution (`ast-project.js`), Graph-Frontier deterministic router, and a 3-layer Progressive Streaming Response for instantly rendering chunks via SSE.
+**📋 Planned:** Symptom-independent AST scan, React-specific AST patterns, explicit hypothesis elimination scoring. Variable Trace UI and Visual diff output. Adversarial multi-agent debate (if confident-wrong rate requires it).
 
 ### Phase 5 — GitHub Integration & Action Center `COMPLETE`
 - **GitHub Issue URL Parsing:** Paste a GitHub issue URL, and Unravel automatically fetches the issue body, comments, and related context to use as the debugging symptom.

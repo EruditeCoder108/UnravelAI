@@ -32,16 +32,17 @@ Six files (plus one additive cross-file layer) with **zero browser or React depe
 | `index.js` | Barrel export — single entry point for all core modules |
 | `config.js` | Providers, API models, bug taxonomy (12 primary + extensible `secondaryTags`), `buildDebugPrompt()`, `buildExplainPrompt()`, `buildSecurityPrompt()`, `buildRouterPrompt()`, `ENGINE_SCHEMA`, `EXPLAIN_SCHEMA`, `SECURITY_SCHEMA`, `buildSectionSchema()`, `estimateRuntime()` |
 | `ast-engine.js` | Deterministic static analysis using `@babel/parser` + `@babel/traverse`. Produces variable mutation chains, closure captures, and timing/async node maps |
-| `orchestrate.js` | The main pipeline: gathers AST facts → builds prompt → calls LLM → parses response → validates. Handles `checkFileCompleteness`, self-healing context (`onMissingFiles` recursion, depth 2), stamps `_provenance` on every result, and runs `verifyClaims()` to flag hallucinated line/file references |
-| `provider.js` | API caller for Anthropic, Google, and OpenAI with retry and error handling |
+| `orchestrate.js` | The main pipeline: gathers AST facts → builds prompt → calls LLM → parses response → validates. Handles progressive chunk-count parsing for streaming. Handles `checkFileCompleteness`, self-healing context (`onMissingFiles` recursion, depth 2), stamps `_provenance` on every result, and runs `verifyClaims()` to flag hallucinated line/file references |
+| `provider.js` | API caller for Anthropic, Google, and OpenAI with retry, error handling, and `callProviderStreaming()` for SSE |
 | `parse-json.js` | Robust JSON extractor that handles markdown-wrapped responses, partial JSON, LLM formatting quirks, and **truncated JSON repair** (closes open braces/brackets when LLM hits token limit) |
-| `ast-project.js` | Cross-file AST resolution: builds module map (imports/exports), resolves symbol origins, expands mutation chains across files, emits deterministic risk signals (`cross_file_mutation`, `async_state_race`, `unawaited_promise`) |
+| `ast-project.js` | Cross-file AST resolution and Graph Router: builds module map (imports/exports), resolves symbol origins, expands mutation chains across files, emits deterministic risk signals (`cross_file_mutation`, `async_state_race`, `unawaited_promise`). Also includes `buildCallGraph` and `selectFilesByGraph` for BFS deterministic file selection |
 
 ### 2. The Web App (`unravel-v3/`)
 
 A React application built with **Vite**. Key file: `src/App.jsx` (~1700 lines).
 
 - **Five-step UX flow**: Input (Paste/Upload/GitHub) → Mode (Debug/Explain/Security) → Configure (preset + sections) → Describe → Report
+- **Progressive Streaming**: Uses `onPartialResult` callback to stream sections into the UI in real time instead of waiting for a 30s spinner.
 - **Three input methods:** Paste, Folder Upload, and GitHub URL import
 - **Router Agent:** When a project has many files, `buildRouterPrompt()` selects 5-8 relevant files *before* the main analysis runs. The web app calls the Router Agent in **two places**: once inside `fetchGitHubRepo()` (Router-first fetch, selects before downloading) and once inside `executeAnalysis()` (selects from already-uploaded files)
 - **Missing files flow:** If orchestrate detects incomplete context, it pauses and shows a UI for the user to provide additional files, then resumes
@@ -59,7 +60,7 @@ A standard VS Code extension. Key files:
 | `diagnostics.js` | VS Code diagnostic provider — creates red squiggly underlines on the root cause line |
 | `decorations.js` | Inline `🔴 ROOT CAUSE: STATE_MUTATION` text overlays on the editor |
 | `hover.js` | Hover tooltips showing the fix, confidence, and evidence when you hover over the root cause line |
-| `sidebar.js` | Full HTML report rendered in a WebView panel |
+| `sidebar.js` | Full HTML report rendered in a WebView panel (now supports progressive streaming rendering with `onPartialResult`) |
 | `core/` | **Exact copy** of the shared core engine (6 files, see above) |
 
 **Build system:** `esbuild.js` bundles everything into a single `out/extension.js` file, converting ESM (`import`/`export`) syntax from the core files into CommonJS for the VS Code runtime.
@@ -140,10 +141,12 @@ Any new analytical feature **MUST** integrate into this mode system. Do not buil
 | `buildSectionSchema()` | `config.js` | Builds a subset of ENGINE_SCHEMA based on selected output sections |
 | `estimateRuntime()` | `config.js` | Estimates analysis time based on file count and section count |
 | `callProvider()` | `provider.js` | Sends prompt to Anthropic/Google/OpenAI API with retry |
+| `callProviderStreaming()` | `provider.js` | Sends prompt for SSE streaming text generation |
+| `selectFilesByGraph()` | `ast-project.js`| Deterministic BFS file selection for the router |
 | `parseAIJson()` | `parse-json.js` | Extracts JSON from raw LLM response text (includes truncated JSON repair) |
 | `verifyClaims()` | `orchestrate.js` | Post-analysis: flags hallucinated file/line references in evidence |
 | `gatherFiles()` | `imports.js` (VS Code only) | Walks import chains from the active file |
-| `checkFileCompleteness()` | `orchestrate.js` | Detects truncated/incomplete files before analysis |
+| `checkFileCompleteness()`| `orchestrate.js` | Detects truncated/incomplete files before analysis |
 
 ---
 
