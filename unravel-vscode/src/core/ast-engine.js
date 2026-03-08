@@ -413,16 +413,46 @@ export function runMultiFileAnalysis(files) {
         // Get short filename for prefixing (e.g. "UnitDisplay.ts")
         const shortName = file.name.split(/[\\/]/).pop();
 
-        // Wrap per-file analysis in try/catch — Babel traverse can crash on
-        // exotic syntax (e.g. TypeScript decorators, enum merging) even when
-        // parsing succeeds with errorRecovery: true
-        let mutations, closures, timing;
+        // Skip files where errorRecovery produced too many errors —
+        // Babel traverse can crash on malformed AST nodes (e.g. TypeScript
+        // enums, namespaces, complex decorators that parsed with errors)
+        const astErrors = ast.errors?.length || 0;
+        if (astErrors > 20) {
+            console.warn(`[AST] Skipping ${shortName}: ${astErrors} parse errors (likely unsupported TS syntax)`);
+            totalFailed++;
+            failedFiles.push(shortName);
+            continue;
+        }
+
+        // Run each analysis independently — if one crashes on exotic TS syntax,
+        // the others may still succeed and provide partial context
+        let mutations = {};
+        let closures = {};
+        let timing = [];
+        let anySucceeded = false;
+
         try {
             mutations = extractMutationChains(ast);
+            anySucceeded = true;
+        } catch (e) {
+            console.warn(`[AST] Mutation analysis failed for ${shortName}:`, e.message);
+        }
+
+        try {
             closures = trackClosureCaptures(ast);
+            anySucceeded = true;
+        } catch (e) {
+            console.warn(`[AST] Closure analysis failed for ${shortName}:`, e.message);
+        }
+
+        try {
             timing = findTimingNodes(ast);
-        } catch (analysisErr) {
-            console.warn(`[AST] Analysis failed for ${shortName}:`, analysisErr.message);
+            anySucceeded = true;
+        } catch (e) {
+            console.warn(`[AST] Timing analysis failed for ${shortName}:`, e.message);
+        }
+
+        if (!anySucceeded) {
             totalFailed++;
             failedFiles.push(shortName);
             continue;
