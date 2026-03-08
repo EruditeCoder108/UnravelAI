@@ -26,6 +26,12 @@ unravel_blueprint.md
 vision.md
 issues.md
 small-issues.md
+ROADMAP.md
+research-analysis.txt
+
 
 # Agent Config/Skills
 .agent/
+
+#old bugs
+.old bugs for initial testing/
