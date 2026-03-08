@@ -17,7 +17,6 @@ Data flow
 Logic & edge cases
 
 Security
-
 Performance traps
 
 1️⃣ Async / Timing Bugs (10)
