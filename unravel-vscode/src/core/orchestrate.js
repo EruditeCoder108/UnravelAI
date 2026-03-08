@@ -15,7 +15,7 @@ import {
 import { runMultiFileAnalysis } from './ast-engine.js';
 import { runCrossFileAnalysis } from './ast-project.js';
 import { parseAIJson } from './parse-json.js';
-import { callProvider } from './provider.js';
+import { callProvider, callProviderStreaming } from './provider.js';
 
 /**
  * Run the full Unravel analysis pipeline.
@@ -48,6 +48,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         preset = 'full',
         outputSections = null,
         onProgress,
+        onPartialResult,
         onMissingFiles,
         _depth = 0,
     } = options;
@@ -181,16 +182,76 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
 
     const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${cappedFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 8000)}`).join('\n\n')}\n\n${symptomLabel}:\n${symptom || symptomDefault}${schemaInstruction}`;
 
-    // ── Phase 3: Call AI ──
-    const raw = await callProvider({
-        provider,
-        apiKey,
-        model,
-        systemPrompt,
-        userPrompt: enginePrompt,
-        useSchema: true,
-        responseSchema,
-    });
+    // ── Phase 3: Call AI (streaming when onPartialResult provided) ──
+    const SAFE_STREAM_FIELDS = ['rootCause', 'evidence', 'fix', 'minimalFix', 'bugType', 'confidence', 'symptom', 'codeLocation', 'whyFixWorks', 'variableState', 'timeline', 'conceptExtraction', 'whyAILooped', 'hypotheses', 'reproduction', 'aiPrompt', 'timelineEdges', 'hypothesisTree', 'aiLoopEdges', 'variableStateEdges'];
+
+    let raw;
+    if (onPartialResult) {
+        // Streaming mode: progressive JSON repair
+        let streamBuffer = '';
+        let chunkCounter = 0;
+        let lastHash = '';
+
+        raw = await callProviderStreaming({
+            provider,
+            apiKey,
+            model,
+            systemPrompt,
+            userPrompt: enginePrompt,
+            useSchema: true,
+            responseSchema,
+            onChunk: (textDelta) => {
+                streamBuffer += textDelta;
+                chunkCounter++;
+
+                // Parse when } appears or every 5 chunks
+                const shouldParse = textDelta.includes('}') || chunkCounter % 5 === 0;
+                if (!shouldParse) return;
+
+                try {
+                    const partial = parseAIJson(streamBuffer);
+                    if (!partial) return;
+
+                    // Dedup: only emit when content actually changes
+                    const hash = JSON.stringify(partial);
+                    if (hash === lastHash) return;
+                    lastHash = hash;
+
+                    // Filter to safe-to-stream fields only
+                    const safePartial = {};
+                    for (const key of SAFE_STREAM_FIELDS) {
+                        if (partial[key] !== undefined) safePartial[key] = partial[key];
+                    }
+                    // Also include nested report fields
+                    if (partial.report) {
+                        const safeReport = {};
+                        for (const key of SAFE_STREAM_FIELDS) {
+                            if (partial.report[key] !== undefined) safeReport[key] = partial.report[key];
+                        }
+                        if (Object.keys(safeReport).length > 0) safePartial.report = safeReport;
+                    }
+
+                    if (Object.keys(safePartial).length > 0) {
+                        safePartial._streaming = true;
+                        onPartialResult(safePartial);
+                    }
+                } catch {
+                    // Parse failure during streaming is expected — buffer is still incomplete
+                }
+            },
+        });
+    } else {
+        // Non-streaming mode: original behavior
+        raw = await callProvider({
+            provider,
+            apiKey,
+            model,
+            systemPrompt,
+            userPrompt: enginePrompt,
+            useSchema: true,
+            responseSchema,
+        });
+    }
 
     onProgress?.({ stage: 'parse', label: 'Parse Response', complete: false, elapsed: elapsed() });
 

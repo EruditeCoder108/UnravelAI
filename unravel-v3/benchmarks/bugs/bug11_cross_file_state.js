@@ -50,3 +50,46 @@ export function updateDisplay() {
     el.textContent = \`Count: \${getCount()}\`;
 }
 `;
+
+export const files = [
+    {
+        name: 'state.js',
+        content: `export let count = 0;
+
+export function incrementCount() {
+    count++;
+}
+
+export function getCount() {
+    return count;
+}`
+    },
+    {
+        name: 'App.js',
+        content: `import { count, incrementCount } from './state.js';
+
+function handleClick() {
+    // BUG: Direct mutation of imported binding — this creates a LOCAL copy
+    // in many bundlers, so state.js's count never changes
+    count = count + 1;  // line 7 — should use incrementCount()
+}
+
+function render() {
+    // This reads from state.js's count, which was never updated
+    const display = document.getElementById('count-display');
+    display.textContent = count;
+}
+
+setInterval(render, 100);
+document.getElementById('btn').addEventListener('click', handleClick);`
+    },
+    {
+        name: 'Display.js',
+        content: `import { getCount } from './state.js';
+
+export function updateDisplay() {
+    const el = document.getElementById('counter');
+    el.textContent = \`Count: \${getCount()}\`;
+}`
+    }
+];

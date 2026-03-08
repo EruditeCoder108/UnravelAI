@@ -2,7 +2,9 @@
    UNRAVEL v3 — Neo-Brutalist Design System
    ═══════════════════════════════════════════════════ */
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -45,11 +47,25 @@ body {
 }
 
 /* Brutal design tokens */
-.brutal-border { border: 2px solid var(--border2); }
-.brutal-shadow-lime { box-shadow: 6px 6px 0px 0px var(--lime); }
-.brutal-shadow-cyan { box-shadow: 6px 6px 0px 0px var(--cyan); }
-.brutal-shadow-magenta { box-shadow: 6px 6px 0px 0px var(--magenta); }
-.brutal-shadow-white { box-shadow: 6px 6px 0px 0px white; }
+.brutal-border {
+  border: 2px solid var(--border2);
+}
+
+.brutal-shadow-lime {
+  box-shadow: 6px 6px 0px 0px var(--lime);
+}
+
+.brutal-shadow-cyan {
+  box-shadow: 6px 6px 0px 0px var(--cyan);
+}
+
+.brutal-shadow-magenta {
+  box-shadow: 6px 6px 0px 0px var(--magenta);
+}
+
+.brutal-shadow-white {
+  box-shadow: 6px 6px 0px 0px white;
+}
 
 /* Selection */
 ::selection {
@@ -58,21 +74,91 @@ body {
 }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 10px; }
-::-webkit-scrollbar-track { background: var(--bg); border-left: 1px solid #222; }
-::-webkit-scrollbar-thumb { background: #555; }
-::-webkit-scrollbar-thumb:hover { background: var(--lime); }
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+  border-left: 1px solid #222;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #555;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--lime);
+}
 
 /* Animations */
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-@keyframes slideUp { from { opacity: 0; transform: translateY(32px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
-.animate-in { animation: fadeIn 0.5s ease-out forwards; }
-.animate-slide-up { animation: slideUp 0.6s ease-out forwards; }
-.animate-pulse { animation: pulse 2s ease-in-out infinite; }
-.animate-spin { animation: spin 1s linear infinite; }
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes streamPulse {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.6s ease-out forwards;
+}
+
+.animate-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
 
 /* Button base */
 button {
@@ -87,7 +173,8 @@ button:disabled {
 }
 
 /* Input base */
-input, textarea {
+input,
+textarea {
   font-family: inherit;
   outline: none;
 }

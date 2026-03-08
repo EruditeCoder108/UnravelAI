@@ -23,7 +23,8 @@ const __dirname = dirname(__filename);
 
 // ── Dynamic Imports (ESM) ──────────────────────────
 // We import the AST engine and config from the app source
-const { runFullAnalysis } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'ast-engine.js')).href);
+const { runFullAnalysis, runMultiFileAnalysis } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'ast-engine.js')).href);
+const { runCrossFileAnalysis } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'ast-project.js')).href);
 const { buildSystemPrompt, ENGINE_SCHEMA_INSTRUCTION } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'config.js')).href);
 const { parseAIJson } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'parse-json.js')).href);
 
@@ -57,7 +58,7 @@ async function loadBugs() {
     for (const file of files) {
         const filePath = pathToFileURL(join(bugsDir, file)).href;
         const mod = await import(filePath);
-        bugs.push({ ...mod.metadata, code: mod.code, file });
+        bugs.push({ ...mod.metadata, code: mod.code, files: mod.files, file });
     }
     return bugs;
 }
@@ -366,9 +367,16 @@ async function run() {
                 let enhancedResult = null;
                 let enhancedTiming = { timeToFirstToken: 0, timeToFinalAnswer: 0 };
                 try {
-                    const analysis = runFullAnalysis(bug.code);
-                    const astPrompt = analysis.formatted;
-                    const codeWithAST = `${astPrompt}\n\n${bug.code}`;
+                    let analysisPrompt = '';
+                    if (bug.files && bug.files.length > 0) {
+                        const pf = runMultiFileAnalysis(bug.files);
+                        const cf = runCrossFileAnalysis(bug.files, pf.raw);
+                        analysisPrompt = pf.formatted + '\n' + cf.formatted;
+                    } else {
+                        const analysis = runFullAnalysis(bug.code);
+                        analysisPrompt = analysis.formatted;
+                    }
+                    const codeWithAST = `${analysisPrompt}\n\n${bug.code}`;
                     const engineResponse = await callUnravel(codeWithAST, bug.userSymptom, systemPrompt);
                     enhancedTiming = { timeToFirstToken: engineResponse.timeToFirstToken, timeToFinalAnswer: engineResponse.timeToFinalAnswer };
                     enhancedResult = parseAIJson(engineResponse.raw);

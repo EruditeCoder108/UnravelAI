@@ -1,0 +1,596 @@
+Below are 39 additional bugs, grouped by category so your dataset becomes balanced.
+
+Your current set already covers some async + state issues, so we’ll expand into:
+
+Async / timing
+
+Cross-file state
+
+Closure & scope
+
+React state bugs
+
+Resource lifecycle
+
+Data flow
+
+Logic & edge cases
+
+Security
+
+Performance traps
+
+1️⃣ Async / Timing Bugs (10)
+
+These are your strongest category.
+
+double_fetch_race
+Two fetch() calls update the same state; slower response overwrites newer one.
+
+promise_chain_missing_return
+then() handler forgets to return promise → next step runs too early.
+
+async_loop_order_bug
+Using forEach(async ...) instead of for...of await.
+
+interval_cleanup_missing
+setInterval continues after component unmount.
+
+debounce_timer_leak
+Multiple timers accumulate because previous timer not cleared.
+
+event_listener_async_race
+Async handler modifies state after component unmount.
+
+promise_all_partial_failure
+Promise.all rejects early but code assumes all completed.
+
+setTimeout_stale_state
+Timeout callback reads outdated state.
+
+retry_logic_parallel_bug
+Retry loop fires parallel requests instead of sequential.
+
+async_error_swallowed
+try/catch around async function but missing await.
+
+2️⃣ Cross-File State Bugs (8)
+
+These test your module map + mutation chains.
+
+shared_config_mutation
+
+state.js exports config
+another file mutates it
+others read changed value
+
+cross_file_cache_invalidation
+
+Cache updated in one module but reader module holds stale reference.
+
+singleton_state_mutation
+
+Singleton service object mutated unexpectedly across modules.
+
+exported_array_mutation
+
+Array exported and pushed into from multiple modules.
+
+event_bus_double_subscription
+
+Two modules subscribe to the same emitter accidentally.
+
+shared_store_write_after_read
+
+Module reads store before another module writes.
+
+circular_import_state_bug
+
+Circular import causes partially initialized value.
+
+module_level_mutation
+
+Module-level variable modified during import execution.
+
+3️⃣ Closure / Scope Bugs (6)
+
+LLMs struggle with these.
+
+loop_closure_capture
+
+for(var i=0;i<5;i++){
+ setTimeout(()=>console.log(i))
+}
+
+stale_closure_state_update
+
+Closure captures outdated React state.
+
+callback_context_loss
+
+Passing method without binding loses this.
+
+nested_function_shadowing
+
+Inner function shadows outer variable.
+
+closure_memory_leak
+
+Closure holds reference to large object preventing GC.
+
+callback_reference_mutation
+
+Closure uses variable mutated after creation.
+
+4️⃣ React State Bugs (6)
+
+Very common real-world bugs.
+
+direct_state_mutation
+
+state.count++
+setState(state)
+
+missing_dependency_useEffect
+
+Dependency missing in React hook.
+
+derived_state_stale
+
+Derived state not recomputed when props change.
+
+key_mismatch_render_bug
+
+Incorrect React list key causing wrong component reuse.
+
+state_update_batch_bug
+
+Multiple state updates relying on old value.
+
+prop_mutation_bug
+
+Child mutates prop object passed from parent.
+
+5️⃣ Resource / Lifecycle Bugs (4)
+
+These simulate real production issues.
+
+file_handle_not_closed
+
+Node file handle left open.
+
+db_connection_leak
+
+Connection pool not released.
+
+event_listener_not_removed
+
+Listener accumulates over time.
+
+worker_thread_orphan
+
+Worker thread created but never terminated.
+
+6️⃣ Data Flow Bugs (3)
+
+These test reasoning across functions.
+
+parameter_misordering
+
+Function called with arguments swapped.
+
+default_value_shadowing
+
+Default parameter overrides passed value.
+
+object_reference_alias
+
+Two variables reference same object unexpectedly.
+
+7️⃣ Logic Edge Case Bugs (2)
+
+LLMs sometimes miss these.
+
+off_by_one_pagination
+
+Page calculation wrong for last page.
+
+empty_array_truthiness
+
+if(arr)
+
+instead of checking arr.length.
+
+8️⃣ Performance Trap (1)
+
+Good to include one.
+
+quadratic_loop_bug
+
+Nested loop causing accidental O(n²).
+
+What this dataset will look like
+
+Your 50-bug benchmark becomes roughly:
+
+Category	Count
+Async / timing	12
+Cross-file	9
+Closures	7
+React	7
+Resource lifecycle	4
+Data flow	4
+Logic edge cases	4
+Performance	3
+
+This distribution is excellent for testing Unravel, because your engine should outperform baseline particularly on:
+
+async bugs
+cross-file bugs
+closure bugs
+One small but important benchmark rule
+
+For each bug record:
+
+name
+files
+symptom
+expected_root_cause
+fix
+
+Example:
+
+bug: missing_await
+symptom: function returns before DB write completes
+root_cause: await missing on saveUser()
+
+That ensures objective scoring.
+
+The list is solid overall. A few honest notes before you approve it:
+
+**Strong additions:**
+- The async/timing category is your best category — 10 more bugs here directly strengthens your core proof. `async_loop_order_bug`, `setTimeout_stale_state`, and `async_error_swallowed` are particularly good because LLMs commonly misdiagnose these.
+- Cross-file additions are excellent. `circular_import_state_bug` and `exported_array_mutation` will stress-test the new AST module map in ways bug11 didn't.
+- Closure bugs are well-chosen. `loop_closure_capture` (the classic `var i` trap) is a known LLM failure mode.
+
+**Things to reconsider:**
+
+`off_by_one_pagination` and `empty_array_truthiness` — these are too easy. A modern LLM will score 1.0 baseline on both, AST won't help, and they'll just pad your easy-bug ceiling. Either drop them or replace with harder logic bugs.
+
+`security` category — you listed it in the intro but there are no security bugs in the actual list. Either add 2-3 (e.g. XSS via innerHTML, prototype pollution, unvalidated input) or remove the mention. Security is one of your 3 analysis modes — having benchmark coverage there strengthens the product story.
+
+`quadratic_loop_bug` — one performance bug is fine, but make it subtle. If it's obviously `O(n²)`, the LLM spots it immediately and the delta disappears.
+
+**My verdict:** Approve with those fixes. Drop the 2 trivial logic bugs, add 2-3 security bugs, and you'll have a genuinely credible 50-bug dataset.
+
+Great — if you structure the benchmark **like real AI research datasets**, your project will instantly look more serious. I'll give you a **clean, professional benchmark structure** that people can understand immediately.
+
+Think of it like a **mini debugging benchmark dataset**.
+
+---
+
+# 1. Recommended Repository Structure
+
+```
+unravel-benchmark/
+│
+├─ README.md
+├─ dataset.json
+│
+├─ bugs/
+│   ├─ async/
+│   │   ├─ missing_await/
+│   │   │   ├─ files/
+│   │   │   │   └─ app.js
+│   │   │   ├─ metadata.json
+│   │   │   └─ expected.json
+│   │   │
+│   │   └─ parallel_fetch_race/
+│   │
+│   ├─ cross_file/
+│   │   └─ cross_file_state_mutation/
+│   │
+│   ├─ closure/
+│   ├─ react/
+│   ├─ lifecycle/
+│   └─ logic/
+│
+└─ runner/
+    ├─ run-benchmark.js
+    ├─ scoring.js
+    └─ report.js
+```
+
+This structure is similar to how benchmarks like:
+
+```
+HumanEval
+SWE-Bench
+CodeXGLUE
+```
+
+are organized.
+
+---
+
+# 2. What Each Bug Folder Contains
+
+Example:
+
+```
+bugs/async/missing_await/
+```
+
+```
+missing_await/
+│
+├─ files/
+│   └─ app.js
+│
+├─ metadata.json
+└─ expected.json
+```
+
+---
+
+# 3. metadata.json
+
+Defines the **bug context**.
+
+Example:
+
+```json
+{
+  "id": "missing_await",
+  "category": "async",
+  "difficulty": "medium",
+  "description": "Database write is not awaited causing function to return early.",
+  "symptom": "User data sometimes not saved.",
+  "files": [
+    "app.js"
+  ]
+}
+```
+
+---
+
+# 4. expected.json
+
+Defines **what counts as a correct root cause**.
+
+Example:
+
+```json
+{
+  "root_cause_keywords": [
+    "missing await",
+    "promise not awaited",
+    "async function call without await"
+  ],
+  "files": ["app.js"],
+  "lines": [14],
+  "fix_hint": "add await before saveUser()"
+}
+```
+
+Your scoring script will check whether the model output includes:
+
+```
+correct file
+correct line
+correct concept
+```
+
+---
+
+# 5. Example Bug File
+
+`files/app.js`
+
+```javascript
+async function saveUser(user) {
+  database.insert(user);
+}
+
+async function createUser() {
+  saveUser({ name: "Alice" }); // BUG
+  return "done";
+}
+
+createUser();
+```
+
+Expected root cause:
+
+```
+missing await on saveUser()
+```
+
+---
+
+# 6. dataset.json (global index)
+
+This file lists all bugs.
+
+```json
+{
+  "bugs": [
+    "async/missing_await",
+    "async/parallel_fetch_race",
+    "async/interval_cleanup_missing",
+    "cross_file/cross_file_state_mutation",
+    "closure/loop_closure_capture",
+    "react/missing_dependency_useEffect"
+  ]
+}
+```
+
+This lets your benchmark runner easily iterate.
+
+---
+
+# 7. Runner Script
+
+`runner/run-benchmark.js`
+
+Pseudo code:
+
+```javascript
+for (const bug of dataset) {
+
+  const files = loadBugFiles(bug)
+
+  const result = await runUnravel(files)
+
+  const score = scoreResult(result, expected)
+
+  record(score)
+
+}
+```
+
+---
+
+# 8. Scoring System
+
+You already use something like **RCA score**.
+
+You can formalize it like this:
+
+| Score | Meaning            |
+| ----- | ------------------ |
+| 1.0   | Correct root cause |
+| 0.5   | Partial diagnosis  |
+| 0.0   | Incorrect          |
+
+Example:
+
+```
+"missing await in saveUser()" → 1.0
+
+"async problem somewhere" → 0.5
+
+wrong explanation → 0
+```
+
+---
+
+# 9. Extra Metric (important)
+
+Track hallucinations.
+
+Example scoring:
+
+```
+total claims
+false claims
+hallucination rate
+```
+
+Example output:
+
+```
+claims: 12
+false claims: 3
+hallucination_rate: 25%
+```
+
+This is something **most benchmarks don't measure**, which actually makes your work interesting.
+
+---
+
+# 10. Benchmark Report Format
+
+Your runner should produce something like:
+
+```
+Bug: missing_await
+Baseline RCA: 0.5
+Enhanced RCA: 1.0
+Hallucination Rate: 20%
+
+Bug: parallel_fetch_race
+Baseline RCA: 0.5
+Enhanced RCA: 1.0
+Hallucination Rate: 10%
+
+--------------------------------
+
+TOTAL BUGS: 50
+Baseline RCA: 74%
+Enhanced RCA: 86%
+Improvement: +12%
+
+Hallucination Reduction: 41% → 18%
+```
+
+This is exactly how **AI papers report results**.
+
+---
+
+# 11. README.md (benchmark)
+
+Explain the benchmark.
+
+Example:
+
+```
+Unravel Benchmark
+
+50 curated debugging bugs across categories:
+
+- async timing
+- cross-file state
+- closures
+- React state
+- resource lifecycle
+
+The benchmark measures:
+
+• Root Cause Accuracy (RCA)
+• Hallucination Rate
+• Cross-file reasoning
+
+Goal:
+Evaluate whether AST-grounded reasoning improves AI debugging reliability.
+```
+
+---
+
+# 12. What This Gives You
+
+With this structure your project becomes:
+
+```
+tool
++
+benchmark dataset
+```
+
+That is **much stronger academically**.
+
+Because people can run:
+
+```
+node run-benchmark.js
+```
+
+and reproduce results.
+
+---
+
+# 13. One Last Suggestion
+
+Name the dataset something like:
+
+```
+DebugBench-50
+```
+
+or
+
+```
+Unravel Debug Benchmark (UDB-50)
+```
+
+Having a named dataset actually **adds legitimacy**.

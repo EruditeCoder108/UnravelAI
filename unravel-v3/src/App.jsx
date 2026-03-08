@@ -584,6 +584,14 @@ export default function App() {
                         });
                     }
                 },
+                onPartialResult: (partial) => {
+                    // Progressive rendering: show sections as they arrive
+                    setReport(prev => prev ? { ...prev, ...partial, _streaming: true } : { ...partial, _streaming: true });
+                    if (step !== 5) {
+                        setViewMode('all');
+                        setStep(5);
+                    }
+                },
                 onMissingFiles: async (request) => {
                     const filesNeeded = request.filesNeeded || [];
                     if (filesNeeded.length === 0) return null;
@@ -1182,6 +1190,28 @@ export default function App() {
                                 </div>
                                 <button style={S.btnOutline} onClick={reset}>← New Analysis</button>
                             </div>
+
+                            {/* Streaming indicator */}
+                            {report._streaming && (
+                                <div style={{
+                                    background: 'linear-gradient(90deg, #ccff0022, #00ffff22, #ccff0022)',
+                                    backgroundSize: '200% 100%',
+                                    animation: 'streamPulse 2s ease-in-out infinite',
+                                    border: '1px solid #ccff0044',
+                                    borderRadius: 6,
+                                    padding: '10px 16px',
+                                    marginBottom: 20,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 10,
+                                    fontFamily: "'JetBrains Mono',monospace",
+                                    fontSize: 12,
+                                    color: '#ccff00',
+                                }}>
+                                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                                    Sections appearing as they generate...
+                                </div>
+                            )}
 
                             {/* ── Explain Mode Report ── */}
                             {analysisMode === 'explain' && (

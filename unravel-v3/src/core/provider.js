@@ -85,3 +85,122 @@ export async function callProvider({ provider, apiKey, model, systemPrompt, user
 
     return prov.parseResponse(data);
 }
+
+/**
+ * Call any supported AI provider's streaming API.
+ * Reads SSE chunks and invokes onChunk(textDelta) for each text fragment.
+ * Returns the full accumulated text when the stream ends.
+ * Falls back to callProvider() if streaming fails.
+ *
+ * @param {Object} opts - Same as callProvider plus onChunk
+ * @param {function} opts.onChunk - Called with each text delta string
+ * @returns {Promise<string>} - Full accumulated text response
+ */
+export async function callProviderStreaming({ provider, apiKey, model, systemPrompt, userPrompt, useSchema = false, responseSchema = null, onChunk }) {
+    const prov = PROVIDERS[provider];
+    if (!prov) throw new Error(`Invalid provider: ${provider}`);
+
+    try {
+        let url, headers, body;
+
+        if (provider === 'google') {
+            // Google: streamGenerateContent?alt=sse
+            url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+            headers = prov.headers();
+            body = prov.buildBody(model, systemPrompt, userPrompt);
+            if (useSchema && responseSchema) {
+                body.generationConfig.responseSchema = responseSchema;
+            }
+        } else if (provider === 'anthropic') {
+            // Anthropic: add stream: true
+            const isBrowser = typeof window !== 'undefined';
+            if (isBrowser) {
+                url = '/api/anthropic';
+                headers = { 'Content-Type': 'application/json' };
+                body = prov.buildBody(model, systemPrompt, userPrompt);
+                body._apiKey = apiKey;
+            } else {
+                url = prov.endpoint;
+                headers = prov.headers(apiKey);
+                body = prov.buildBody(model, systemPrompt, userPrompt);
+            }
+            body.stream = true;
+        } else if (provider === 'openai') {
+            url = prov.endpoint;
+            headers = prov.headers(apiKey);
+            body = prov.buildBody(model, systemPrompt, userPrompt);
+            body.stream = true;
+        } else {
+            // Unknown provider — fall back to non-streaming
+            return callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema, responseSchema });
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Stream HTTP ${response.status}`);
+        }
+
+        // Read the SSE stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulated = '';
+        let sseBuffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            sseBuffer += decoder.decode(value, { stream: true });
+
+            // Process complete SSE lines
+            const lines = sseBuffer.split('\n');
+            // Keep the last incomplete line in the buffer
+            sseBuffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const payload = line.slice(6).trim();
+                if (payload === '[DONE]') continue;
+
+                try {
+                    const parsed = JSON.parse(payload);
+                    let textDelta = '';
+
+                    if (provider === 'google') {
+                        // Google SSE: {candidates: [{content: {parts: [{text: "..."}]}}]}
+                        textDelta = parsed.candidates?.[0]?.content?.parts
+                            ?.filter(p => p.text)
+                            ?.map(p => p.text)
+                            .join('') || '';
+                    } else if (provider === 'anthropic') {
+                        // Anthropic SSE: {type: "content_block_delta", delta: {text: "..."}}
+                        if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+                            textDelta = parsed.delta.text;
+                        }
+                    } else if (provider === 'openai') {
+                        // OpenAI SSE: {choices: [{delta: {content: "..."}}]}
+                        textDelta = parsed.choices?.[0]?.delta?.content || '';
+                    }
+
+                    if (textDelta) {
+                        accumulated += textDelta;
+                        onChunk?.(textDelta);
+                    }
+                } catch {
+                    // Skip unparseable SSE lines (e.g. event types, comments)
+                }
+            }
+        }
+
+        return accumulated;
+    } catch (streamError) {
+        // Fallback: if streaming fails entirely, use non-streaming call
+        console.warn('[Provider] Streaming failed, falling back to non-streaming:', streamError.message);
+        return callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema, responseSchema });
+    }
+}

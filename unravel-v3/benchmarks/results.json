@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-03-07T16:55:15.086Z",
+  "timestamp": "2026-03-08T00:59:23.789Z",
   "provider": "google",
   "model": "gemini-2.5-flash",
   "summary": {
     "baselineRCA": "100%",
-    "enhancedRCA": "0%",
-    "rcaDelta": "+-100%",
-    "baselineHR": "30.8%",
-    "enhancedHR": "0.0%"
+    "enhancedRCA": "100%",
+    "rcaDelta": "+0%",
+    "baselineHR": "60.0%",
+    "enhancedHR": "25.0%"
   },
   "bugs": [
     {
@@ -17,16 +17,16 @@
       "baseline": {
         "rca": {
           "score": 1,
-          "reason": "Exact match: correct variable, line, and category"
+          "reason": "Match: correct variable + category/line + cause description"
         },
         "hr": {
-          "hallucinated": 4,
-          "total": 13,
-          "rate": 0.3076923076923077
+          "hallucinated": 3,
+          "total": 5,
+          "rate": 0.6
         },
         "timing": {
-          "timeToFirstToken": 85263,
-          "timeToFinalAnswer": 85263
+          "timeToFirstToken": 37728,
+          "timeToFinalAnswer": 37728
         },
         "confidence": 0.9,
         "grading": {
@@ -36,19 +36,19 @@
       },
       "enhanced": {
         "rca": {
-          "score": 0,
-          "reason": "No report produced"
+          "score": 1,
+          "reason": "Exact match: correct variable, line, and category"
         },
         "hr": {
-          "hallucinated": 0,
-          "total": 0,
-          "rate": 0
+          "hallucinated": 4,
+          "total": 16,
+          "rate": 0.25
         },
         "timing": {
-          "timeToFirstToken": 0,
-          "timeToFinalAnswer": 0
+          "timeToFirstToken": 48983,
+          "timeToFinalAnswer": 48983
         },
-        "confidence": null,
+        "confidence": 0.9,
         "grading": {
           "rootCauseCorrect": null,
           "fixCorrect": null

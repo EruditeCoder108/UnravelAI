@@ -37,7 +37,7 @@ export { runCrossFileAnalysis, buildModuleMap, resolveSymbolOrigins, expandMutat
 export { parseAIJson } from './parse-json.js';
 
 // API provider caller
-export { callProvider } from './provider.js';
+export { callProvider, callProviderStreaming } from './provider.js';
 
 // Full analysis pipeline
 export { orchestrate } from './orchestrate.js';

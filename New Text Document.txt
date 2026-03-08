@@ -1,408 +1,358 @@
-The Problem You're Solving
-Right now Unravel is like a restaurant that only has one dish. You sit down, they bring you the full thali — 12 items. You wanted just the roti and dal. You still get all 12. The cook still made all 12. Time wasted, ingredients wasted.
-Phase 4A adds a menu.
+The 500ms throttle is right but needs a tweak. Don't use setInterval — use a chunk counter instead. Fire parseAIJson every 20-30 chunks or when a } or " appears at a likely field boundary. Interval-based parsing can fire mid-token and waste cycles. Chunk-count is cheaper and more predictable.
+The Google endpoint change is the easiest win. Start there — streamGenerateContent?alt=sse is a one-line change and Google's SSE format is clean. Get that working end-to-end first before touching Anthropic or OpenAI streaming, which have slightly different SSE formats.
 
-The Three Modes — Simple Version
-🐛 Debug Mode — "Something is broken"
-Current behavior. Nothing changes here except it gets faster because you can now say "just give me the fix, skip everything else."
-🔍 Explain Mode — "I don't have a bug, I just don't understand this code"
-Imagine you joined a new company and your senior dev handed you a 3000-line codebase and said "figure it out." You'd spend days just understanding what connects to what.
-Explain Mode is that senior dev sitting next to you. You paste the code, it tells you: here's what this does, here's how data flows through it, here's the entry point, here's which component talks to which. No bug hunting. Just understanding.
-🛡️ Security Mode — "Is this code safe?"
-You've built something and want to know if a hacker could exploit it. This mode scans for things like: user input being inserted directly into HTML (XSS), passwords hardcoded in the code, API endpoints with no authentication.
-Every finding comes with a "requires human verification" warning — because a false alarm in security is worse than no alarm. It's shipped as beta precisely because of this.
 
-The Presets — Simple Version
-Before Phase 4A, every analysis gives you all 12 sections. Always. Whether you want them or not.
-After Phase 4A you pick upfront:
-⚡ Quick Fix — Just tell me the bug and how to fix it. Nothing else. Fastest, cheapest. 60% fewer tokens.
-👨‍💻 Developer — Bug + fix + variable tracker + timeline + reproduction steps. What a dev actually needs.
-📖 Full Report — Everything. Current behavior. For when you want the deep dive.
-🔧 Custom — You pick exactly which sections you want.
-This isn't just a display filter. The model literally generates less — so it responds faster and costs less API credit.
+The verification plan is missing one case — what happens when the stream produces valid partial JSON but the final parse differs from the streaming parse? E.g. the model backtracks and changes a field mid-stream. You need to assert that finalReport === streamingFinalReport on at least 3 benchmark bugs before calling it done.
 
-The "Configure First" Change — Simple Version
-Before: Cook everything → then ask what you wanted.
-After: Ask what you want → cook only that.
-Currently the engine runs the full analysis, THEN you pick how to view it. The wasted compute already happened. The new flow flips this — you pick mode and preset before clicking Analyze, so the engine only generates what you actually need.
-One other thing that changes: the Output Menu step after analysis is completely removed. Right now after the engine finishes you click through a menu to pick your view. That step disappears. Analysis finishes → report appears. One less click.
+First Small Change I Recommend
 
-The Progress Bar — Simple Version
-Right now during analysis you see one line of text that changes occasionally. That's it.
-After Phase 4A you see:
-✅ Input check          0.2s
-✅ AST Analysis         1.3s  
-🔄 AI Engine           12.4s  ← running now
-⬚  Parse response
-⬚  Final check
+Right now your plan says:
 
-⏱ 14 seconds elapsed — about 18 more seconds
-And before you even click Analyze, the button tells you: [▶ ANALYZE — est. 20-35s]
-So you know what you're getting into before you commit.
+parse every ~500ms
 
-localStorage — Simple Version
-Right now every time you open Unravel you start from scratch. Pick your provider again, pick your model again, pick your language again.
-After this, your preferences are saved in the browser. Open Unravel tomorrow — it remembers everything exactly where you left it.
+Better rule:
 
-The Implementation Approach — Simple Version
-The smart part of the plan is build the engine first, UI second.
-Most developers build the buttons and dropdowns first because it feels productive — you can see something. Then they build the engine underneath and discover it doesn't work the way the UI expected, and they have to redo the UI.
-The plan does it right: first make Debug+QuickFix produce a short JSON in the console. Make Explain Mode produce architecture output in the console. Make Security Mode produce a vulnerability list in the console. Verify all of this is working with zero UI.
-Then build the UI on top of something proven. No surprises.
+parse when new brace depth changes
 
-The One-Line Summary
-Phase 4A turns Unravel from "one dish restaurant" into "you order what you want, we make only that, and it arrives faster."how is the explain mode and security mode problem tacked in this 
-also i was wondering u said it is working good right now if u add a new mode etc etc...but that new mode would just be a UI change the engine remains same internal prompts and anti sycophacy options etc then why would it produce a different output9:11 AMParsed two technical questions about mode implementation and output consistencyParsed two technical questions about mode implementation and output consistencyThe Explain Mode Problem — How It's Tackled
-The problem I flagged was: "you wrote what you want but not how to get it."
-The new plan fixes this by writing 3 concrete example outputs first — the Kanban board, the Express API, the CLI tool. Those examples ARE the spec. When you sit down to write buildExplainPrompt() you're not guessing what good output looks like. You're looking at 3 real examples and writing instructions that would produce those exact outputs.
-It's like the difference between telling a chef "make something delicious" versus showing him three photos of exactly what the finished dish should look like. Same chef, completely different result.
-The problem isn't fully solved yet — it will be solved when you write the actual prompt by reverse engineering from those examples. The plan just puts the right preparation in place before that moment.
+Why?
 
-The Security Mode Problem — How It's Tackled
-The problem was false positives destroying trust.
-Three things in the new plan address this:
-requiresHumanReview: true is a field in the schema itself — not a UI label that can be hidden, baked into every single vulnerability object that gets returned.
-confidence field per finding — forces the model to rate how sure it is, not just what it found.
-The prompt strategy says explicitly: "If you are uncertain, classify as INFORMATIONAL, not as a vulnerability." This directly fights the model's tendency to sound confident when it shouldn't be.
-Still needs one more line in the actual prompt — I mentioned this — something like "a confident wrong finding is worse than no finding at all." That's the missing piece.
+If the model streams slowly, parsing every 500ms might repeatedly parse the same incomplete structure.
 
-Your Second Question — This Is The Important One
-You're right to question this. Let me be precise.
-You're correct that the UI is just a skin. Changing a dropdown does nothing to output. So why would different modes produce different output?
-Because the system prompt changes completely.
-Right now there is one system prompt. It says roughly: "You are Unravel, a debugging engine. Find bugs. Trace root causes. Generate hypotheses. Here are 7 anti-sycophancy rules."
-In Phase 4A, there will be three different system prompts:
-Debug prompt — current prompt, mostly unchanged. "Find the bug."
-Explain prompt — completely different instructions. "You are NOT looking for bugs. Do NOT mention bugs. Your only job is to explain what this code does and how it works. Map the architecture. Trace data flow. Identify entry points." Same anti-sycophancy rules, completely different task definition.
-Security prompt — completely different again. "You are a security auditor. Look for OWASP Top 10 vulnerabilities. Assign CWE IDs. Rate severity. If uncertain classify as INFORMATIONAL."
-Same engine. Same AST pre-analysis. Same anti-sycophancy rules. Same provider call. But the system prompt — the fundamental instructions the model receives — is completely different for each mode.
+Better trigger:
 
-Simple Analogy
-Think of the engine as a person — a very smart analyst. The system prompt is the job description you hand them before they start.
-Right now you always hand them the same job description: "You are a bug detective."
-After Phase 4A you have three job descriptions:
-"You are a bug detective" → they look for bugs.
-"You are a code tour guide" → they explain the codebase.
-"You are a security auditor" → they look for vulnerabilities.
-Same person. Same brain. Same rules about not lying or guessing. Completely different output because the job they've been asked to do is different.
-The UI change just determines which job description gets handed to them.ok but these are very generic or not so good prompts, to actually properly explain code base u need to know the bugs too, to know the bugs u gotta know the cobase too , both in varying levels but yeah, for security audit as well u need that9:15 AMExactly right. And this is actually a more sophisticated insight than what's in the plan right now.
+if buffer contains "}"
+or
+if chunk count % 5 == 0
 
-What You're Seeing
-The three modes aren't actually separate pipelines. They're the same understanding process with different output emphasis.
-To explain a codebase well you need to know:
+Example logic:
 
-Where state is mutated — because that's where bugs live and also where the architecture is most complex
-Async boundaries — because those define the timing of data flow
-Closure captures — because those define what each function actually "sees"
+buffer += chunk
 
-That's exactly what the AST already extracts. And it's exactly what Debug Mode uses to find bugs.
-To do a security audit you need to know:
+if (chunk.includes("}") || chunkCounter % 5 === 0) {
+   tryParse()
+}
 
-Where user input enters the system
-Where it gets used without sanitization
-Where auth checks happen or don't happen
-Where state mutations could be exploited
+This reduces wasted parsing attempts.
 
-Again — same information. Different question being asked about it.
+Second Important Change
 
-What This Means For The Architecture
-The modes shouldn't have separate pipelines. They should have one shared understanding phase and then a different output phase.
-Like this:
-Phase 1-4: UNDERSTAND (always runs, all modes)
-  └── AST pre-analysis
-  └── Ingest all files
-  └── Map state mutations
-  └── Trace async boundaries
-  └── Build mental model of the codebase
-  
-Phase 5+: OUTPUT (mode-specific)
-  └── Debug   → find what broke in this mental model
-  └── Explain → describe this mental model in plain language  
-  └── Security → find what's exploitable in this mental model
-The understanding is the same. The question asked at the end is different.
+You must prevent duplicate partial updates.
 
-How The Prompt Should Actually Be Written
-Instead of three completely separate prompts, it should be one prompt with a mode-specific instruction at the end.
-Roughly:
-PHASE 1-4: [identical across all modes]
-Read all provided code completely.
-Map every variable mutation, every async boundary, 
-every data flow path, every entry point.
-Build a complete mental model of this codebase.
-Do not form any conclusions yet.
+Without this guard, the UI will re-render repeatedly.
 
-PHASE 5: [mode-specific]
+Add:
 
-IF DEBUG MODE:
-Now identify what is broken. Given the mental model 
-you built, trace where the reported symptom originates.
-Generate 3 hypotheses. Eliminate using AST evidence...
+lastPartialHash
 
-IF EXPLAIN MODE:
-Now describe what you understand. Given the mental 
-model you built, explain what this code does and how 
-it works. Do NOT look for bugs or vulnerabilities.
-Describe architecture, data flow, entry points...
+Example:
 
-IF SECURITY MODE:
-Now audit what you understand. Given the mental model
-you built, identify where user input reaches the 
-system unsanitized, where auth boundaries are missing,
-where state mutations could be exploited...
-Same deep understanding phase. Mode only changes the final question.
+const parsed = parseAIJson(buffer)
 
-Why This Produces Better Output Than Three Separate Prompts
-A pure Explain Mode prompt that says "don't look for bugs" will produce a shallower explanation than one that built a full debug-level understanding first and then switched to explanation mode.
-Because to explain something deeply you have to understand it at the level of "where could this break" — even if you don't report the bugs.
-A security auditor who also understands the code's architecture will find more vulnerabilities than one who only scans for patterns. Because they know which data flows are actually reachable from user input and which ones aren't.
-The mental model built in Phase 1-4 is the same work regardless of what you're doing with it. Splitting it into three separate pipelines would mean doing that work three times differently and getting shallower results in all three modes.
+if (parsed) {
+   const hash = JSON.stringify(parsed)
 
-What Changes In The Plan
-buildExplainPrompt() and buildSecurityPrompt() shouldn't start from scratch. They should start from the same Phase 1-4 instructions as buildDebugPrompt() and diverge only at Phase 5.
-Practically: extract the shared Phase 1-4 block into a buildSharedUnderstandingPhases() function. Each mode prompt calls that first, then appends its mode-specific output instruction.
-This is about 2 hours of extra thought in 4A.1 but it produces meaningfully better output across all three modes. Worth doing before writing any prompts.ok ensure that in these prompts we are not being narrow ok , i mean u mentioned async in prompt, but prompts need to be very wide , async is a specific type of issue in specific type of code why would the system always look for it ? are these the right prompts i want you to deeply think on this9:20 AMYou're right. And this is the most important prompt engineering decision in the entire Phase 4A build.
-Let me think through this properly.
+   if (hash !== lastHash) {
+       lastHash = hash
+       onPartialResult(parsed)
+   }
+}
 
-The Problem With Specific Prompts
-If the system prompt says "look for async boundaries, closure captures, state mutations" — you've already decided what matters before seeing the code.
-What if the bug is a type coercion issue? "5" + 3 = "53". No async. No closure. No mutation. A narrowly written prompt would walk right past it.
-What if the codebase is a pure functional pipeline with no state at all? The "map state mutations" instruction produces nothing useful and wastes the model's attention on something irrelevant.
-What if the security vulnerability is a hardcoded API key on line 3? No OWASP pattern needed. No data flow analysis needed. It's just there. A prompt that says "trace user input through the system" would miss it entirely.
-Narrow prompts produce narrow diagnoses. The model is obedient — it looks for what you tell it to look for and stops there.
+This ensures you only emit new data, not the same object repeatedly.
 
-What A Wide Prompt Actually Means
-A wide prompt doesn't tell the model what kind of problem to find. It tells the model how to think — and then gets out of the way.
-The difference:
-Narrow: "Look for async boundaries, state mutations, closure captures, race conditions."
-Wide: "Read this code completely. Understand what it is trying to do. Understand what it is actually doing. Find where those two things differ."
-The second prompt works on async bugs, type coercion bugs, logic errors, off-by-one errors, wrong algorithm choices, missing edge cases — anything. Because it doesn't presuppose the category of problem.
+5. Critical Safety Rule
 
-The Right Mental Model For Each Mode
-Debug Mode — The Right Question:
-Not "what async/state/closure issues exist" but:
+Never stream before AST + prompt building finishes.
 
-"What is this code trying to do? What is it actually doing? Where exactly do those diverge?"
+Your pipeline should stay:
 
-That question is valid for every class of bug that has ever existed. The model then uses whatever lens is appropriate — async, state, type coercion, logic, data flow — because the code itself tells it which lens matters, not the prompt.
-Explain Mode — The Right Question:
-Not "describe the architecture, entry points, data flow" but:
+AST analysis
+prompt construction
+provider stream start
+partial results
+final parse
+verification
 
-"If a developer who has never seen this code needs to work on it tomorrow, what do they need to understand? What does this code do, how does it do it, and what would surprise them?"
+Streaming must start only after the AI call begins.
 
-That question produces useful explanations for a React app, a CLI tool, a backend API, a game engine, a data pipeline — anything. Because it's asking about the reader's needs, not presupposing the structure of the code.
-Security Mode — The Right Question:
-Not "check for OWASP Top 10, trace user input, look for missing auth" but:
+Do NOT stream during:
 
-"What assumptions does this code make about the people and systems that will interact with it? Where could a malicious actor violate those assumptions?"
+AST
+prompt building
+verification
 
-That question catches XSS, SQL injection, hardcoded credentials, missing rate limiting, insecure direct object references, timing attacks — the full surface. Because it's asking about trust assumptions, which is what security actually is.
+Otherwise users might see misleading results.
 
-How The Shared Phase 1-4 Should Actually Be Written
-The shared understanding phase shouldn't list specific things to look for. It should describe a process:
-PHASE 1 — READ
-Read every provided file completely before forming 
-any opinion. Do not start analyzing until you have 
-read everything. Build a complete picture.
+6. Where Partial Results Should Stop
 
-PHASE 2 — UNDERSTAND INTENT  
-For each component, function, and module: what is 
-this trying to accomplish? What problem does it solve?
-What does correct behavior look like?
+Partial streaming should only include these fields:
 
-PHASE 3 — UNDERSTAND REALITY
-What is the code actually doing? Trace execution 
-paths. Follow data as it moves. Note where behavior
-diverges from intent — even slightly.
+Safe to stream:
 
-PHASE 4 — BUILD CONTEXT
-What does each part depend on? What does each part 
-affect? How do the pieces connect? Where are the 
-boundaries between components?
-No mention of async. No mention of state. No mention of closures. Those are categories that might be relevant — or might not be. The model discovers what's relevant by reading the code, not by being told in advance.
+rootCause
+evidence
+fix
+bugType
+confidence
 
-Then The Mode-Specific Phase Diverges
-After that shared understanding, each mode asks its specific question:
-Debug:
-PHASE 5 — DIAGNOSE
-The user has reported a symptom. Given your complete 
-understanding of this code, trace where that symptom 
-originates. What is the root cause — the single change 
-that if made would make the symptom disappear?
-Generate 3 competing explanations. Test each against 
-what you read. Kill the ones the evidence contradicts.
-Explain:
-PHASE 5 — ARTICULATE  
-A developer who has never seen this code needs to 
-understand it well enough to work on it tomorrow.
-Explain what it does, how it does it, and what would
-surprise someone reading it for the first time.
-Be concrete. Use line numbers. No vague summaries.
-Security:
-PHASE 5 — AUDIT
-What does this code trust? What does it assume about
-its inputs, its callers, and its environment?
-Where could those assumptions be violated by someone
-acting with malicious intent?
-For each finding, cite the exact code that creates 
-the risk and the exact change that would remove it.
-If you are not certain something is a risk, say so.
+Do NOT stream:
 
-What The AST Does In This Model
-The AST still runs first and injects verified facts. But those facts are now framed as ground truth for the model to use however is relevant — not as a checklist of things to look for.
-Instead of:
-VERIFIED STATIC ANALYSIS
-Variable Mutation Chains: [list]
-Async / Timing Nodes: [list]  
-Closure Captures: [list]
-Frame it as:
-VERIFIED GROUND TRUTH — confirmed by static analysis
-The following facts about this code are certain.
-Use them as evidence when reasoning. Do not contradict them.
+verification results
+needsMoreInfo
+rejection flags
 
-[same data, different framing]
-The model can now use mutation chain data to find a type coercion bug if that's what's relevant. It can use timing node data to explain architecture if that's what explains it. The facts are available. The model decides which ones matter.
+Those require final validation.
 
-The One-Sentence Version
-Don't tell the model what kind of problem to look for. Tell it how to think, give it verified facts, then ask it the right question for the mode. The code tells it what's relevant. The prompt tells it how to reason and what to do with what it finds.
-That's a wide prompt. That's what produces output that works on any codebase, any bug class, any language pattern — not just the ones you thought of when writing the prompt.Great question. These two things are **very real pitfalls** in AI reasoning systems. If you handle them early, Unravel can become genuinely powerful. I’ll explain both in simple but accurate terms.
+this is **the #1 problem that breaks almost every attempt at streaming LLM JSON**.
+
+I’ll explain it clearly.
 
 ---
 
-# 1️⃣ The Extra Phase: The **Hypothesis Loop**
+# The Biggest Streaming Problem: **Incomplete JSON Objects**
 
-After your Phase 1–4 (Read → Intent → Realpastedgreat i approve but -
-Improvement 1 — Force the model to build a mental map before conclusions
-Add this rule to Phase 1-4:Do not diagnose, explain, or audit until a complete
-mental model of the codebase has been built.
+When you stream an LLM response, the model does **not output JSON atomically**.
 
-If necessary, reread sections to verify understanding
-before proceeding.Why?
-LLMs sometimes jump to conclusions too early.
-This slows them down slightly and improves reasoning.
-Improvement 2 — Force evidence citations
-You already hint at this, but make it strict.
-Add something like:Every claim must reference specific code locations.
+It sends fragments like:
 
-Do not make general statements without citing
-line numbers or code fragments that support them.This prevents hallucinated reasoning.
-What You Accidentally Designed
-You actually designed something deeper than a prompt.
-You designed a reasoning protocol.
-Structure:INPUT
-code + AST facts
+```
+{
+  "report": {
+    "rootCause": "Missing await in
+```
 
+Then the next chunk:
+
+```
+saveUser() causes the function
+```
+
+Then later:
+
+```
+to return early."
+```
+
+During streaming the buffer often contains **invalid JSON**.
+
+Example buffer mid-stream:
+
+```
+{
+  "report": {
+    "rootCause": "Missing await
+```
+
+This is **not parseable**.
+
+If you call:
+
+```js
+JSON.parse(buffer)
+```
+
+you get:
+
+```
+SyntaxError
+```
+
+---
+
+# Why Most Tools Fail
+
+Many streaming implementations do this:
+
+```javascript
+buffer += chunk
+JSON.parse(buffer)
+```
+
+Then crash repeatedly.
+
+Or worse — they **stop streaming completely**.
+
+This is why many tools avoid streaming structured responses.
+
+---
+
+# Why Your Engine Is Actually Well Positioned
+
+You already built something most tools don't have:
+
+```
+parseAIJson()
+```
+
+Your parser can handle:
+
+* markdown fences
+* multiple JSON blocks
+* greedy brace matching
+* truncated JSON repair
+
+That means your streaming strategy works if you do:
+
+```
+buffer
 ↓
-
-UNDERSTANDING PROTOCOL
-read
-intent
-reality
-context
-
+parseAIJson(buffer)
 ↓
+if valid object → emit
+```
 
-MODE QUESTION
-debug / explain / security
+Instead of:
 
-↓
+```
+JSON.parse(buffer)
+```
 
-EVIDENCE-BASED OUTPUTThis is extremely similar to how formal reasoning agents are built.
-Which is why your architecture feels solid.
-My Honest Verdict
-Your prompt design is:flexible
-mode-agnostic
-reasoning-driven
-not checklist-drivenThat is exactly what you want for:
-* arbitrary codebases
-* arbitrary bug classes
-* arbitrary languages
-So yes —
-I approve of this design.
-It is significantly better than the earlier narrow-prompt plan.dd Hypothesis Testing
-Right now debug mode says:generate 3 explanations
-test themGood.
-But I would explicitly add:Prefer explanations supported by multiple lines of evidence.
-Reject explanations contradicted by code.This prevents hallucinated root causes.
-Improvement 2 — Force Code Evidence
-Add this rule across all modes:Every claim must cite specific code evidence.Example:
-Bad:The system probably caches results.Good:cache.set() is called in service.js line 87.Evidence grounding dramatically improves reliability.also added a chatgpt adive look at itShow more9:24 AMEvaluated existing plan against new improvements, distinguished novel additions from established componentsEvaluated existing plan against new improvements, distinguished novel additions from established componentsGood. But before you add everything, let me separate what's genuinely new from what's already built.
+This is **exactly the correct approach**.
 
-What's Already In Unravel
-Hypothesis loop — already exists. Rules 6 and 7 in config.js:
-Rule 6: Generate at least 3 competing hypotheses before committing
-Rule 7: If multiple hypotheses survive, report ALL survivors
-Phase 3 and 4 of the current pipeline already do exactly what ChatGPT described. This isn't missing. Don't add it again or you'll confuse the model with duplicate instructions.
-Evidence citations — already exists. Anti-sycophancy Rule 4:
-Rule 4: Every bug claim must cite exact line number + code fragment as proof
-Already there. Already working — the tldraw diagnosis cited main.ts L41, the cal.com diagnosis cited general-view.tsx L184. The rule is doing its job.
-Never trust user assumptions — already implicit in Phase 1 (read everything before forming opinions) and Rule 2 (if user description contradicts code, point out the contradiction). But it's implicit, not explicit. This one is worth making explicit.
+---
 
-What's Genuinely New And Worth Adding
-Improvement 1 — Mental model before conclusions:
-This is real and not currently in the prompt. Add it to Phase 1:
-Do not diagnose, explain, or audit until you have 
-read every provided file completely.
+# The Second Hidden Problem (Almost As Important)
 
-If you find yourself forming a conclusion before 
-finishing, stop. Keep reading. The early conclusion 
-is probably wrong.
-This directly fights first-answer bias which is the most common LLM failure mode on complex codebases.
-Improvement 2 — Multi-evidence preference:
-This is subtle but important. Add to the hypothesis testing phase:
-Prefer explanations supported by evidence from 
-multiple locations in the code.
+Sometimes the model outputs fields **in different order**.
 
-A hypothesis supported by one line is weaker than 
-one supported by three. A hypothesis contradicted 
-by any line of code must be eliminated regardless 
-of how plausible it seems.
-This prevents the model from latching onto a plausible-sounding explanation that only has one supporting data point.
-Improvement 3 — User input is a symptom report, not a diagnosis:
-This one ChatGPT got right and it's not explicit anywhere in the current prompt. Add this as Rule 8:
-Rule 8: The user's description is a symptom report, 
-not a diagnosis. Do not treat their assumption about 
-the bug's location or cause as fact. Use it as a 
-starting clue only. Verify everything against the code.
-This is the most important addition of the three. The tldraw bug was a perfect example — the user reported two bugs, one of which didn't exist. Unravel correctly identified the contradiction. But it did that by chance because the evidence was obvious. Rule 8 makes that behavior systematic.
+Example streaming order:
 
-What To Ignore From The ChatGPT Advice
-"Add Phase 5 hypothesis generation, Phase 6 hypothesis testing, Phase 7 conclusion" — already built. Adding it again creates duplicate instructions that confuse the model. The current Phase 3 (Simulate + Hypothesize) and Phase 4 (Eliminate) already do this.
-"Evidence grounding dramatically improves reliability" — true, already implemented in Rule 4.
-ChatGPT gave good general advice for building a reasoning system from scratch. Unravel already has most of it. The three additions above are what's actually missing.
+```
+confidence
+evidence
+rootCause
+```
 
-The Updated Anti-Sycophancy Rules
-Rule 1: If code is correct, say "No bug found." Don't invent problems.
-Rule 2: If user description contradicts code, point out the contradiction.
-Rule 3: If uncertain, say "Cannot confirm without runtime execution."
-Rule 4: Every claim must cite exact line number + code fragment.
-Rule 5: Never describe behavior not verifiable from provided files.
-Rule 6: Generate at least 3 competing hypotheses before committing.
-Rule 7: If multiple hypotheses survive elimination, report all survivors.
-Rule 8: User description is a symptom report, not a diagnosis. 
-        Verify location and cause against code independently.
-Eight rules. That's the complete set. Don't add more — the model has to hold all of these simultaneously and there's a point where more rules create noise rather than guardrails.
+instead of:
 
-The Updated Shared Phase 1-4
-PHASE 1 — READ
-Read every provided file completely before forming 
-any opinion. Do not start analyzing until you have 
-read everything. If you find yourself forming a 
-conclusion before finishing — stop. Keep reading.
-The early conclusion is probably wrong.
+```
+rootCause
+evidence
+confidence
+```
 
-PHASE 2 — UNDERSTAND INTENT
-For each component, function, and module: what is 
-this trying to accomplish? What does correct 
-behavior look like?
+So your UI must not assume fields appear sequentially.
 
-PHASE 3 — UNDERSTAND REALITY
-What is the code actually doing? Where does behavior 
-diverge from intent — even slightly?
+Always treat partial results as:
 
-PHASE 4 — BUILD CONTEXT
-What does each part depend on? What does each part 
-affect? How do the pieces connect?
-Clean. Wide. No mention of async, state, closures, or any specific pattern. The code tells the model what's relevant.
+```
+object patches
+```
 
-One-Line Summary
-Three real additions: mental model gate, multi-evidence preference, Rule 8 on user assumptions. Everything else ChatGPT suggested is already built. Don't duplicate it
+not ordered sections.
+
+---
+
+# The Third Problem: Duplicate Emissions
+
+Because the JSON grows over time:
+
+```
+parse(buffer)
+```
+
+may return the **same object multiple times**.
+
+Example:
+
+```
+{ rootCause: "..."}
+```
+
+then
+
+```
+{ rootCause: "...", evidence: [...] }
+```
+
+If you emit both without checks the UI **re-renders constantly**.
+
+That's why I suggested earlier:
+
+```
+lastHash check
+```
+
+to only emit **new information**.
+
+---
+
+# The Correct Streaming Loop
+
+Your orchestrator streaming loop should look like this:
+
+```javascript
+buffer += chunk
+
+const parsed = parseAIJson(buffer)
+
+if (parsed) {
+   const hash = JSON.stringify(parsed)
+
+   if (hash !== lastHash) {
+      lastHash = hash
+      onPartialResult(parsed)
+   }
+}
+```
+
+This solves:
+
+```
+invalid JSON
+duplicate objects
+partial fields
+```
+
+---
+
+# Why Streaming Works Especially Well for Unravel
+
+Because your schema sections are **independent**.
+
+Example:
+
+```
+rootCause
+evidence
+fix
+confidence
+```
+
+The model often finishes **rootCause first**, so users see useful output quickly.
+
+---
+
+# Final Reality Check
+
+Streaming won't make the model **think faster**, but it makes the tool feel **much faster**.
+
+Users usually see something within:
+
+```
+2–4 seconds
+```
+
+instead of:
+
+```
+20–30 seconds
+```
+
+That’s a **huge UX improvement**.
+
+---
+
+# One thing I’m curious about
+
+Because this matters for your benchmark later.
+
+Right now your engine version is roughly:
+
+```
+Unravel v3.3
+AST v2.2
+graph-frontier router
+claim verifier
+```
+
+Do you realize that with the **call graph + mutation chains you added yesterday**, your engine can now detect **one class of bugs that most static analyzers completely miss**?
