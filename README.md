@@ -16,11 +16,11 @@
 [![Benchmark](https://img.shields.io/badge/UDB--50-in_progress-f0883e?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI/blob/main/ROADMAP.md)
 [![License](https://img.shields.io/badge/license-BSL1.1-7d8590?style=flat-square&labelColor=0d1117)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS_Code-v0.3.0-007ACC?style=flat-square&labelColor=0d1117&logo=visualstudiocode&logoColor=007ACC)](https://marketplace.visualstudio.com/items?itemName=EruditeCoder108.unravel)
-[![Web App](https://img.shields.io/badge/web_app-live-58a6ff?style=flat-square&labelColor=0d1117&logo=netlify&logoColor=00C7B7)](https://unravel.netlify.app)
+[![Web App](https://img.shields.io/badge/web_app-live-58a6ff?style=flat-square&labelColor=0d1117&logo=netlify&logoColor=00C7B7)](https://vibeunravel.netlify.app)
 
 <br/>
 
-**[Web App →](https://unravel.netlify.app)** &nbsp;&nbsp;·&nbsp;&nbsp; **[VS Code Extension →](https://marketplace.visualstudio.com/items?itemName=EruditeCoder108.unravel)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Architecture →](ARCHITECTURE.md)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Roadmap →](ROADMAP.md)**
+**[Web App →](https://vibeunravel.netlify.app)** &nbsp;&nbsp;·&nbsp;&nbsp; **[VS Code Extension →](https://marketplace.visualstudio.com/items?itemName=EruditeCoder108.unravel)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Architecture →](ARCHITECTURE.md)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Roadmap →](ROADMAP.md)**
 
 </div>
 
@@ -233,7 +233,7 @@ const BUG_TAXONOMY = {
 
 ### Web App
 
-No install. Visit **[unravel.netlify.app](https://unravel.netlify.app)** and:
+No install. Visit **[vibeunravel.netlify.app](https://vibeunravel.netlify.app)** and:
 
 1. Enter your API key (Anthropic, Google, or OpenAI)
 2. Upload your project files, paste code, or import a GitHub URL
