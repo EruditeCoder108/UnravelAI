@@ -14,7 +14,7 @@
 
 [![Version](https://img.shields.io/badge/engine-v3.3-58a6ff?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI)
 [![Benchmark](https://img.shields.io/badge/UDB--50-in_progress-f0883e?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI/blob/main/ROADMAP.md)
-[![License](https://img.shields.io/badge/license-MIT-7d8590?style=flat-square&labelColor=0d1117)](LICENSE)
+[![License](https://img.shields.io/badge/license-BSL1.1-7d8590?style=flat-square&labelColor=0d1117)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS_Code-v0.3.0-007ACC?style=flat-square&labelColor=0d1117&logo=visualstudiocode&logoColor=007ACC)](https://marketplace.visualstudio.com/items?itemName=EruditeCoder108.unravel)
 [![Web App](https://img.shields.io/badge/web_app-live-58a6ff?style=flat-square&labelColor=0d1117&logo=netlify&logoColor=00C7B7)](https://unravel.netlify.app)
 
@@ -330,7 +330,7 @@ npm test
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+BSL1.1 — see [LICENSE](LICENSE).
 
 ---
 
