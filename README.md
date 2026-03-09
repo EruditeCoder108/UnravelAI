@@ -200,11 +200,7 @@ Every Full Report includes up to 7 auto-generated diagrams:
 
 ## Supported Models
 
-| Provider | Models |
-|----------|--------|
-| **Google** | Gemini 2.5 Flash, Gemini 2.0 Flash, Gemini 1.5 Pro |
-| **Anthropic** | Claude Sonnet 4.6, Claude Opus 4.6, Claude Haiku |
-| **OpenAI** | GPT-4o, GPT-4 Turbo, GPT-4o Mini |
+ALL LLMs whose API is available
 
 Your API key. Your model. No data sent to Unravel servers.
 
