@@ -20,7 +20,7 @@
 
 <br/>
 
-**[Web App →](https://vibeunravel.netlify.app)** &nbsp;&nbsp;·&nbsp;&nbsp; **[VS Code Extension →](https://marketplace.visualstudio.com/items?itemName=EruditeCoder108.unravel)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Architecture →](ARCHITECTURE.md)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Roadmap →](ROADMAP.md)**
+**[Web App →](https://vibeunravel.netlify.app)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Architecture →](ARCHITECTURE.md)** 
 
 </div>
 
