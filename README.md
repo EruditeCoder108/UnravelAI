@@ -1,561 +1,343 @@
 <div align="center">
-  <img src="./logo.png" alt="Unravel Logo" width="120" />
-  <h1>UNRAVEL</h1>
-  <p><strong>Most AI tools can write code. Unravel is built to explain why that code broke.</strong></p>
-  <h3>The Deterministic Debug Engine for AI-Generated Code</h3>
-  
-  <p>
-    <a href="#-quick-start"><img alt="Get Started" src="https://img.shields.io/badge/Get_Started-ccff00?style=for-the-badge&logo=rocket&logoColor=black" /></a>
-    <a href="#-vs-code-extension--live-bug-lens"><img alt="VS Code" src="https://img.shields.io/badge/VS_Code_Extension-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white" /></a>
-    <a href="LICENSE"><img alt="BSL-1.1 License" src="https://img.shields.io/badge/License-BSL--1.1-blue?style=for-the-badge" /></a>
-  </p>
+
+<img src="assets/banner.svg" alt="Unravel — AST-Enhanced AI Debugging Engine" width="900"/>
+
+<br/>
+
+# **A debugging pipeline that forces any AI model to think before it guesses.**
+
+**Unravel runs a static analysis pass before any LLM sees your code** — extracting mutation chains, async boundaries, closure captures, and cross-file data flows as verified facts. These become ground truth injected into a structured 9-phase reasoning pipeline. Any model you already have becomes significantly more accurate on the bugs that actually matter.
+
+> *Not a smarter model. A smarter way to use the model you already have.*
+
+<br/>
+
+[![Version](https://img.shields.io/badge/engine-v3.3-58a6ff?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI)
+[![Benchmark](https://img.shields.io/badge/UDB--50-in_progress-f0883e?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI/blob/main/ROADMAP.md)
+[![License](https://img.shields.io/badge/license-MIT-7d8590?style=flat-square&labelColor=0d1117)](LICENSE)
+[![VS Code](https://img.shields.io/badge/VS_Code-v0.3.0-007ACC?style=flat-square&labelColor=0d1117&logo=visualstudiocode&logoColor=007ACC)](https://marketplace.visualstudio.com/items?itemName=EruditeCoder108.unravel)
+[![Web App](https://img.shields.io/badge/web_app-live-58a6ff?style=flat-square&labelColor=0d1117&logo=netlify&logoColor=00C7B7)](https://unravel.netlify.app)
+
+<br/>
+
+**[Web App →](https://unravel.netlify.app)** &nbsp;&nbsp;·&nbsp;&nbsp; **[VS Code Extension →](https://marketplace.visualstudio.com/items?itemName=EruditeCoder108.unravel)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Architecture →](ARCHITECTURE.md)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Roadmap →](ROADMAP.md)**
+
 </div>
 
 ---
 
-## 💥 The Problem
+## What Unravel Does
 
-You paste your code into ChatGPT.
+Most AI debuggers pattern-match symptoms. They see `TypeError` and suggest type fixes. They never ask: where did the data actually go wrong?
 
-It suggests a fix.
+Unravel answers that question deterministically. Before any model sees your code, a static AST pass extracts verified facts — every variable mutation, every closure capture, every async boundary, every cross-file import chain. These become ground truth injected into a 9-phase structured prompt pipeline. The AI cannot hallucinate about what doesn't exist in the code. It cannot guess — it must trace.
 
-You try it.
-
-Now something else breaks.
-
-So you paste the new error.
-
-It suggests another fix.
-
-Three hours later you've applied 14 patches and the original bug is still there.
-
-Welcome to the **AI debugging loop**.
-
-It happens because most AI coding tools don't actually understand your program.
-
-They don't track variable mutations.  
-They don't simulate execution.  
-They don't follow state across files.
-
-They pattern-match symptoms and guess fixes.
-
-Sometimes the guess works.
-
-Often it doesn't.
-
-**Unravel breaks that loop.**
-
-> **Language Support:** JavaScript and TypeScript only (AST pre-analysis uses `@babel/parser`). Python and other languages planned for future phases.
+The result: **exact file, exact line, exact variable, with evidence and confidence score.**
 
 ---
 
-## ⚡ A Real Example
-
-Buggy code:
-
-```javascript
-function pause(){
-    clearInterval(interval)
-    interval = null
-    duration = remaining
-}
-```
-
-The bug:
-
-🔴 **ROOT CAUSE: STATE_MUTATION**
-
-`duration` should remain constant.  
-Mutating it causes the timer to drift after pause/resume.
-
-Minimal fix:
-
-```javascript
-function pause(){
-    clearInterval(interval)
-    interval = null
-    remaining = duration
-}
-```
-
-This is the level of precision Unravel brings to your editor.
-
----
-
-## ⚡ VS Code Extension — Live Bug Lens
-
-The feature that changes everything. Bugs appear **directly in the code editor** — no copy-paste, no leaving the IDE.
-
-```javascript
-function pause(){
-    clearInterval(interval)
-    interval = null
-    duration = remaining   // 🔴 ROOT CAUSE: STATE_MUTATION
-                           //    duration should remain constant
-}
-```
-
-**Right-click → "Unravel: Debug This File"** and the engine:
-
-1. 🔍 **Resolves imports** — automatically pulls in dependent files (2 levels deep)
-2. 🌳 **AST pre-analysis** — deterministic variable mutation chains, closures, timing nodes
-3. 🧠 **AI diagnosis** — 9-phase pipeline with anti-sycophancy guards
-4. ✨ **Inline results** — red squiggly underlines, `🔴 ROOT CAUSE` overlays, hover tooltips, sidebar report
+## How It Works
 
 ```
-Chat debugging: read → remember → search → verify → fix  (5 steps)
-Live Bug Lens:  right-click → see bug → fix               (3 steps)
-```
-
-Works in **VS Code, Cursor, Windsurf** — anywhere VS Code extensions run.
-
-### Install
-
-1. Download [`unravel-vscode-0.3.0.vsix`](https://github.com/EruditeCoder108/UnravelAI/releases) from Releases
-2. VS Code → Extensions (`Ctrl+Shift+X`) → `⋯` → **Install from VSIX...**
-3. Right-click any `.js` file → **"Unravel: Debug This File"**
-
-> See [full setup guide](#-how-to-use-the-vs-code-extension) below for details.
-
----
-
-## ⚙️ How It Works
-
-Unravel runs your code through a **9-phase deterministic pipeline** — the same systematic process a senior engineer uses, but faster:
-
-```text
-Phase 1  INGEST          Read all code. Build complete mental model. No theories yet.
-Phase 2  TRACK STATE     Map every variable: where declared, where read, where mutated.
-Phase 3  SIMULATE        Mentally execute the user's exact sequence of actions.
-Phase 4  INVARIANTS      What conditions MUST hold? Which are violated?
-Phase 5  ROOT CAUSE      Identify the exact file, line, variable, and function.
-Phase 6  MINIMAL FIX     Smallest surgical change. Not a rewrite.
-Phase 7  AI LOOP         Why do ChatGPT / Cursor / Copilot fail on this specific bug?
-Phase 8  CONCEPT         What programming concept does this bug teach?
-```
-
-Every phase builds on the last. The model cannot skip to conclusions.
-
----
-
-## 🏗 Architecture
-
-```mermaid
-graph TD
-    classDef input fill:#050505,stroke:#ccff00,stroke-width:2px,color:#fff
-    classDef ast fill:#111,stroke:#00ffff,stroke-width:2px,color:#fff
-    classDef router fill:#111,stroke:#ff00ff,stroke-width:2px,color:#fff
-    classDef engine fill:#111,stroke:#ccff00,stroke-width:3px,color:#fff
-    classDef presentation fill:#0a0a0a,stroke:#333,stroke-width:2px,color:#ccc
-    classDef action fill:#111,stroke:#ff003c,stroke-width:2px,color:#fff
-
-    U[Local Files / Paste / GitHub Issue]:::input --> A
-
-    subgraph Pre-Analysis [Deterministic Ground Truth]
-        A(AST ANALYZER\n@babel/parser):::ast
-        A -.->|Extracts Mutation Chains| A
-        A -.->|Finds Timing Nodes| A
-        A -.->|Detects Closure Captures| A
-    end
-
-    A --> R
-
-    subgraph Intelligence Layer [Multi-Mode Orchestrator]
-        R(ROUTER AGENT\nFlash / Haiku):::router
-        R -.->|Filters 12k lines → 350| D
-        D{CORE ENGINE\nOpus / GPT-5}:::engine
-        D -.->|9-Phase Hypothesis Pipeline| D
-        D -.->|Mode: Debug/Explain/Security| D
-        D -->|Self-Heal: Requests Missing Files| U
-    end
-
-    D --> O
-
-    subgraph Presentation Layer
-        O[Dynamic JSON Schema]:::presentation
-        O -.->|Renders Multi-View UI| O
-        O -.->|Mermaid Flowcharts & Diffs| O
-    end
-    
-    O --> E
-
-    subgraph Action Center [Read/Write Execution]
-        E(Fix Execution):::action
-        E -.->|VS Code: Apply Fix Locally| E
-        E -.->|VS Code: Give Fix to Copilot| E
-        E -.->|Web: Create GitHub PR| E
-    end
+User Code + Bug Description
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  LAYER 0 — AST Analyzer (deterministic) │
+│  @babel/parser — verified facts:        │
+│  • Variable mutation chains             │
+│  • Closure captures                     │
+│  • Async boundaries (setTimeout, etc.)  │
+│  • Cross-file import/export resolution  │
+└──────────────┬──────────────────────────┘
+               │  Verified Context Map
+               ▼
+┌─────────────────────────────────────────┐
+│  LAYER 1 — Router Agent (mode-aware)    │
+│  Graph-Frontier BFS over import/call/   │
+│  mutation graphs + LLM fallback         │
+│  • Debug:    5–8 files near symptom     │
+│  • Explain:  15–25 files for breadth    │
+│  • Security: 8–12 files on attack sfc   │
+└──────────────┬──────────────────────────┘
+               │  Code Slices + AST Facts
+               ▼
+┌─────────────────────────────────────────┐
+│  LAYER 2 — Core Engine (single call)    │
+│  • 9-phase deterministic pipeline       │
+│  • Anti-sycophancy guardrails (7 rules) │
+│  • Evidence-backed confidence score     │
+│  • Streams progressively via SSE        │
+│  • Can PAUSE and request missing files  │
+│  • Generates Mermaid edge data for viz  │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+        Multi-View Report
+        (Web App / VS Code Sidebar)
 ```
 
 ---
 
-## What Makes It Different
+## The 9-Phase Pipeline
 
-|   | ChatGPT / Copilot | Unravel |
-|---|-------------------|---------| 
-| **Analysis Method** | Symptom-based guessing | 9-phase deterministic pipeline |
-| **Context Handling** | File-level context dumps | Function-level AST slicing |
-| **Hallucination** | Frequent "plausible" invention | Anti-Sycophancy guards (proof required) |
-| **Confidence** | Confidently wrong / Generic | Evidence-backed (Verified vs Uncertain) |
-| **Fix Quality** | Full-file rewrites | Minimal surgical fix |
-| **Action Center** | Copy-paste only | Natively generates PRs / Split-pane IDE patches |
-| **Teaching** | "Here is the code" | Concept extraction & learning paths |
-| **AI Awareness** | Zero self-reflection | "Why AI Loops" loop analysis |
-| **Bug Classification** | Free-text | Formal 12-category taxonomy |
+The model is forced through these phases in order. It cannot skip to conclusions.
 
----
-
-# 🧠 How Unravel Actually Finds Bugs
-
-## 🛡️ Anti-Sycophancy Engine
-
-Most AI tools have a fatal flaw: they will **invent bugs that don't exist** just to appear helpful. If you say "I think the error is on line 10," they'll agree — even if line 10 is perfectly fine.
-
-Unravel's engine has 5 hardcoded guards against this:
-
-```
-1. If the code is correct, say "No bug found." Do NOT invent problems.
-2. If the user's description contradicts the code, point out the contradiction.
-3. If uncertain, say "Cannot confirm without runtime execution."
-4. Every bug claim must cite exact line number + code fragment as proof.
-5. Never make up code behavior that cannot be verified from provided files.
-```
-
-If the model can't point to evidence, it doesn't claim the bug. Period.
+| # | Phase | What happens |
+|---|-------|--------------|
+| 1 | **READ** | Read every file completely. No opinions yet. |
+| 2 | **UNDERSTAND INTENT** | For each function/module: what is it trying to do? |
+| 3 | **SYMPTOM MAPPING** | What observable behavior is failing? What's the exact failure event? |
+| 4 | **AST FACT INJECTION** | Inject verified mutation chains, closures, async boundaries as ground truth |
+| 5 | **HYPOTHESIS GENERATION** | Generate 3 mutually exclusive, non-overlapping hypotheses |
+| 6 | **HYPOTHESIS ELIMINATION** | Kill hypotheses the AST evidence contradicts. Quote the exact line. |
+| 7 | **ROOT CAUSE ISOLATION** | The surviving hypothesis is the diagnosis. Exact file + line + variable. |
+| 8 | **FIX PROPOSAL** | Minimal targeted fix with before/after diff |
+| 9 | **CONFIDENCE SCORING** | Evidence-backed score (0.0–1.0) + what would lower confidence |
 
 ---
 
-## AST Pre-Analysis
+## Anti-Sycophancy Guardrails
 
-Before any AI model sees the code, Unravel runs a **deterministic static analysis** using `@babel/parser`. This produces a verified context map:
+Hardcoded into every prompt. The model cannot override these.
 
 ```
-Relevant Functions:
-  start(), pause(), tick(), setMode()
-
-Variable Mutation Chains:
-  duration
-    written: pause() L69, setMode() L86
-    read:    tick() L55, start() L42
-
-Async / Timing Nodes:
-  setInterval  → tick()       [L57]
-  addEventListener("visibilitychange") → handler() [L110]
-
-Closure Captures:
-  tick()    captures → duration, remaining, interval
-  handler() captures → isPaused, interval
+Rule 1: If the code is correct, say "No bug found." Do NOT invent problems.
+Rule 2: If the user's description contradicts the code, point out the contradiction.
+Rule 3: If uncertain, say "Cannot confirm without runtime execution."
+Rule 4: Every bug claim must cite exact line number + code fragment as proof.
+Rule 5: Never describe code behavior that cannot be verified from provided files.
+Rule 6: The crash site is NEVER the root cause. It is the symptom.
+        Trace state BACKWARDS through mutation chains from the failure point.
+        The root cause is where state was FIRST corrupted.
+Rule 7: A variable named `isPaused` does not guarantee the code is paused.
+        Verify BEHAVIOR from the execution chain, not naming conventions.
 ```
-
-This is injected into the prompt as **verified ground truth**. The AI cannot hallucinate about what variables exist or where they're mutated — the AST already told it.
 
 ---
 
-## Bug Taxonomy
+## Benchmark
 
-Every diagnosis is classified using a primary category from 12 formal types, with optional `secondaryTags` for complex bugs that don't fit cleanly:
+Unravel's edge is not on easy bugs. Standalone LLMs already perform well on isolated, small-context bugs — and an 11-bug suite over a limited codebase isn't going to expose that gap meaningfully. The early numbers (+9% RCA, −35% hallucination on UDB-11) show directional signal, but that suite is small, the bugs are relatively contained, and the baseline model can still do reasonably well on that kind of input.
 
-| Category | Description |
-|----------|-------------|
-| `STATE_MUTATION` | Variable meant to be constant is modified unexpectedly |
-| `STALE_CLOSURE` | Function captures outdated variable value |
-| `RACE_CONDITION` | Multiple async operations conflict on shared state |
-| `TEMPORAL_LOGIC` | Timing assumptions break (drift, wrong timestamps) |
-| `EVENT_LIFECYCLE` | Missing cleanup, double-binds, or wrong event order |
-| `TYPE_COERCION` | Implicit type conversion causes unexpected behavior |
-| `ENV_DEPENDENCY` | Code behaves differently across environments |
-| `ASYNC_ORDERING` | Operations execute in wrong sequence |
-| `DATA_FLOW` | Data passes incorrectly between components/files |
-| `UI_LOGIC` | Visual behavior doesn't match intent |
-| `MEMORY_LEAK` | Resources not released, accumulate over time |
-| `INFINITE_LOOP` | Recursive or cyclic behavior creates runaway effect |
+**Where Unravel is actually built to perform is the opposite scenario:** large repos, deep cross-file mutation chains, async races across 8+ files, bugs where the symptom and the root cause are in completely different modules. That's where standalone LLMs hallucinate, chase the symptom, and give up. Unravel's AST pre-analysis was built specifically for that context.
+
+Validation so far has been on real large-scale repositories — including VS Code, Cal.com, and tldraw — where the pipeline correctly identified and traced root causes that raw model queries either missed or misattributed. These aren't controlled benchmark bugs; they're production issues from projects with tens of thousands of lines of code.
+
+**The formal proof is in progress:**
+
+| Suite | Status | Model | Notes |
+|-------|--------|-------|-------|
+| UDB-11 (11 bugs) | ✅ Complete | Gemini 2.5 Flash (free tier) | Small suite, easy-to-medium bugs. Directional only. |
+| UDB-50 (50 bugs, 8 categories) | 🔄 In progress | Gemini 2.5 Flash → Claude Opus 4.6 | The real benchmark — hard bugs, large context, multi-file |
+| 20 real GitHub issues | 📋 Planned | Multi-model | Closed issues from Next.js, React, Vite, Express — compared against actual merged fixes |
+
+> UDB-50 with Claude Opus 4.6 on hard, large-context bugs is where the real numbers will come from. That's what gets published.
 
 ---
 
-## Output
+## Three Analysis Modes
 
-Unravel produces a structured report with multiple views:
+<details>
+<summary><b>🐛 Debug Mode</b> — Full 9-phase root cause diagnosis</summary>
 
-### For Humans
-- Plain-language explanation of what broke and why
-- Real-world analogies matched to user's coding level
-- Step-by-step reproduction path
+<br/>
 
-### For Developers
-- Root cause with exact file, line, and variable
-- Variable state mutation table
-- Execution timeline with bug moment highlighted
-- Invariant violations
-- Visual diff of the minimal fix
+The full pipeline. Traces state backwards from the symptom through mutation chains to the exact corruption point. Returns: root cause, evidence, fix proposal, confidence score, and 7 Mermaid visualizations.
 
-### For AI Tools
-- A deterministic fix prompt that other AI tools (Cursor, Copilot) can use without falling into the debugging loop
-- Structured JSON output for programmatic consumption
+Best for: production bugs, async races, cross-file state corruption, anything that resisted 3+ AI attempts.
 
-### Concept Extraction
-- What programming concept this bug teaches
-- The pattern to avoid forever
-- A 5-15 minute learning path to build understanding
+</details>
+
+<details>
+<summary><b>🔍 Explain Mode</b> — Architecture walkthrough for unfamiliar codebases</summary>
+
+<br/>
+
+Reads 15–25 files for breadth. Maps module responsibilities, data flow direction, entry points, and dependency graph. Generates Data Flow and Dependency diagrams. No fix proposed — insight is the goal.
+
+Best for: onboarding to a new codebase, understanding legacy code, pre-refactor mapping.
+
+</details>
+
+<details>
+<summary><b>🛡 Security Mode</b> — Vulnerability audit with exploit tracing</summary>
+
+<br/>
+
+Traces attack surface across 8–12 files. Requires concrete exploit payload for any vulnerability flagged — no vague "this could be vulnerable" claims. Returns: vulnerability type, attack vector, proof-of-exploit, severity, and remediation.
+
+Best for: pre-deploy security checks, reviewing user-input handling, third-party dependency chains.
+
+</details>
+
+---
+
+## Output Presets
+
+| Preset | Fields |
+|--------|--------|
+| **Quick Fix** | Root cause + fix only. Read in 30 seconds. |
+| **Developer** | Root cause + fix + evidence + confidence. |
+| **Full Report** | All sections — hypothesis elimination, per-phase trace, all diagrams. |
+| **Custom** | Per-section checkboxes. Build your own report. |
+
+---
+
+## Mermaid Visualizations
+
+Every Full Report includes up to 7 auto-generated diagrams:
+
+- **Timeline** — Event sequence leading to the bug
+- **Hypothesis Tree** — Branching elimination logic
+- **AI Loop** — Where raw AI models get stuck (and why)
+- **Data Flow** — How data moves through the system
+- **Dependency Graph** — Module import relationships
+- **Attack Vector** *(Security mode)* — Exploit entry-to-impact path
+- **Variable State** — Mutation chain for the root cause variable
 
 ---
 
 ## Supported Models
 
-| Provider | Models | Tier |
-|----------|--------|------|
-| **Anthropic** | Claude Opus 4.6, Claude Sonnet 4.6, Claude Haiku 4.5 | Recommended |
-| **Google** | Gemini 3.1 Pro Preview, Gemini 3 Flash, Gemini 2.5 Flash | Supported |
-| **OpenAI** | GPT 5.3 Instant | Supported |
+| Provider | Models |
+|----------|--------|
+| **Google** | Gemini 2.5 Flash, Gemini 2.0 Flash, Gemini 1.5 Pro |
+| **Anthropic** | Claude Sonnet 4.6, Claude Opus 4.6, Claude Haiku |
+| **OpenAI** | GPT-4o, GPT-4 Turbo, GPT-4o Mini |
 
-**BYOK** (Bring Your Own Key) — your API keys are stored locally and sent only to the provider's API endpoint. No intermediary server. No data collection.
-
----
-
-## Metrics
-
-Three numbers define whether Unravel is working:
-
-| Metric | Definition | Target |
-|--------|-----------|--------|
-| **RCA** | Root Cause Accuracy — did it find the *real* bug, not a plausible guess? | 85%+ |
-| **TTI** | Time To Insight — how fast does the user *understand* the bug? | < 2 min |
-| **HR** | Hallucination Rate — did it reference code/variables/behavior that doesn't exist? | < 5% |
-
-### Benchmark Results (Internal Dev Proxy — 11 Bugs)
-
-| Configuration | RCA Score | Hallucination Rate |
-|---|---|---|
-| Baseline (Gemini 2.5 Flash, no AST) | **~91%** | 60% (multi-file) |
-| **Unravel Engine** (+ AST pre-analysis) | **100%** | 25% (multi-file) |
-
-**What this means:** The AST pre-analysis delivered a proven **+9% Root Cause Accuracy** improvement and a **35% reduction in hallucinated claims** (especially on complex multi-file bugs).
-
-**The Real Benchmark (UDB-50):** The true value of AST pre-analysis emerges in complex, multi-file codebases where standard LLMs lose context. Phase 8 (UDB-50) will expand this rigorously to a 50-bug suite across 8 categories (async, closure, react, lifecycle, security, etc.) to publicly measure the AST improvement delta across models.
-
-> Run `node benchmarks/runner.js --provider google --model gemini-2.5-flash --key YOUR_KEY` to reproduce the internal proxy results. Saved to `benchmarks/results.json`.
+Your API key. Your model. No data sent to Unravel servers.
 
 ---
 
-## Roadmap
+## Bug Taxonomy
 
-### Phase 1 — Deep Thinking `COMPLETE`
-BYOK multi-provider support. SOTA models with extended thinking. 9-phase deterministic prompt. Anti-sycophancy guardrails. Evidence-backed confidence. Provider-specific prompt formatting. Concept extraction. Bug taxonomy. "Why AI Loops" analysis.
+Every diagnosis is classified across 12 formal categories:
 
-### Phase 2 — The Proof `COMPLETE`
-Client-side AST analysis with `@babel/parser`. Variable mutation chains, timing node detection, closure capture tracking. 10-bug benchmark suite with `benchmarks/runner.js`. Pipeline tested end-to-end with Gemini 2.5 Flash.
-
-### Phase 3 — Core Engine + VS Code Extension `COMPLETE`
-Extracted shared engine into `src/core/` — `orchestrate()`, `callProvider()`, barrel exports. Zero React dependencies. Built the **VS Code Extension** with Live Bug Lens: inline overlays, diagnostics, hover tooltips, and sidebar report panel.
-
-### Phase 3.5 — Pre-Publish Hardening `COMPLETE`
-Object property mutation detection (`task.status = newStatus`) surgically added to AST. Input completeness validation added to detect silently truncated files (HTML, JS, CSS) before reasoning begins.
-
-### Phase 3.6 — File Handling Hardening `COMPLETE`
-Router-first GitHub repo import (picks relevant files before downloading). Support for empty-symptom scanning in both Web App and VS Code Extension.
-
-### Phase 4A — Analysis Modes & Output Control `COMPLETE`
-Transformed from a single-mode debugger to a multi-mode platform. 
-New modes: **Debug**, **Explain**, and **Security Scan** with unique dynamic schemas. 
-Added **Mermaid Chart generation** (Timeline, Hypothesis, Data Flow, Dependency, AI Loop).
-Output presets (Quick Fix vs Full Report) added. 
-Web App UX complete visual redesign (5-step flow). 
-VS Code Extension updated to v0.3.0 with complete multi-mode reporting and self-healing.
-
-### Phase 4B — Intelligence Layer `IN PROGRESS`
-**✅ Sprint 3 Built:** Cross-File AST Import Resolution (`ast-project.js`), Graph-Frontier deterministic router, and a 3-layer Progressive Streaming Response for instantly rendering chunks via SSE.
-**📋 Planned:** Symptom-independent AST scan, React-specific AST patterns, explicit hypothesis elimination scoring. Variable Trace UI and Visual diff output. Adversarial multi-agent debate (if confident-wrong rate requires it).
-
-### Phase 5 — GitHub Integration & Action Center `COMPLETE`
-- **GitHub Issue URL Parsing:** Paste a GitHub issue URL, and Unravel automatically fetches the issue body, comments, and related context to use as the debugging symptom.
-- **Security Attack Vector Flowcharts:** Security Scan mode generates Mermaid flowcharts explaining exact attack vectors and exploitation flows visually.
-- **Action Center (Web App):** Generate a Git patch, copy the fix to CLI, or create a Pull Request directly after an analysis completes.
-- **Action Center (VS Code):** Non-destructive **Apply Fix Locally** opens split-pane diffs for review, and **Give Fix to AI** passes the analysis directly to VS Code's built-in Copilot Chat.
-
----
-
-##  Multi-Platform
-
-```
-@unravel/core              ← shared engine
-  ├── unravel-v3           ← React web app
-  ├── unravel-vscode       ← VS Code extension + Live Bug Lens
-  ├── unravel-cli          ← terminal tool (CI/CD)
-  └── unravel-desktop      ← Electron app
+```javascript
+const BUG_TAXONOMY = {
+  STATE_MUTATION:  "Variable meant to be constant is modified unexpectedly",
+  STALE_CLOSURE:   "Function captures outdated variable value",
+  RACE_CONDITION:  "Multiple async operations conflict on shared state",
+  TEMPORAL_LOGIC:  "Timing assumptions break (drift, wrong timestamps)",
+  EVENT_LIFECYCLE: "Missing cleanup, double-binds, or wrong event order",
+  TYPE_COERCION:   "Implicit type conversion causes unexpected behavior",
+  ENV_DEPENDENCY:  "Code behaves differently across environments",
+  ASYNC_ORDERING:  "Operations execute in wrong sequence",
+  DATA_FLOW:       "Data passes incorrectly between components/files",
+  UI_LOGIC:        "Visual behavior doesn't match intent",
+  MEMORY_LEAK:     "Resources not released, accumulate over time",
+  INFINITE_LOOP:   "Recursive or cyclic behavior creates runaway effect",
+};
 ```
 
-| Platform | What It Does | Status |
-|----------|-------------|--------|
-| **Web App** | Paste code, describe bug, get structured report | ✅ Live on Netlify |
-| **VS Code Extension** | Right-click → debug. Inline overlays, hover, sidebar | ✅ Working |
-| **CLI** | `unravel analyze ./src --symptom "..."` | 🔜 Phase 6 |
-| **Desktop App** | Drag-and-drop folders, native file access | 🔜 Phase 6 |
-
 ---
 
-## 🚀 How to Use the VS Code Extension
+## Getting Started
 
-### Prerequisites
+### Web App
 
-- **VS Code**, **Cursor**, or **Windsurf**
-- An API key from one of: [Google AI Studio](https://aistudio.google.com/apikey) (free), [Anthropic](https://console.anthropic.com/), or [OpenAI](https://platform.openai.com/api-keys)
+No install. Visit **[unravel.netlify.app](https://unravel.netlify.app)** and:
 
-### Option A — Download & Install (Recommended)
+1. Enter your API key (Anthropic, Google, or OpenAI)
+2. Upload your project files, paste code, or import a GitHub URL
+3. Describe the bug symptom
+4. Choose Debug / Explain / Security mode
+5. Read the diagnosis
 
-1. Go to [**Releases**](https://github.com/EruditeCoder108/UnravelAI/releases) and download `unravel-vscode-0.3.0.vsix`
-2. Open VS Code → Extensions panel (`Ctrl+Shift+X`)
-3. Click `⋯` (top-right) → **Install from VSIX...** → select the downloaded file
-4. Done. Restart VS Code if prompted.
-
-### Option B — Build from Source
+### VS Code Extension
 
 ```bash
-git clone https://github.com/EruditeCoder108/UnravelAI.git
-cd UnravelAI/unravel-vscode
-npm install
-npm run build
+# Install from the VS Code Marketplace
+# Search: "Unravel"
 ```
 
-Then press **F5** to launch the Extension Development Host for testing.
+Or install from the [Marketplace page](https://marketplace.visualstudio.com/items?itemName=EruditeCoder108.unravel).
 
-### Using the Extension
-
-1. **Open any `.js` or `.ts` file** in VS Code
-2. **Right-click** anywhere in the editor
-3. Choose your command:
-   - **"Unravel: Debug This File"** — Find bugs, trace root cause
-   - **"Unravel: Explain This File"** — Understand architecture and data flow
-   - **"Unravel: Security Scan This File"** — Find vulnerabilities
-4. **Enter your API key** (first time only — saved to settings)
-5. **Describe the bug** in one sentence (optional — leave empty for scan mode)
-6. Wait 10-30 seconds...
-
-### What You'll See
-
-After analysis completes, **four layers activate simultaneously**:
-
-| Layer | What You See |
-|-------|-------------|
-| **Red squiggly underlines** | Bug lines get error/warning underlines in the editor |
-| **Inline overlays** | `🔴 ROOT CAUSE: STATE_MUTATION` appears after the buggy line |
-| **Hover tooltips** | Hover any red line → tooltip with fix, confidence, and evidence |
-| **Sidebar report** | Full HTML report opens in a panel beside your code |
-
-### Settings
-
-Open Settings (`Ctrl+,`) → search "unravel":
-
-| Setting | Default | Options |
-|---------|---------|---------|
-| `unravel.apiKey` | *(empty)* | Your API key |
-| `unravel.provider` | `google` | `google`, `anthropic`, `openai` |
-| `unravel.model` | `gemini-2.5-flash` | Any model from your provider |
-| `unravel.mode` | `debug` | `debug`, `explain`, `security` |
-| `unravel.outputPreset` | `developer` | `quick`, `developer`, `full`, `custom` |
-| `unravel.level` | `intermediate` | `beginner`, `vibe`, `basic`, `intermediate` |
-| `unravel.language` | `english` | `english`, `hinglish`, `hindi` |
-
-> 🔒 Keys are stored locally in VS Code `settings.json`. Never sent anywhere except the API provider.
-
-### Works in Cursor & Windsurf
-
-The extension works everywhere VS Code extensions run. Same steps.
-
----
-
-## 🌐 How to Use the Web App
+**Usage:** Right-click any file in Explorer → *Unravel: Debug this file* / *Explain* / *Security Audit*
 
 ### Run Locally
 
 ```bash
-cd UnravelAI/unravel-v3
+git clone https://github.com/EruditeCoder108/UnravelAI.git
+cd UnravelAI
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Or use the live version on Netlify.
-
-### Three Ways to Input Code
-
-| Tab | How It Works |
-|-----|-------------|
-| **Folder Upload** | Upload a project folder. AI router selects relevant files automatically. |
-| **Raw Paste** | Paste code blocks manually with filenames. |
-| **GitHub Import** | Paste a public repo URL or a **GitHub Issue URL** → files/context are fetched automatically. |
-
-Enter your API key → describe the bug → run the engine → choose your output view.
-
 ---
 
-## Project Structure
+## Project Status
 
 ```
-UnravelAI/
-├── unravel-v3/                  Web application
-│   ├── src/
-│   │   ├── core/                Shared engine (zero React dependencies)
-│   │   │   ├── index.js         Barrel export for all core modules
-│   │   │   ├── config.js        Providers, taxonomy, prompts, output schema
-│   │   │   ├── ast-engine.js    @babel/parser AST pre-analysis
-│   │   │   ├── parse-json.js    Robust LLM JSON parser
-│   │   │   ├── provider.js      API caller with retry logic
-│   │   │   └── orchestrate.js   Full analysis pipeline
-│   │   ├── App.jsx              5-step UI + engine integration
-│   │   ├── index.css            Neo-brutalist design system
-│   │   └── main.jsx             Entry point
-│   └── benchmarks/
-│       ├── bugs/                10 intentional bugs with ground truth
-│       ├── runner.js            Benchmark runner (RCA + HR scoring)
-│       └── results.json         Saved benchmark results
-│
-└── unravel-vscode/              VS Code extension
-    ├── src/
-    │   ├── extension.js         Command registration + orchestration
-    │   ├── imports.js           Import resolution (depth 2)
-    │   ├── diagnostics.js       Red squiggly underlines
-    │   ├── decorations.js       Inline 🔴 ROOT CAUSE overlays
-    │   ├── hover.js             Tooltip with fix + confidence
-    │   ├── sidebar.js           Full HTML report panel
-    │   └── core/                Engine (copied from unravel-v3)
-    └── out/extension.js         Bundled output (esbuild)
+Phase 1    ✅  Web app, 9-phase pipeline, multi-provider, anti-sycophancy (7 rules)
+Phase 2    ✅  AST pre-analysis, open source
+Phase 3    ✅  Core engine extracted, VS Code extension (v0.3.0) end-to-end
+Phase 4A   ✅  Multi-mode analysis (Debug / Explain / Security) + output presets
+Phase 5    ✅  GitHub Issue URL parsing, Action Center (Web + VS Code)
+Phase 4B   ⏳  Intelligence layer:
+               ✅ Cross-file AST import resolution (ast-project.js)
+               ✅ Graph-frontier deterministic router (BFS)
+               ✅ Progressive streaming (SSE, all 3 providers)
+               📋 Floating promise detection
+               📋 React-specific AST patterns, CFG branch annotation
+               📋 Variable Trace UI, visual diff, proximate_crash_site field
+Phase 8    📋  UDB-50 benchmark — 50 bugs, 8 categories, multi-model ← NEXT
+Phase 9    📋  Real-world validation — 20 real GitHub issues, API pitch data
 ```
 
----
-
-## The Goal
-
-Debugging shouldn't feel like guessing.
-
-If AI can generate code, it should also help us **understand it.**
-
-Unravel exists to make that possible.
+**[See full roadmap →](ROADMAP.md)**
 
 ---
 
-## Author
+## The Number That Will Matter
 
-Created and maintained by **Sambhav Jain**.
-* **Location:** Jabalpur (M.P), INDIA
-* **Contact:** [Eruditespartan@gmail.com](mailto:Eruditespartan@gmail.com)
+**RCA with AST pre-analysis vs without, on hard bugs, on a SOTA model, at scale.**
 
-If you have questions, feedback, or want to discuss the project, feel free to email me.
+The honest version of that number doesn't exist yet. UDB-11 is early signal. UDB-50 with Claude Opus 4.6 across 8 bug categories — async races, cross-file state, closures, React state, security, performance — run against the same bugs on a raw baseline, is what actually proves the claim.
+
+Target: **≥85% RCA enhanced, ≥+10% delta over baseline, <5% hallucination rate.**
+
+Until then: the pipeline is open source, the web app is live, and you can run it on your own hardest bugs right now.
 
 ---
 
-## Citation
+## Design Principles
 
-If you use Unravel AI in your research or project, please cite it using the included `CITATION.cff` file, or use the following BibTeX:
+Every decision flows from five rules:
 
-```bibtex
-@software{Jain_Unravel_AI,
-  author = {Jain, Sambhav},
-  title = {Unravel AI: Deterministic Pre-Analysis and Hypothesis Elimination Engine},
-  url = {https://github.com/EruditeCoder108/UnravelAI},
-  year = {2025}
-}
+1. **Deterministic facts before AI reasoning.** AST runs first. The model gets verified ground truth.
+2. **Evidence required for every claim.** No bug report without exact line + code fragment.
+3. **Eliminate wrong hypotheses, don't guess at right ones.** Generate 3, kill what the evidence contradicts.
+4. **Never hide uncertainty.** "Uncertain" is better than "confident-wrong."
+5. **Optimize for developer understanding, not impressive output.** Insight over length.
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports, new benchmark bugs, and prompt improvement proposals are especially welcome.
+
+```bash
+# Run the benchmark suite
+node benchmark/runner.js
+
+# Run tests
+npm test
 ```
 
 ---
 
 ## License
 
-Released under the [Business Source License 1.1 (BSL-1.1)](LICENSE).
+MIT — see [LICENSE](LICENSE).
+
+---
+
+<div align="center">
+
+**Built by [Sambhav Jain](https://github.com/EruditeCoder108)**
+
+*If Unravel found a bug your AI missed, leave a ⭐ — it helps.*
+
+</div>
