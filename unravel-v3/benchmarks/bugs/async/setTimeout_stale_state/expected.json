@@ -1,0 +1,19 @@
+{
+  "root_cause_keywords": [
+    "stale closure",
+    "value captured at creation time",
+    "setTimeout captures value not reference",
+    "stale state",
+    "initial state",
+    "closure captures initial",
+    "value at creation",
+    "stale value",
+    "stale snapshot"
+  ],
+  "files": [
+    "app.js"
+  ],
+  "lines": [
+    8
+  ]
+}

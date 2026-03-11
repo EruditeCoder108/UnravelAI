@@ -1,0 +1,7 @@
+{
+  "id": "state_update_batch_bug",
+  "category": "react",
+  "difficulty": "medium",
+  "symptom": "Clicking +3 button only increments counter by 1 instead of 3.",
+  "files": ["Counter.jsx"]
+}

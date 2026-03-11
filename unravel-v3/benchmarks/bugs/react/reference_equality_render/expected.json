@@ -1,0 +1,14 @@
+{
+  "root_cause_keywords": [
+    "reference equality",
+    "array push mutation",
+    "same reference skips render",
+    "React shallow comparison"
+  ],
+  "files": [
+    "TagEditor.jsx"
+  ],
+  "lines": [
+    12
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["closure captures reference", "object mutated after enqueue", "config not copied", "shared reference mutation"],
+  "files": ["eventQueue.js"],
+  "lines": [5]
+}

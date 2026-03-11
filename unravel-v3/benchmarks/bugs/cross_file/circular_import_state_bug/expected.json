@@ -1,0 +1,18 @@
+{
+  "root_cause_keywords": [
+    "circular import",
+    "partially initialized",
+    "undefined at import time",
+    "module evaluation order",
+    "circular dependency",
+    "evaluation order",
+    "undefined at import"
+  ],
+  "files": [
+    "userStore.js",
+    "permissionsStore.js"
+  ],
+  "lines": [
+    1
+  ]
+}

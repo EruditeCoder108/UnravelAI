@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["derived state", "props not reflected in state", "stale items snapshot", "state initialized once from prop"],
+  "files": ["FilteredList.jsx"],
+  "lines": [5]
+}

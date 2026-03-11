@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["closure retains reference", "large dataset held in closure", "GC cannot collect", "processors array cleared but closures still reference data"],
+  "files": ["dataProcessor.js"],
+  "lines": [1]
+}

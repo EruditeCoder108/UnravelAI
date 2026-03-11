@@ -1,0 +1,9 @@
+{
+  "id": "missing_cleanup_leak",
+  "category": "lifecycle",
+  "difficulty": "medium",
+  "symptom": "App gets slower over time. Console shows the scroll handler firing multiple times per scroll event after navigating between pages.",
+  "files": [
+    "ScrollTracker.jsx"
+  ]
+}

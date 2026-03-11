@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["arguments swapped", "parameter order mismatch", "roomId passed as userId"],
+  "files": ["api.js"],
+  "lines": [10]
+}

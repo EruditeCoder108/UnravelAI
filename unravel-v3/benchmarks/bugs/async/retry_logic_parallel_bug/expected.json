@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["parallel requests", "retries fire simultaneously", "Promise.all not sequential", "loop pushes all at once"],
+  "files": ["api.js"],
+  "lines": [4]
+}

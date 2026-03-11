@@ -1,0 +1,7 @@
+{
+  "id": "loop_closure_capture",
+  "category": "closure",
+  "difficulty": "medium",
+  "symptom": "Clicking any button always logs the same number (equal to buttons.length), never the button's actual index.",
+  "files": ["app.js"]
+}

@@ -1,0 +1,7 @@
+{
+  "id": "promise_all_partial_failure",
+  "category": "async",
+  "difficulty": "medium",
+  "symptom": "Entire dashboard fails to render when notifications API returns an error, even though profile and posts loaded fine.",
+  "files": ["app.js"]
+}

@@ -1,0 +1,19 @@
+{
+  "root_cause_keywords": [
+    "shared object mutation",
+    "exported object mutated",
+    "reference mutation",
+    "config polluted across modules",
+    "direct mutation",
+    "mutates the original",
+    "mutates exported",
+    "shared mutable state",
+    "modifies the imported"
+  ],
+  "files": [
+    "auth.js"
+  ],
+  "lines": [
+    5
+  ]
+}

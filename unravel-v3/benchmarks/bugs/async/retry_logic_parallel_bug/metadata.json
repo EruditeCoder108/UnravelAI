@@ -1,0 +1,7 @@
+{
+  "id": "retry_logic_parallel_bug",
+  "category": "async",
+  "difficulty": "hard",
+  "symptom": "Server logs show 3 simultaneous requests instead of sequential retries. Rate limiting gets triggered on every call.",
+  "files": ["api.js"]
+}

@@ -1,0 +1,7 @@
+{
+  "id": "parameter_misordering",
+  "category": "data_flow",
+  "difficulty": "medium",
+  "symptom": "Bookings are created with the userId and roomId swapped. Room 42 gets booked for user 7 when user 42 tries to book room 7.",
+  "files": ["api.js"]
+}

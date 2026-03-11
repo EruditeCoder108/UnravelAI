@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["listener not removed", "destroy missing removeEventListener", "accumulating listeners", "bind creates new reference"],
+  "files": ["modalManager.js"],
+  "lines": [20]
+}

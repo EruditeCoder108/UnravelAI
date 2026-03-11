@@ -1,0 +1,7 @@
+{
+  "id": "prototype_pollution",
+  "category": "security",
+  "difficulty": "hard",
+  "symptom": "After processing user-supplied JSON, all plain objects in the application unexpectedly have isAdmin=true property.",
+  "files": ["merge.js"]
+}

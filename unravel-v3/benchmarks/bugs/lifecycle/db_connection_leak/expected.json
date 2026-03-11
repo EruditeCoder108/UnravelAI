@@ -1,0 +1,18 @@
+{
+  "root_cause_keywords": [
+    "client.release missing",
+    "connection pool exhausted",
+    "connection not returned",
+    "pool max reached",
+    "pool exhausted",
+    "connections hanging",
+    "release()",
+    "leak connection"
+  ],
+  "files": [
+    "userRepository.js"
+  ],
+  "lines": [
+    10
+  ]
+}

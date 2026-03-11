@@ -1,0 +1,18 @@
+{
+  "root_cause_keywords": [
+    "forEach async",
+    "forEach does not await",
+    "parallel execution",
+    "results empty",
+    "concurrently",
+    "all at once",
+    "simultaneously",
+    "Promise.all"
+  ],
+  "files": [
+    "app.js"
+  ],
+  "lines": [
+    4
+  ]
+}

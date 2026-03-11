@@ -1,0 +1,7 @@
+{
+  "id": "prop_mutation_bug",
+  "category": "react",
+  "difficulty": "medium",
+  "symptom": "Editing the form fields mutates the original user object in the parent component before Save is clicked. Parent's data changes unexpectedly as the user types.",
+  "files": ["EditForm.jsx"]
+}

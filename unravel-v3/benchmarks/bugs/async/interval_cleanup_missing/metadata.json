@@ -1,0 +1,7 @@
+{
+  "id": "interval_cleanup_missing",
+  "category": "async",
+  "difficulty": "easy",
+  "symptom": "Warning: Can't perform a React state update on an unmounted component. Memory usage grows over time.",
+  "files": ["Timer.jsx"]
+}

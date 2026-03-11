@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["this context lost", "method passed as callback", "unbound method", "this is undefined in callback"],
+  "files": ["userManager.js"],
+  "lines": [10]
+}

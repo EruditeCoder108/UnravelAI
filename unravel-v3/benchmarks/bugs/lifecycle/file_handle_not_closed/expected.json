@@ -1,0 +1,17 @@
+{
+  "root_cause_keywords": [
+    "file handle not closed",
+    "fileHandle.close missing",
+    "EMFILE",
+    "resource leak",
+    "open file descriptor",
+    "file descriptor leak",
+    "close()"
+  ],
+  "files": [
+    "fileProcessor.js"
+  ],
+  "lines": [
+    4
+  ]
+}

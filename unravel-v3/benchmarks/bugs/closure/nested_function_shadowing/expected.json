@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["variable shadowing", "inner result shadows outer", "local variable not global", "nested scope shadow"],
+  "files": ["calculator.js"],
+  "lines": [4]
+}

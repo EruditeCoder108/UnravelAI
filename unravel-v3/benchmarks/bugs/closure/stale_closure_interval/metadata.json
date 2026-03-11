@@ -1,0 +1,9 @@
+{
+  "id": "stale_closure_interval",
+  "category": "closure",
+  "difficulty": "medium",
+  "symptom": "Counter shows 1 every second instead of incrementing. The number never goes above 1.",
+  "files": [
+    "Counter.jsx"
+  ]
+}

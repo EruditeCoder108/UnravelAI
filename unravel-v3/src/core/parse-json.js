@@ -77,20 +77,30 @@ export function parseAIJson(text, isStreaming = false) {
  * Find potential JSON object substrings by tracking brace depth.
  * Returns candidates ordered by length (largest first), which
  * favors the complete response object over nested fragments.
+ *
+ * KEY FIX: LLMs sometimes emit literal newlines/control chars inside
+ * JSON string values instead of the escaped \n sequence. We treat any
+ * unescaped newline or CR as an early string terminator so we don't
+ * count braces that are actually inside a malformed string value.
  */
 function findJsonCandidates(text) {
+    // Pre-sanitize: replace literal newlines inside JSON string values
+    // with the escape sequence \n so the scanner doesn't miscount braces.
+    // This regex replaces \n or \r that appear inside a "..." string.
+    const sanitized = sanitizeLiteralNewlines(text);
+
     const candidates = [];
     let depth = 0;
     let start = -1;
 
-    for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
+    for (let i = 0; i < sanitized.length; i++) {
+        const ch = sanitized[i];
 
         // Skip characters inside strings to avoid false brace counts
         if (ch === '"') {
             i++; // move past the opening quote
-            while (i < text.length && text[i] !== '"') {
-                if (text[i] === '\\') i++; // skip escaped chars
+            while (i < sanitized.length && sanitized[i] !== '"' && sanitized[i] !== '\n' && sanitized[i] !== '\r') {
+                if (sanitized[i] === '\\') i++; // skip escaped chars
                 i++;
             }
             continue;
@@ -102,7 +112,7 @@ function findJsonCandidates(text) {
         } else if (ch === '}') {
             depth--;
             if (depth === 0 && start !== -1) {
-                candidates.push(text.slice(start, i + 1));
+                candidates.push(sanitized.slice(start, i + 1));
                 start = -1;
             }
         }
@@ -111,6 +121,37 @@ function findJsonCandidates(text) {
     // Sort by length descending — the full response object is usually largest
     candidates.sort((a, b) => b.length - a.length);
     return candidates;
+}
+
+/**
+ * Replace literal (unescaped) newlines inside JSON string values with \\n.
+ * LLMs sometimes emit: "label": "line1\nline2" with a real newline char.
+ * Standard JSON spec forbids this — it's the #1 cause of streaming parse failures.
+ */
+function sanitizeLiteralNewlines(text) {
+    let result = '';
+    let inString = false;
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '\\' && inString) {
+            // Escaped char — keep both the backslash and the next char as-is
+            result += ch;
+            if (i + 1 < text.length) { result += text[++i]; }
+            continue;
+        }
+        if (ch === '"') {
+            inString = !inString;
+            result += ch;
+            continue;
+        }
+        if (inString && (ch === '\n' || ch === '\r')) {
+            // Replace literal newline inside a string with the JSON escape
+            result += ch === '\n' ? '\\n' : '\\r';
+            continue;
+        }
+        result += ch;
+    }
+    return result;
 }
 
 /**
@@ -126,6 +167,9 @@ function repairTruncatedJson(text) {
 
     // Strip markdown fences
     let json = text.replace(/```(?:json)?\s*\n?/gi, '').replace(/```\s*$/g, '').trim();
+
+    // Sanitize literal newlines inside strings before repair
+    json = sanitizeLiteralNewlines(json);
 
     // Find the first opening brace
     const firstBrace = json.indexOf('{');

@@ -1,0 +1,9 @@
+{
+  "id": "stale_prop_drilling",
+  "category": "data_flow",
+  "difficulty": "medium",
+  "symptom": "Child component always shows the initial user name \"Guest\" even after parent updates the user state after login.",
+  "files": [
+    "App.jsx"
+  ]
+}

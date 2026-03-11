@@ -1,0 +1,17 @@
+{
+  "root_cause_keywords": [
+    "worker.terminate missing",
+    "worker not stopped",
+    "orphaned thread",
+    "cancelTask only removes from map",
+    "worker still running",
+    "thread leak",
+    "terminate()"
+  ],
+  "files": [
+    "taskRunner.js"
+  ],
+  "lines": [
+    23
+  ]
+}

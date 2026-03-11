@@ -1,0 +1,15 @@
+{
+  "root_cause_keywords": [
+    "no cleanup",
+    "event listener not removed",
+    "missing removeEventListener",
+    "listener accumulates",
+    "memory leak"
+  ],
+  "files": [
+    "ScrollTracker.jsx"
+  ],
+  "lines": [
+    11
+  ]
+}

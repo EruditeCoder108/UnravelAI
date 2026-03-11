@@ -1,0 +1,9 @@
+{
+  "id": "cross_file_state_mutation",
+  "category": "cross_file",
+  "difficulty": "hard",
+  "symptom": "The counter display always shows 0 even after pressing increment multiple times. The incrementCount() function works in the console but the display never updates.",
+  "files": [
+    "App.js"
+  ]
+}

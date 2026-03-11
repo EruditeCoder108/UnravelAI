@@ -1,0 +1,25 @@
+{
+  "root_cause_keywords": [
+    "race condition",
+    "stale response",
+    "fetch order",
+    "unguarded shared variable",
+    "race-condition",
+    "concurrent requests",
+    "concurrent fetch",
+    "faster response",
+    "slower response",
+    "overwrites",
+    "simultaneously",
+    "older response",
+    "older result",
+    "out of order",
+    "stale data"
+  ],
+  "files": [
+    "app.js"
+  ],
+  "lines": [
+    5
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["module level side effect", "import mutates shared state", "flag polluted on import", "shared mutable export"],
+  "files": ["experimentSetup.js"],
+  "lines": [3]
+}

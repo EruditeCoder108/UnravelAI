@@ -1,0 +1,16 @@
+{
+  "root_cause_keywords": [
+    "missing dependency",
+    "empty dependency array",
+    "useEffect does not re-run",
+    "userId not in deps",
+    "dependency array is missing",
+    "eslint-plugin-react-hooks"
+  ],
+  "files": [
+    "UserProfile.jsx"
+  ],
+  "lines": [
+    10
+  ]
+}

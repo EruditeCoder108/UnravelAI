@@ -1,0 +1,7 @@
+{
+  "id": "event_listener_async_race",
+  "category": "async",
+  "difficulty": "hard",
+  "symptom": "Cannot set properties of null on getElementById after navigating away mid-request.",
+  "files": ["component.js"]
+}

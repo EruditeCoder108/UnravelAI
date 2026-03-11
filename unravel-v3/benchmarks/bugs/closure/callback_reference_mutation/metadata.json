@@ -1,0 +1,7 @@
+{
+  "id": "callback_reference_mutation",
+  "category": "closure",
+  "difficulty": "hard",
+  "symptom": "Both tasks in the queue process with action=delete_user instead of the first task using send_email.",
+  "files": ["eventQueue.js"]
+}

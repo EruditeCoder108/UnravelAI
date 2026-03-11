@@ -1,0 +1,7 @@
+{
+  "id": "event_bus_double_subscription",
+  "category": "cross_file",
+  "difficulty": "hard",
+  "symptom": "Every user update shows the notification banner twice and fires two analytics events.",
+  "files": ["eventBus.js", "notificationModule.js", "analyticsModule.js", "app.js"]
+}

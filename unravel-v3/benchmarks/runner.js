@@ -1,32 +1,27 @@
 // ═══════════════════════════════════════════════════
-// UNRAVEL v3 — Benchmark Runner
-// Measures RCA accuracy and Hallucination Rate
-// with and without AST pre-analysis context
+// UNRAVEL v3 — UDB-51 Benchmark Runner
+// TWO RUNS PER BUG:
+//   Standalone = raw LLM, bare prompt, no pipeline (the floor)
+//   Enhanced   = full Unravel engine via orchestrate() (the ceiling)
+// Saves full raw outputs to grading-ready.json for separate grading step
 // ═══════════════════════════════════════════════════
 //
 // Usage:
-//   node benchmarks/runner.js --provider anthropic --model claude-sonnet-4-6-20260301 --key YOUR_API_KEY
-//
-// This runner:
-//   1. Loads all 10 benchmark bugs
-//   2. For each bug, runs Unravel WITHOUT AST context (baseline)
-//   3. For each bug, runs Unravel WITH AST context (enhanced)
-//   4. Scores RCA accuracy and Hallucination Rate for each run
-//   5. Outputs a comparison table
+//   node benchmarks/runner.js --provider google --model gemini-2.5-flash --key YOUR_KEY
+//   node benchmarks/runner.js --provider google --model gemini-2.5-flash --key YOUR_KEY --tag "post-4b"
+//   node benchmarks/runner.js --bugs "double_fetch_race,missing_await" --no-standalone
+//   node benchmarks/runner.js --limit 20   (run only first 20 bugs — for pilot)
+//   node benchmarks/runner.js --only-standalone  (skip enhanced, run standalone only)
 
-import { readFileSync, writeFileSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ── Dynamic Imports (ESM) ──────────────────────────
-// We import the AST engine and config from the app source
-const { runFullAnalysis, runMultiFileAnalysis } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'ast-engine.js')).href);
-const { runCrossFileAnalysis } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'ast-project.js')).href);
-const { buildSystemPrompt, ENGINE_SCHEMA_INSTRUCTION } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'config.js')).href);
-const { parseAIJson } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'parse-json.js')).href);
+// ── Dynamic Import: orchestrate ──────────────────────
+const { orchestrate } = await import(pathToFileURL(join(__dirname, '..', 'src', 'core', 'orchestrate.js')).href);
 
 // ── CLI Args ────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -35,55 +30,134 @@ function getArg(name) {
     return idx !== -1 ? args[idx + 1] : null;
 }
 
-const PROVIDER = getArg('provider') || 'anthropic';
-const MODEL = getArg('model') || 'claude-sonnet-4-6-20260301';
+const PROVIDER = getArg('provider') || 'google';
+const MODEL = getArg('model') || 'gemini-2.5-flash';
 const API_KEY = getArg('key') || process.env.UNRAVEL_API_KEY;
-const OUTPUT_FILE = getArg('output') || join(__dirname, 'results.json');
-const SKIP_BASELINE = args.includes('--no-baseline');
-const SKIP_AST = args.includes('--no-ast');
+const GRADING_FILE = join(__dirname, 'grading-ready.json');
+const HISTORY_FILE = join(__dirname, 'results-history.json');
+const SKIP_STANDALONE = args.includes('--no-standalone');
+const SKIP_ENHANCED = args.includes('--only-standalone');
 const BUG_FILTER = getArg('bugs') ? getArg('bugs').split(',').map(s => s.trim()) : null;
+const RUN_TAG = getArg('tag') || '';
+const BUG_LIMIT = getArg('limit') ? parseInt(getArg('limit')) : null;
 
 if (!API_KEY) {
     console.error('❌ Pass --key YOUR_API_KEY or set UNRAVEL_API_KEY env var.');
     process.exit(1);
 }
 
-// ── Load All Bugs ───────────────────────────────────
-async function loadBugs() {
-    const bugsDir = join(__dirname, 'bugs');
-    const files = readdirSync(bugsDir).filter(f => f.startsWith('bug') && f.endsWith('.js'));
-    files.sort();
+// ═══════════════════════════════════════════════════
+// UNIFIED BUG LOADER
+// bugs/<category>/<bug_name>/metadata.json + files/
+// ═══════════════════════════════════════════════════
 
+function loadBugs() {
+    const bugsDir = join(__dirname, 'bugs');
     const bugs = [];
-    for (const file of files) {
-        const filePath = pathToFileURL(join(bugsDir, file)).href;
-        const mod = await import(filePath);
-        bugs.push({ ...mod.metadata, code: mod.code, files: mod.files, file });
+
+    const categories = readdirSync(bugsDir).filter(f =>
+        statSync(join(bugsDir, f)).isDirectory()
+    );
+
+    for (const category of categories) {
+        const categoryDir = join(bugsDir, category);
+        const bugDirs = readdirSync(categoryDir).filter(f =>
+            statSync(join(categoryDir, f)).isDirectory()
+        );
+
+        for (const bugDir of bugDirs) {
+            const bugPath = join(categoryDir, bugDir);
+            const metaPath = join(bugPath, 'metadata.json');
+            const expectedPath = join(bugPath, 'expected.json');
+            const filesDir = join(bugPath, 'files');
+
+            if (!existsSync(metaPath)) continue;
+
+            try {
+                const metadata = JSON.parse(readFileSync(metaPath, 'utf-8'));
+                const expected = existsSync(expectedPath)
+                    ? JSON.parse(readFileSync(expectedPath, 'utf-8'))
+                    : {};
+
+                const codeFiles = [];
+                if (existsSync(filesDir)) {
+                    for (const sf of readdirSync(filesDir)) {
+                        codeFiles.push({
+                            name: sf,
+                            content: readFileSync(join(filesDir, sf), 'utf-8'),
+                        });
+                    }
+                }
+
+                bugs.push({
+                    id: metadata.id || bugDir,
+                    category: metadata.category || category,
+                    difficulty: metadata.difficulty || 'medium',
+                    symptom: metadata.symptom || '',
+                    files: codeFiles,
+                    expected,
+                });
+            } catch (err) {
+                console.warn(`⚠️ Failed to load bug ${bugDir}: ${err.message}`);
+            }
+        }
     }
+
+    bugs.sort((a, b) => a.id.localeCompare(b.id));
     return bugs;
 }
 
-// ── Confidence Normalizer ────────────────────────
-// Gemini sometimes returns "HIGH"/"MEDIUM"/"LOW" strings instead of 1-10 numbers
-function normalizeConfidence(raw) {
-    if (raw == null) return null;
-    if (typeof raw === 'number') return raw;
-    const str = String(raw).toUpperCase().trim();
-    const map = { 'HIGH': 0.9, 'MEDIUM': 0.6, 'MED': 0.6, 'LOW': 0.3, 'VERY HIGH': 0.95, 'VERY LOW': 0.1 };
-    if (map[str] !== undefined) return map[str];
-    // Try parsing as number in case it's "5" as string
-    const num = parseFloat(str);
-    if (!isNaN(num)) return num > 1 ? num / 10 : num; // normalize 1-10 scale to 0-1
-    return raw;
-}
+// ═══════════════════════════════════════════════════
+// STANDALONE RUN
+// Raw LLM call — no orchestrate, no pipeline, no system prompt,
+// no schema, no anti-sycophancy rules, no AST.
+// This is what developers get when they paste into ChatGPT.
+// ═══════════════════════════════════════════════════
 
-// ── API Call ─────────────────────────────────────────
-async function callUnravel(code, symptom, systemPrompt) {
-    const fetchWithRetry = async (url, options, retries = 3) => {
+async function callRawAPI(userPrompt) {
+    let url, headers, body;
+
+    if (PROVIDER === 'anthropic') {
+        url = 'https://api.anthropic.com/v1/messages';
+        headers = {
+            'Content-Type': 'application/json',
+            'x-api-key': API_KEY,
+            'anthropic-version': '2023-06-01',
+        };
+        body = {
+            model: MODEL,
+            max_tokens: 8192,
+            messages: [{ role: 'user', content: userPrompt }],
+        };
+    } else if (PROVIDER === 'google') {
+        url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+        headers = { 'Content-Type': 'application/json' };
+        body = {
+            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
+        };
+    } else if (PROVIDER === 'openai') {
+        url = 'https://api.openai.com/v1/chat/completions';
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${API_KEY}`,
+        };
+        body = {
+            model: MODEL,
+            messages: [{ role: 'user', content: userPrompt }],
+            max_tokens: 8192,
+        };
+    }
+
+    const fetchWithRetry = async (retries = 3) => {
         let delay = 2000;
         for (let i = 0; i < retries; i++) {
             try {
-                const response = await fetch(url, options);
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(body),
+                });
                 if (!response.ok) {
                     if (response.status === 429 || response.status >= 500) {
                         throw new Error(`HTTP ${response.status}`);
@@ -101,209 +175,36 @@ async function callUnravel(code, symptom, systemPrompt) {
         }
     };
 
-    const userPrompt = `FILES PROVIDED:\n=== FILE: script.js ===\n${code}\n\nUSER'S BUG REPORT:\n${symptom}` + ENGINE_SCHEMA_INSTRUCTION;
+    const data = await fetchWithRetry();
 
-    let url, headers, body;
-
+    // Extract raw text — no JSON parsing, no schema enforcement
     if (PROVIDER === 'anthropic') {
-        url = 'https://api.anthropic.com/v1/messages';
-        headers = {
-            'Content-Type': 'application/json',
-            'x-api-key': API_KEY,
-            'anthropic-version': '2023-06-01',
-        };
-        body = {
-            model: MODEL,
-            max_tokens: 16384,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: userPrompt }],
-        };
+        return data.content?.map(c => c.text).join('') || '';
     } else if (PROVIDER === 'google') {
-        url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
-        headers = { 'Content-Type': 'application/json' };
-        body = {
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 65536 },
-        };
-    } else if (PROVIDER === 'openai') {
-        url = 'https://api.openai.com/v1/chat/completions';
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${API_KEY}`,
-        };
-        body = {
-            model: MODEL,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt },
-            ],
-            max_tokens: 16384,
-        };
-    }
-
-    const startTime = Date.now();
-    let ttft = null;
-
-    const data = await fetchWithRetry(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-    });
-
-    const endTime = Date.now();
-    // Since we are not streaming right now, TTFT is the same as total time.
-    // In a streaming setup, TTFT would be captured when the first chunk arrives.
-    ttft = endTime - startTime;
-    const timeToFinalAnswer = endTime - startTime;
-
-    let textOut = '';
-    // Extract text from response
-    if (PROVIDER === 'anthropic') {
-        textOut = data.content?.map(c => c.text).join('') || '';
-    } else if (PROVIDER === 'google') {
-        // Gemini 2.5 Flash returns 'thought' parts alongside 'text' parts — filter for text only
         const parts = data.candidates?.[0]?.content?.parts || [];
-        textOut = parts.filter(p => !!p.text).map(p => p.text).join('') || '';
+        return parts.filter(p => !!p.text).map(p => p.text).join('') || '';
     } else if (PROVIDER === 'openai') {
-        textOut = data.choices?.[0]?.message?.content || '';
+        return data.choices?.[0]?.message?.content || '';
     }
-
-    return { raw: textOut, timeToFirstToken: ttft, timeToFinalAnswer };
+    return '';
 }
 
+async function runStandalone(bug) {
+    const codeBlock = bug.files
+        .map(f => `=== FILE: ${f.name} ===\n${f.content}`)
+        .join('\n\n');
 
+    // Bare prompt — exactly what a dev pastes into ChatGPT
+    const prompt = `Here is some code with a bug. What is the root cause?\n\n${codeBlock}\n\nBug description: ${bug.symptom || 'Something is wrong with this code.'}`;
 
-// ═══════════════════════════════════════════════════
-// RCA SCORING
-// Match   = AI identifies exact variable + line = 1.0
-// Partial = AI identifies right area, wrong specifics = 0.5
-// Miss    = AI suggests plausible but wrong cause = 0.0
-// ═══════════════════════════════════════════════════
-
-// Universal coercion: model may return strings, objects, arrays, or numbers
-// for any field. This normalizes everything to a searchable string.
-function toStr(val) {
-    if (val == null) return '';
-    if (typeof val === 'string') return val;
-    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-    if (Array.isArray(val)) return val.map(toStr).join(' ');
-    if (typeof val === 'object') return JSON.stringify(val);
-    return String(val);
-}
-
-function scoreRCA(aiResult, bug) {
-    if (!aiResult?.report) return { score: 0, reason: 'No report produced' };
-
-    const report = aiResult.report;
-    const rootCause = toStr(report.rootCause).toLowerCase();
-    const codeLocation = toStr(report.codeLocation).toLowerCase();
-    const bugType = toStr(report.bugType).toUpperCase();
-
-    const trueVar = bug.trueVariable.toLowerCase();
-    const trueCause = bug.trueRootCause.toLowerCase();
-    const trueLine = String(bug.trueLine);
-    const trueCategory = bug.bugCategory;
-
-    // Full match: correct variable AND correct line or root cause description
-    const hasVariable = rootCause.includes(trueVar) || codeLocation.includes(trueVar);
-    const hasLine = rootCause.includes(`line ${trueLine}`) || codeLocation.includes(`line ${trueLine}`)
-        || rootCause.includes(`l${trueLine}`) || codeLocation.includes(trueLine);
-    const hasCategory = bugType === trueCategory;
-
-    // Check if the core concept of the root cause is identified
-    const causeKeywords = trueCause.split(' ').filter(w => w.length > 4);
-    const causeMatchCount = causeKeywords.filter(kw => rootCause.includes(kw)).length;
-    const causeMatchRatio = causeKeywords.length > 0 ? causeMatchCount / causeKeywords.length : 0;
-
-    if (hasVariable && hasLine && hasCategory) {
-        return { score: 1.0, reason: 'Exact match: correct variable, line, and category' };
-    }
-    if (hasVariable && (hasLine || hasCategory) && causeMatchRatio > 0.3) {
-        return { score: 1.0, reason: 'Match: correct variable + category/line + cause description' };
-    }
-    if (hasVariable && causeMatchRatio > 0.4) {
-        return { score: 0.5, reason: 'Partial: correct variable, some cause understanding' };
-    }
-    if (hasCategory && causeMatchRatio > 0.3) {
-        return { score: 0.5, reason: 'Partial: correct category, vague on specifics' };
-    }
-    if (hasVariable || hasLine) {
-        return { score: 0.5, reason: 'Partial: found the area but missed the root cause' };
-    }
-
-    return { score: 0, reason: `Miss: AI said "${toStr(report.rootCause).slice(0, 80)}..."` };
-}
-
-// ═══════════════════════════════════════════════════
-// HALLUCINATION SCORING
-// Cross-reference AI claims against source code
-// ═══════════════════════════════════════════════════
-
-function scoreHallucinations(aiResult, bugCode) {
-    if (!aiResult?.report) return { hallucinated: 0, total: 0, rate: 0 };
-
-    const report = aiResult.report;
-    const codeLines = bugCode.trim().split('\n');
-    let totalClaims = 0;
-    let hallucinatedClaims = 0;
-
-    // Check variable state claims
-    if (report.variableState && Array.isArray(report.variableState)) {
-        for (const vs of report.variableState) {
-            totalClaims++;
-            const varName = toStr(vs.variable || vs.name || vs).toLowerCase();
-            if (varName && !bugCode.toLowerCase().includes(varName)) {
-                hallucinatedClaims++;
-            }
-        }
-    }
-
-    // Check evidence claims for line references
-    if (report.evidence && Array.isArray(report.evidence)) {
-        for (const ev of report.evidence) {
-            const evStr = toStr(ev);
-            const lineRefs = evStr.match(/line\s+(\d+)/gi) || [];
-            for (const ref of lineRefs) {
-                totalClaims++;
-                const lineNum = parseInt(ref.replace(/line\s+/i, ''));
-                if (lineNum < 1 || lineNum > codeLines.length) {
-                    hallucinatedClaims++;
-                }
-            }
-        }
-    }
-
-    // Check root cause for variable references
-    const rootCauseStr = toStr(report.rootCause);
-    if (rootCauseStr) {
-        const varPattern = /`(\w+)`/g;
-        let match;
-        while ((match = varPattern.exec(rootCauseStr)) !== null) {
-            totalClaims++;
-            if (!bugCode.includes(match[1])) {
-                hallucinatedClaims++;
-            }
-        }
-    }
-
-    // Check code location
-    const codeLocStr = toStr(report.codeLocation);
-    if (codeLocStr) {
-        totalClaims++;
-        const lineRef = codeLocStr.match(/line\s+(\d+)/i) || codeLocStr.match(/(\d+)/);
-        if (lineRef) {
-            const lineNum = parseInt(lineRef[1]);
-            if (lineNum < 1 || lineNum > codeLines.length) {
-                hallucinatedClaims++;
-            }
-        }
-    }
+    const t0 = Date.now();
+    const rawText = await callRawAPI(prompt);
+    const elapsed = Date.now() - t0;
 
     return {
-        hallucinated: hallucinatedClaims,
-        total: totalClaims,
-        rate: totalClaims > 0 ? (hallucinatedClaims / totalClaims) : 0,
+        output: rawText,  // raw text, not parsed JSON — standalone has no schema
+        timing: elapsed,
+        confidence: null, // standalone has no confidence field
     };
 }
 
@@ -313,180 +214,206 @@ function scoreHallucinations(aiResult, bugCode) {
 
 async function run() {
     console.log('═══════════════════════════════════════════════════');
-    console.log('  UNRAVEL v3 — Benchmark Runner');
+    console.log('  UDB-51 — Unravel Debug Benchmark Runner');
     console.log(`  Provider: ${PROVIDER} | Model: ${MODEL}`);
+    console.log('  Standalone (raw LLM) vs Enhanced (full Unravel engine)');
+    if (RUN_TAG) console.log(`  Tag: ${RUN_TAG}`);
     console.log('═══════════════════════════════════════════════════\n');
 
-    const bugs = await loadBugs();
-    console.log(`Loaded ${bugs.length} benchmark bugs.\n`);
+    let bugs = loadBugs();
 
-    const results = [];
+    if (BUG_FILTER) {
+        bugs = bugs.filter(b => BUG_FILTER.some(f => b.id.includes(f)));
+    }
+    if (BUG_LIMIT && BUG_LIMIT > 0) {
+        bugs = bugs.slice(0, BUG_LIMIT);
+    }
+
+    console.log(`Loaded ${bugs.length} benchmark bugs.\n`);
+    if (bugs.length === 0) {
+        console.error('❌ No bugs found. Check the bugs/ directory structure.');
+        process.exit(1);
+    }
+
+    const gradingEntries = [];
+    let completed = 0;
+    let needsMoreInfoCount = 0;
+    let failedCount = 0;
 
     for (const bug of bugs) {
-        // Skip bugs not in the filter (if filter is set)
-        if (BUG_FILTER && !BUG_FILTER.some(f => bug.id.includes(f))) {
-            continue;
-        }
-        try {
-            console.log(`\n━━━ Bug: ${bug.id} (${bug.bugCategory}) ━━━`);
-            console.log(`  Symptom: ${bug.userSymptom.slice(0, 80)}...`);
+        completed++;
+        console.log(`\n━━━ [${completed}/${bugs.length}] Bug: ${bug.id} (${bug.category}, ${bug.difficulty}) ━━━`);
+        console.log(`  Symptom: ${(bug.symptom || '').slice(0, 100)}...`);
 
-            const systemPrompt = buildSystemPrompt('intermediate', 'english', PROVIDER);
-            const bugResult = {};
+        const entry = {
+            bug_id: bug.id,
+            category: bug.category,
+            difficulty: bug.difficulty,
+            symptom: bug.symptom,
+            source_files: bug.files,
+            expected: bug.expected,
+            standalone_output: null,
+            enhanced_output: null,
+            standalone_timing: null,
+            enhanced_timing: null,
+            enhanced_confidence: null,
+            enhanced_needs_more_info: false,
+        };
 
-            // ── Run 1: WITHOUT AST context ──
-            if (!SKIP_BASELINE) {
-                console.log('  📊 Run 1: WITHOUT AST context...');
-                let baselineResult = null;
-                let baselineTiming = { timeToFirstToken: 0, timeToFinalAnswer: 0 };
-                try {
-                    const engineResponse = await callUnravel(bug.code, bug.userSymptom, systemPrompt);
-                    baselineTiming = { timeToFirstToken: engineResponse.timeToFirstToken, timeToFinalAnswer: engineResponse.timeToFinalAnswer };
-                    baselineResult = parseAIJson(engineResponse.raw);
-                    if (!baselineResult) console.log('  ⚠️ Baseline: Could not parse JSON from response');
-                } catch (err) {
-                    console.log(`  ❌ Baseline failed: ${err.message}`);
-                }
-                const rca = scoreRCA(baselineResult, bug);
-                const hr = scoreHallucinations(baselineResult, bug.code);
-                const conf = normalizeConfidence(baselineResult?.report?.confidence ?? null);
-
-                console.log(`  Baseline:  RCA=${rca.score} (${rca.reason}) | TTFA=${baselineTiming.timeToFinalAnswer}ms | Conf=${conf}`);
-                bugResult.baseline = {
-                    rca,
-                    hr,
-                    timing: baselineTiming,
-                    confidence: conf,
-                    grading: { rootCauseCorrect: null, fixCorrect: null }
-                };
+        // ── Standalone: raw LLM, no pipeline ──
+        if (!SKIP_STANDALONE) {
+            console.log('  🧠 Standalone (raw LLM)...');
+            try {
+                const result = await runStandalone(bug);
+                entry.standalone_output = result.output;
+                entry.standalone_timing = result.timing;
+                console.log(`  ✅ Standalone: ${result.timing}ms`);
+            } catch (err) {
+                failedCount++;
+                console.log(`  ❌ Standalone failed: ${err.message}`);
+                entry.standalone_output = `ERROR: ${err.message}`;
+                entry.standalone_timing = null;
             }
-
-            // ── Run 2: WITH AST context ──
-            if (!SKIP_AST) {
-                console.log('  📊 Run 2: WITH AST context...');
-                let enhancedResult = null;
-                let enhancedTiming = { timeToFirstToken: 0, timeToFinalAnswer: 0 };
-                try {
-                    let analysisPrompt = '';
-                    if (bug.files && bug.files.length > 0) {
-                        const pf = runMultiFileAnalysis(bug.files);
-                        const cf = runCrossFileAnalysis(bug.files, pf.raw);
-                        analysisPrompt = pf.formatted + '\n' + cf.formatted;
-                    } else {
-                        const analysis = runFullAnalysis(bug.code);
-                        analysisPrompt = analysis.formatted;
-                    }
-                    const codeWithAST = `${analysisPrompt}\n\n${bug.code}`;
-                    const engineResponse = await callUnravel(codeWithAST, bug.userSymptom, systemPrompt);
-                    enhancedTiming = { timeToFirstToken: engineResponse.timeToFirstToken, timeToFinalAnswer: engineResponse.timeToFinalAnswer };
-                    enhancedResult = parseAIJson(engineResponse.raw);
-                    if (!enhancedResult) console.log('  ⚠️ Enhanced: Could not parse JSON from response');
-                } catch (err) {
-                    console.log(`  ❌ Enhanced failed: ${err.message}`);
-                }
-
-                const rca = scoreRCA(enhancedResult, bug);
-                const hr = scoreHallucinations(enhancedResult, bug.code);
-                const conf = normalizeConfidence(enhancedResult?.report?.confidence ?? null);
-
-                console.log(`  Enhanced:  RCA=${rca.score} (${rca.reason}) | TTFA=${enhancedTiming.timeToFinalAnswer}ms | Conf=${conf}`);
-                bugResult.enhanced = {
-                    rca,
-                    hr,
-                    timing: enhancedTiming,
-                    confidence: conf,
-                    grading: { rootCauseCorrect: null, fixCorrect: null }
-                };
-            }
-
-            results.push({
-                id: bug.id,
-                category: bug.bugCategory,
-                difficulty: bug.difficulty,
-                ...bugResult
-            });
-
-        } catch (outerErr) {
-            console.log(`  ❌ Bug ${bug.id} crashed entirely: ${outerErr.message}`);
-            results.push({
-                id: bug.id,
-                category: bug.bugCategory,
-                difficulty: bug.difficulty,
-                baseline: { rca: { score: 0, reason: 'Crash' }, hr: { hallucinated: 0, total: 0, rate: 0 } },
-                enhanced: { rca: { score: 0, reason: 'Crash' }, hr: { hallucinated: 0, total: 0, rate: 0 } },
-            });
         }
 
-        // Rate limit: wait between bugs
-        if (bugs.indexOf(bug) < bugs.length - 1) {
-            console.log('  ⏳ Waiting 3s before next bug...');
+        // ── Enhanced: full Unravel engine ──
+        if (!SKIP_ENHANCED) {
+            console.log('  🔬 Enhanced (full Unravel)...');
+            const t0 = Date.now();
+            try {
+                const result = await orchestrate(bug.files, bug.symptom || 'Analyze for any issues.', {
+                    provider: PROVIDER,
+                    apiKey: API_KEY,
+                    model: MODEL,
+                    level: 'intermediate',
+                    language: 'english',
+                    mode: 'debug',
+                    preset: 'full',
+                });
+                const elapsed = Date.now() - t0;
+                entry.enhanced_output = result;
+                entry.enhanced_timing = elapsed;
+                entry.enhanced_confidence = result?.report?.confidence ?? result?.confidence ?? null;
+                entry.enhanced_needs_more_info = !!result?.needsMoreInfo;
+                if (result?.needsMoreInfo) needsMoreInfoCount++;
+                console.log(`  ✅ Enhanced: ${elapsed}ms | Conf: ${entry.enhanced_confidence} | NeedsMore: ${entry.enhanced_needs_more_info}`);
+            } catch (err) {
+                failedCount++;
+                console.log(`  ❌ Enhanced failed: ${err.message}`);
+                entry.enhanced_output = { error: err.message };
+                entry.enhanced_timing = Date.now() - t0;
+            }
+        }
+
+        gradingEntries.push(entry);
+
+        // Rate limit between bugs
+        if (completed < bugs.length) {
+            console.log('  ⏳ Waiting 3s...');
             await new Promise(r => setTimeout(r, 3000));
         }
     }
 
-    // ── Summary Table ──
+    // ── Save grading-ready.json ──
+    writeFileSync(GRADING_FILE, JSON.stringify(gradingEntries, null, 2));
+    console.log(`\n💾 Grading-ready output saved to: ${GRADING_FILE}`);
+
+    // ── Print Summary ──
+    printSummary(gradingEntries, needsMoreInfoCount, failedCount);
+
+    // ── Append to history ──
+    const historyEntry = {
+        timestamp: new Date().toISOString(),
+        tag: RUN_TAG,
+        provider: PROVIDER,
+        model: MODEL,
+        bugCount: gradingEntries.length,
+        failedCount,
+        needsMoreInfoCount,
+        bugs: gradingEntries.map(e => ({
+            id: e.bug_id,
+            category: e.category,
+            difficulty: e.difficulty,
+            standalone_timing: e.standalone_timing,
+            enhanced_timing: e.enhanced_timing,
+            enhanced_confidence: e.enhanced_confidence,
+            enhanced_needs_more_info: e.enhanced_needs_more_info,
+        })),
+    };
+
+    let history = [];
+    if (existsSync(HISTORY_FILE)) {
+        try { history = JSON.parse(readFileSync(HISTORY_FILE, 'utf-8')); } catch { history = []; }
+    }
+    history.push(historyEntry);
+    writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+    console.log(`📚 Appended to history: ${HISTORY_FILE} (${history.length} runs total)`);
+}
+
+// ═══════════════════════════════════════════════════
+// SUMMARY PRINTER
+// ═══════════════════════════════════════════════════
+
+function printSummary(entries, needsMoreInfoCount, failedCount) {
     console.log('\n\n═══════════════════════════════════════════════════');
-    console.log('  RESULTS SUMMARY');
+    console.log('  UDB-51 RUN SUMMARY');
     console.log('═══════════════════════════════════════════════════\n');
 
-    let baselineTotal = 0, enhancedTotal = 0;
-    let baselineHRAvg = 0, enhancedHRAvg = 0;
+    console.log('Bug                          | Category    | Diff | Solo ms | Enh ms  | Enh Conf | NMI | Status');
+    console.log('-----------------------------|-------------|------|---------|---------|----------|-----|-------');
 
-    if (!SKIP_BASELINE) {
-        baselineTotal = results.reduce((sum, r) => sum + (r.baseline?.rca?.score || 0), 0);
-        baselineHRAvg = results.reduce((sum, r) => sum + (r.baseline?.hr?.rate || 0), 0) / results.length;
-    }
-    if (!SKIP_AST) {
-        enhancedTotal = results.reduce((sum, r) => sum + (r.enhanced?.rca?.score || 0), 0);
-        enhancedHRAvg = results.reduce((sum, r) => sum + (r.enhanced?.hr?.rate || 0), 0) / results.length;
-    }
+    for (const e of entries) {
+        const sTime = e.standalone_timing != null ? String(e.standalone_timing).padEnd(8) : 'SKIP    ';
+        const eTime = e.enhanced_timing != null ? String(e.enhanced_timing).padEnd(8) : 'SKIP    ';
+        const eConf = e.enhanced_confidence != null ? String(e.enhanced_confidence).slice(0, 4).padEnd(9) : '—        ';
+        const nmi = e.enhanced_needs_more_info ? '📁  ' : '    ';
+        const hasError = (typeof e.standalone_output === 'string' && e.standalone_output.startsWith('ERROR:'))
+            || e.enhanced_output?.error;
+        const status = hasError ? '❌' : '✅';
 
-    console.log('Bug                          | Baseline RCA | Enhanced RCA | Delta');
-    console.log('-----------------------------|-------------|-------------|------');
-    for (const r of results) {
-        const bScore = r.baseline?.rca?.score ?? 0;
-        const eScore = r.enhanced?.rca?.score ?? 0;
-        const delta = eScore - bScore;
-        const deltaStr = SKIP_BASELINE || SKIP_AST ? 'N/A' : (delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1));
-        const bStr = SKIP_BASELINE ? 'SKIP' : bScore.toFixed(1);
-        const eStr = SKIP_AST ? 'SKIP' : eScore.toFixed(1);
         console.log(
-            `${r.id.padEnd(29)}| ${bStr.padEnd(12)}| ${eStr.padEnd(12)}| ${deltaStr}`
+            `${e.bug_id.padEnd(29)}| ${(e.category || '').padEnd(12)}| ${(e.difficulty || '').slice(0, 4).padEnd(5)}| ${sTime}| ${eTime}| ${eConf}| ${nmi}| ${status}`
         );
     }
 
-    console.log('-----------------------------|-------------|-------------|------');
+    // Category breakdown
+    const categories = {};
+    for (const e of entries) {
+        if (!categories[e.category]) categories[e.category] = { count: 0, totalEnhTime: 0, totalSoloTime: 0 };
+        const cat = categories[e.category];
+        cat.count++;
+        if (e.enhanced_timing) cat.totalEnhTime += e.enhanced_timing;
+        if (e.standalone_timing) cat.totalSoloTime += e.standalone_timing;
+    }
 
-    const bTotalStr = SKIP_BASELINE ? 'SKIP' : `${(baselineTotal / results.length * 100).toFixed(0)}%`;
-    const eTotalStr = SKIP_AST ? 'SKIP' : `${(enhancedTotal / results.length * 100).toFixed(0)}%`;
-    const dTotalStr = SKIP_BASELINE || SKIP_AST ? 'N/A' : `+${((enhancedTotal - baselineTotal) / results.length * 100).toFixed(0)}%`;
+    console.log('\n── Category Breakdown ──');
+    for (const [cat, data] of Object.entries(categories)) {
+        const avgSolo = data.totalSoloTime > 0 ? (data.totalSoloTime / data.count / 1000).toFixed(1) : '—';
+        const avgEnh = data.totalEnhTime > 0 ? (data.totalEnhTime / data.count / 1000).toFixed(1) : '—';
+        console.log(`  ${cat.padEnd(15)} ${data.count} bugs | Solo avg: ${avgSolo}s | Enh avg: ${avgEnh}s`);
+    }
 
-    console.log(
-        `${'TOTAL'.padEnd(29)}| ${bTotalStr.padEnd(12)}| ${eTotalStr.padEnd(12)}| ${dTotalStr}`
-    );
+    // Overall
+    const successCount = entries.length - failedCount;
+    const enhEntries = entries.filter(e => e.enhanced_timing);
+    const soloEntries = entries.filter(e => e.standalone_timing);
+    const avgEnhTime = enhEntries.reduce((s, e) => s + e.enhanced_timing, 0) / (enhEntries.length || 1);
+    const avgSoloTime = soloEntries.reduce((s, e) => s + e.standalone_timing, 0) / (soloEntries.length || 1);
+    const confEntries = entries.filter(e => e.enhanced_confidence != null);
+    const avgConf = confEntries.reduce((s, e) => s + e.enhanced_confidence, 0) / (confEntries.length || 1);
 
-    if (!SKIP_BASELINE) console.log(`\nBaseline Hallucination Rate: ${(baselineHRAvg * 100).toFixed(1)}%`);
-    if (!SKIP_AST) console.log(`Enhanced Hallucination Rate: ${(enhancedHRAvg * 100).toFixed(1)}%`);
+    console.log('\n── Overall ──');
+    console.log(`  Total bugs:     ${entries.length}`);
+    console.log(`  Succeeded:      ${successCount}`);
+    console.log(`  Failed:         ${failedCount}`);
+    console.log(`  NeedsMoreInfo:  ${needsMoreInfoCount}`);
+    console.log(`  Avg solo time:  ${(avgSoloTime / 1000).toFixed(1)}s`);
+    console.log(`  Avg enh time:   ${(avgEnhTime / 1000).toFixed(1)}s`);
+    console.log(`  Avg enh conf:   ${avgConf.toFixed(2)}`);
 
     console.log('\n═══════════════════════════════════════════════════');
-
-    // ── Save Results ──
-    const output = {
-        timestamp: new Date().toISOString(),
-        provider: PROVIDER,
-        model: MODEL,
-        summary: {
-            baselineRCA: SKIP_BASELINE ? 'SKIP' : `${(baselineTotal / results.length * 100).toFixed(0)}%`,
-            enhancedRCA: SKIP_AST ? 'SKIP' : `${(enhancedTotal / results.length * 100).toFixed(0)}%`,
-            rcaDelta: SKIP_BASELINE || SKIP_AST ? 'N/A' : `+${((enhancedTotal - baselineTotal) / results.length * 100).toFixed(0)}%`,
-            baselineHR: SKIP_BASELINE ? 'SKIP' : `${(baselineHRAvg * 100).toFixed(1)}%`,
-            enhancedHR: SKIP_AST ? 'SKIP' : `${(enhancedHRAvg * 100).toFixed(1)}%`,
-        },
-        bugs: results,
-    };
-
-    writeFileSync(OUTPUT_FILE, JSON.stringify(output, null, 2));
-    console.log(`\n💾 Results saved to: ${OUTPUT_FILE}`);
+    console.log('  ⏭  Next step: grade results by reading grading-ready.json');
+    console.log('═══════════════════════════════════════════════════');
 }
 
 run().catch(err => {

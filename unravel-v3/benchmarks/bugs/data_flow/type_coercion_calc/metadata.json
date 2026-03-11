@@ -1,0 +1,9 @@
+{
+  "id": "type_coercion_calc",
+  "category": "data_flow",
+  "difficulty": "easy",
+  "symptom": "Shopping cart total shows \"53\" instead of 8 when adding a $5 item and a $3 item.",
+  "files": [
+    "cart.js"
+  ]
+}

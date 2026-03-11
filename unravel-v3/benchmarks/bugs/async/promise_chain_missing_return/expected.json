@@ -1,0 +1,5 @@
+{
+  "root_cause_keywords": ["missing return", "promise chain broken", "then returns undefined"],
+  "files": ["app.js"],
+  "lines": [4]
+}

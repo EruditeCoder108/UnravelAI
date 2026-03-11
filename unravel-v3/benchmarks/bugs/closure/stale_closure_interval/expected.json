@@ -1,0 +1,20 @@
+{
+  "root_cause_keywords": [
+    "stale closure",
+    "setInterval captures stale",
+    "closure captures initial value",
+    "count stuck at 1",
+    "stale state",
+    "initial state",
+    "closure captures initial",
+    "value at creation",
+    "stale value",
+    "stale snapshot"
+  ],
+  "files": [
+    "Counter.jsx"
+  ],
+  "lines": [
+    12
+  ]
+}

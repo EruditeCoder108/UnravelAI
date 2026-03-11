@@ -1,0 +1,9 @@
+{
+  "id": "stale_closure_effect_deps",
+  "category": "closure",
+  "difficulty": "medium",
+  "symptom": "Chat auto-scroll always scrolls to the position of the FIRST message, not the latest. New messages appear but the scroll position is wrong.",
+  "files": [
+    "ChatWindow.jsx"
+  ]
+}

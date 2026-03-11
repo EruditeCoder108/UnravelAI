@@ -1,0 +1,14 @@
+{
+  "root_cause_keywords": [
+    "imported binding mutation",
+    "direct mutation of export",
+    "local copy in bundler",
+    "cross-file state"
+  ],
+  "files": [
+    "App.js"
+  ],
+  "lines": [
+    7
+  ]
+}

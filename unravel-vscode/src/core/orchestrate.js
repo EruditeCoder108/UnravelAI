@@ -51,6 +51,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         onPartialResult,
         onMissingFiles,
         _depth = 0,
+        _forceNoAST = false,
     } = options;
 
     // Resolve which sections to request for debug mode
@@ -76,7 +77,9 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
     let astContext = '';
     let astRaw = null; // Preserved for claim verifier
-    if (jsFiles.length > 0) {
+    if (_forceNoAST) {
+        console.log('[AST] Skipped — _forceNoAST flag set (baseline run)');
+    } else if (jsFiles.length > 0) {
         try {
             const analysis = runMultiFileAnalysis(jsFiles);
             astContext = analysis.formatted;

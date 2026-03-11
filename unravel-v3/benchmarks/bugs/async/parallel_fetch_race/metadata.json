@@ -1,0 +1,9 @@
+{
+  "id": "parallel_fetch_race",
+  "category": "async",
+  "difficulty": "hard",
+  "symptom": "Search results sometimes show stale results from a previous query. Typing fast causes wrong data to appear.",
+  "files": [
+    "SearchPage.jsx"
+  ]
+}

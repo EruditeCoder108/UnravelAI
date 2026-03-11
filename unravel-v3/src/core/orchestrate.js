@@ -12,8 +12,8 @@ import {
     PRESETS,
     buildDynamicSchema, buildDynamicSchemaInstruction,
 } from './config.js';
-import { runMultiFileAnalysis } from './ast-engine.js';
-import { runCrossFileAnalysis } from './ast-project.js';
+import { runMultiFileAnalysis, initParser } from './ast-engine-ts.js';
+import { runCrossFileAnalysis, selectFilesByGraph } from './ast-project.js';
 import { parseAIJson } from './parse-json.js';
 import { callProvider, callProviderStreaming } from './provider.js';
 
@@ -51,6 +51,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         onPartialResult,
         onMissingFiles,
         _depth = 0,
+        _forceNoAST = false,
     } = options;
 
     // Resolve which sections to request for debug mode
@@ -71,14 +72,36 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         onProgress?.('⚠️ INPUT WARNING: Some files may be incomplete. Proceeding with reduced confidence...');
     }
 
+    // ── Phase 0.5: Graph Router ──
+    // When many files are provided, use the import/call graph to select the
+    // most relevant ones before AST analysis + LLM call.
+    const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
+    if (!_forceNoAST && jsFiles.length > 15) {
+        try {
+            onProgress?.('GRAPH ROUTER: Selecting relevant files from import graph...');
+            const { selectedFiles, strategy } = await selectFilesByGraph(codeFiles, symptom);
+            if (strategy !== 'all-files') {
+                const before = codeFiles.length;
+                codeFiles = codeFiles.filter(f => selectedFiles.includes(f.name));
+                console.log(`[GRAPH] Trimmed ${before} → ${codeFiles.length} files via ${strategy}`);
+                onProgress?.(`GRAPH ROUTER: Focused on ${codeFiles.length}/${before} most relevant files.`);
+            }
+        } catch (routerErr) {
+            console.warn('[GRAPH] Router failed, using all files:', routerErr.message);
+        }
+    }
+
     // ── Phase 1: AST Pre-Analysis ──
     onProgress?.('AST ANALYZER: Extracting verified ground truth from code...');
-    const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
+    const jsFilesForAST = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
     let astContext = '';
     let astRaw = null; // Preserved for claim verifier
-    if (jsFiles.length > 0) {
+    if (_forceNoAST) {
+        console.log('[AST] Skipped — _forceNoAST flag set (baseline run)');
+    } else if (jsFilesForAST.length > 0) {
         try {
-            const analysis = runMultiFileAnalysis(jsFiles);
+            await initParser(); // tree-sitter WASM: lazy init, no-op after first call
+            const analysis = await runMultiFileAnalysis(jsFilesForAST);
             astContext = analysis.formatted;
             astRaw = analysis.raw; // { mutations, closures, timingNodes }
             console.log('[AST] Verified context extracted:', astContext);
@@ -90,9 +113,9 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
 
     // ── Phase 1b: Cross-File AST Resolution ──
     let crossFileRaw = null;
-    if (jsFiles.length >= 2 && astRaw) {
+    if (jsFilesForAST.length >= 2 && astRaw) {
         try {
-            const crossFile = runCrossFileAnalysis(jsFiles, astRaw);
+            const crossFile = await runCrossFileAnalysis(jsFilesForAST, astRaw);
             if (crossFile.formatted) {
                 astContext += '\n' + crossFile.formatted;
                 crossFileRaw = crossFile.raw;
@@ -191,7 +214,6 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         let streamBuffer = '';
         let chunkCounter = 0;
         let lastHash = '';
-        let lastGoodPartial = {}; // Accumulate last-known-good parsed data
 
         raw = await callProviderStreaming({
             provider,
@@ -210,7 +232,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
                 if (!shouldParse) return;
 
                 try {
-                    const partial = parseAIJson(streamBuffer, true); // isStreaming=true suppresses warnings
+                    const partial = parseAIJson(streamBuffer, true /* isStreaming — suppress noise */);
                     if (!partial) return;
 
                     // Dedup: only emit when content actually changes
@@ -233,10 +255,8 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
                     }
 
                     if (Object.keys(safePartial).length > 0) {
-                        // Merge into last-known-good and emit
-                        lastGoodPartial = { ...lastGoodPartial, ...safePartial };
-                        lastGoodPartial._streaming = true;
-                        onPartialResult(lastGoodPartial);
+                        safePartial._streaming = true;
+                        onPartialResult(safePartial);
                     }
                 } catch {
                     // Parse failure during streaming is expected — buffer is still incomplete

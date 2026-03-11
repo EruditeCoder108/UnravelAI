@@ -49,11 +49,40 @@ const SectionBlock = ({ icon, title, color, borderSide = 'left', children, copyT
 
 // ─── Mermaid Utilities ───────────────────────────────────────────────────────
 
-// Sanitize any string into a valid Mermaid node ID
-const mId = (s) => String(s).replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+// Generate UNIQUE Mermaid node IDs — uses a per-chart Map to ensure
+// two different labels never collide even if they share the same prefix.
+let _mIdCounter = 0;
+const _mIdCache = new Map();
+function mId(s) {
+    const key = String(s);
+    if (_mIdCache.has(key)) return _mIdCache.get(key);
+    const safe = key.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20);
+    const id = `n${safe}_${_mIdCounter++}`;
+    _mIdCache.set(key, id);
+    return id;
+}
+// Call before each builder to reset the ID space
+function resetMIds() { _mIdCounter = 0; _mIdCache.clear(); }
 
-// Escape double quotes for use inside Mermaid text labels ["..."]
-const mLabel = (s) => String(s || '').replace(/"/g, '#quot;');
+// Escape ALL Mermaid-special characters for use inside ["..."] labels.
+// Mermaid interprets |, [, ], (, ), {, }, `, # as syntax — escape them all.
+// Also truncate to prevent dagre layout overflow.
+const mLabel = (s, maxLen = 50) => {
+    let t = String(s || '');
+    if (t.length > maxLen) t = t.slice(0, maxLen) + '…';
+    return t
+        .replace(/"/g, '#quot;')
+        .replace(/\|/g, '#124;')
+        .replace(/\[/g, '#91;')
+        .replace(/\]/g, '#93;')
+        .replace(/\(/g, '#40;')
+        .replace(/\)/g, '#41;')
+        .replace(/\{/g, '#123;')
+        .replace(/\}/g, '#125;')
+        .replace(/`/g, '#96;')
+        .replace(/</g, '#lt;')
+        .replace(/>/g, '#gt;');
+};
 
 // Detect cycles in an edge list — returns true if cycle exists
 function hasCycle(edges) {
@@ -80,11 +109,15 @@ function hasCycle(edges) {
 // Build sequence diagram from timelineEdges
 function buildTimelineMermaid(edges) {
     if (!edges || edges.length === 0) return null;
+    const valid = edges.filter(e => e && e.from && e.to);
+    if (valid.length === 0) return null;
+    resetMIds();
     const lines = ['sequenceDiagram'];
-    edges.forEach(({ from, to, label, isBugPoint }) => {
+    valid.forEach(({ from, to, label, isBugPoint }) => {
+        const fId = mId(from), tId = mId(to);
         const arrow = isBugPoint ? '-->>' : '->>';
-        const prefix = isBugPoint ? '    Note over ' + mId(from) + ',' + mId(to) + ': 🐛 BUG HERE\n' : '';
-        lines.push(`${prefix}    ${mId(from)}${arrow}${mId(to)}: ${mLabel(label)}`);
+        if (isBugPoint) lines.push(`    Note over ${fId},${tId}: BUG HERE`);
+        lines.push(`    ${fId}${arrow}${tId}: ${mLabel(label, 40)}`);
     });
     return lines.join('\n');
 }
@@ -92,20 +125,21 @@ function buildTimelineMermaid(edges) {
 // Build hypothesis elimination flowchart from hypothesisTree
 function buildHypothesisMermaid(tree) {
     if (!tree || tree.length === 0) return null;
+    resetMIds();
     const lines = ['flowchart TD'];
     tree.forEach(({ id, text, status, reason }, idx) => {
-        const nodeId = mId(id);
-        const shortText = mLabel(text.slice(0, 40));
+        const nodeId = `H${idx}`;
+        const shortText = mLabel((text || '').slice(0, 40));
         if (status === 'survived') {
-            const survivedId = `SURVIVED_${idx}`;
-            lines.push(`    ${nodeId}["${mLabel(id)}: ${shortText}"]`);
-            lines.push(`    ${nodeId} --> ${survivedId}["✅ Root Cause Confirmed"]`);
+            const survivedId = `S${idx}`;
+            lines.push(`    ${nodeId}["${mLabel(id || 'H' + idx, 25)}: ${shortText}"]`);
+            lines.push(`    ${nodeId} --> ${survivedId}["Root Cause Confirmed"]`);
             lines.push(`    style ${nodeId} fill:#00ff88,color:#000`);
             lines.push(`    style ${survivedId} fill:#00ff88,color:#000`);
         } else {
-            const elimId = mId(id + '_elim');
-            lines.push(`    ${nodeId}["${mLabel(id)}: ${shortText}"]`);
-            lines.push(`    ${nodeId} -->|"${mLabel((reason || '').slice(0, 35))}"| ${elimId}["❌ Eliminated"]`);
+            const elimId = `E${idx}`;
+            lines.push(`    ${nodeId}["${mLabel(id || 'H' + idx, 25)}: ${shortText}"]`);
+            lines.push(`    ${nodeId} -->|"${mLabel((reason || '').slice(0, 35))}"| ${elimId}["Eliminated"]`);
             lines.push(`    style ${nodeId} fill:#333,color:#fff`);
             lines.push(`    style ${elimId} fill:#ff3333,color:#fff`);
         }
@@ -116,10 +150,19 @@ function buildHypothesisMermaid(tree) {
 // Build AI loop cycle diagram from aiLoopEdges
 function buildAILoopMermaid(edges) {
     if (!edges || edges.length === 0) return null;
+    const valid = edges.filter(e => e && e.from && e.to);
+    if (valid.length === 0) return null;
+    resetMIds();
+    // Declare nodes first, then connect with edges (avoids redeclaring labels on every edge)
     const lines = ['flowchart LR'];
-    edges.forEach(({ from, to, label, isEscapePath }) => {
-        const f = mId(from); const t = mId(to);
-        lines.push(`    ${f}["${mLabel(from)}"] -->|"${mLabel(label)}"| ${t}["${mLabel(to)}"]`);
+    const nodeMap = new Map(); // label -> id
+    valid.forEach(({ from, to }) => {
+        if (!nodeMap.has(from)) { const id = `A${nodeMap.size}`; nodeMap.set(from, id); lines.push(`    ${id}["${mLabel(from)}"]`); }
+        if (!nodeMap.has(to)) { const id = `A${nodeMap.size}`; nodeMap.set(to, id); lines.push(`    ${id}["${mLabel(to)}"]`); }
+    });
+    valid.forEach(({ from, to, label, isEscapePath }) => {
+        const f = nodeMap.get(from), t = nodeMap.get(to);
+        lines.push(`    ${f} -->|"${mLabel(label, 40)}"| ${t}`);
         if (isEscapePath) {
             lines.push(`    style ${f} fill:#00ff88,color:#000`);
             lines.push(`    style ${t} fill:#00ff88,color:#000`);
@@ -134,14 +177,18 @@ function buildVariableMermaid(varEdges) {
     const result = [];
     varEdges.forEach(({ variable, edges }) => {
         if (!edges || edges.length < 5) return; // only complex variables
-        const lines = [`flowchart LR`];
-        const declId = mId(variable + '_decl');
-        const firstEdgeFrom = mId(edges[0].from + '0');
+        const validEdges = edges.filter(e => e && e.from && e.to);
+        if (validEdges.length < 5) return;
+        resetMIds();
+        const lines = ['flowchart LR'];
+        const declId = 'DECL';
         lines.push(`    ${declId}["${mLabel(variable)} declared"]`);
-        lines.push(`    ${declId} --> ${firstEdgeFrom}`);
-        edges.forEach(({ from, to, label, type }, i) => {
-            const f = mId(from + i); const t = mId(to + i);
-            lines.push(`    ${f}["${mLabel(from)}"] -->|"${mLabel(label)}"| ${t}["${mLabel(to)}"]`);
+        validEdges.forEach(({ from, to, label, type }, i) => {
+            const f = `V${i}F`, t = `V${i}T`;
+            lines.push(`    ${f}["${mLabel(from)}"]`);
+            lines.push(`    ${t}["${mLabel(to)}"]`);
+            if (i === 0) lines.push(`    ${declId} --> ${f}`);
+            lines.push(`    ${f} -->|"${mLabel(label, 30)}"| ${t}`);
             if (type === 'write') lines.push(`    style ${f} fill:#ffaa00,color:#000`);
             if (type === 'read') lines.push(`    style ${t} fill:#448aff,color:#fff`);
             if (type === 'mutate') lines.push(`    style ${f} fill:#ff003c,color:#fff`);
@@ -154,14 +201,18 @@ function buildVariableMermaid(varEdges) {
 // Build data flow flowchart from flowchartEdges (Explain Mode)
 function buildDataFlowMermaid(edges) {
     if (!edges || edges.length === 0) return null;
-    if (hasCycle(edges)) return null; // fall back to table on cycles
+    const valid = edges.filter(e => e && e.from && e.to);
+    if (valid.length === 0) return null;
+    if (hasCycle(valid)) return null;
+    resetMIds();
     const lines = ['flowchart TD'];
-    const seen = new Set();
-    edges.forEach(({ from, to, label }) => {
-        const f = mId(from); const t = mId(to);
-        if (!seen.has(f)) { lines.push(`    ${f}["${mLabel(from)}"]`); seen.add(f); }
-        if (!seen.has(t)) { lines.push(`    ${t}["${mLabel(to)}"]`); seen.add(t); }
-        lines.push(`    ${f} -->|"${mLabel(label)}"| ${t}`);
+    const nodeMap = new Map();
+    valid.forEach(({ from, to }) => {
+        if (!nodeMap.has(from)) { const id = `D${nodeMap.size}`; nodeMap.set(from, id); lines.push(`    ${id}["${mLabel(from)}"]`); }
+        if (!nodeMap.has(to)) { const id = `D${nodeMap.size}`; nodeMap.set(to, id); lines.push(`    ${id}["${mLabel(to)}"]`); }
+    });
+    valid.forEach(({ from, to, label }) => {
+        lines.push(`    ${nodeMap.get(from)} -->|"${mLabel(label, 35)}"| ${nodeMap.get(to)}`);
     });
     return lines.join('\n');
 }
@@ -169,25 +220,35 @@ function buildDataFlowMermaid(edges) {
 // Build dependency graph from dependencyEdges (Explain Mode)
 function buildDependencyMermaid(deps) {
     if (!deps || deps.length === 0) return null;
+    resetMIds();
     const lines = ['graph LR'];
+    const nodeMap = new Map();
     deps.forEach(({ file, imports }) => {
+        if (!nodeMap.has(file)) { const id = `F${nodeMap.size}`; nodeMap.set(file, id); lines.push(`    ${id}["${mLabel(file)}"]`); }
         (imports || []).forEach(imp => {
-            lines.push(`    ${mId(file)}["${mLabel(file)}"] --> ${mId(imp)}["${mLabel(imp)}"]`);
+            if (!nodeMap.has(imp)) { const id = `F${nodeMap.size}`; nodeMap.set(imp, id); lines.push(`    ${id}["${mLabel(imp)}"]`); }
+            lines.push(`    ${nodeMap.get(file)} --> ${nodeMap.get(imp)}`);
         });
     });
+    if (lines.length <= 1) return null; // only header, no edges
     return lines.join('\n');
 }
 
 // Build attack vector flowchart from attackVectorEdges (Security Mode)
 function buildAttackVectorMermaid(edges) {
     if (!edges || edges.length === 0) return null;
+    const valid = edges.filter(e => e && e.from && e.to);
+    if (valid.length === 0) return null;
+    resetMIds();
     const lines = ['flowchart TD'];
-    const seen = new Set();
-    edges.forEach(({ from, to, label, isExploitStep }) => {
-        const f = mId(from); const t = mId(to);
-        if (!seen.has(f)) { lines.push(`    ${f}["${mLabel(from)}"]`); seen.add(f); }
-        if (!seen.has(t)) { lines.push(`    ${t}["${mLabel(to)}"]`); seen.add(t); }
-        lines.push(`    ${f} -->|"${mLabel(label)}"| ${t}`);
+    const nodeMap = new Map();
+    valid.forEach(({ from, to }) => {
+        if (!nodeMap.has(from)) { const id = `X${nodeMap.size}`; nodeMap.set(from, id); lines.push(`    ${id}["${mLabel(from)}"]`); }
+        if (!nodeMap.has(to)) { const id = `X${nodeMap.size}`; nodeMap.set(to, id); lines.push(`    ${id}["${mLabel(to)}"]`); }
+    });
+    valid.forEach(({ from, to, label, isExploitStep }) => {
+        const f = nodeMap.get(from), t = nodeMap.get(to);
+        lines.push(`    ${f} -->|"${mLabel(label, 35)}"| ${t}`);
         if (isExploitStep) {
             lines.push(`    style ${f} fill:#ff003c,color:#fff`);
             lines.push(`    style ${t} fill:#ff003c,color:#fff`);
@@ -198,35 +259,49 @@ function buildAttackVectorMermaid(edges) {
     return lines.join('\n');
 }
 
-// Mermaid renderer component — renders the diagram or falls back gracefully
+// Mermaid renderer — uses mermaid.render() (off-DOM) instead of mermaid.run()
+// to completely avoid null-ref issues from React StrictMode and streaming re-renders.
+let _mermaidRenderCounter = 0;
 function MermaidChart({ chart, caption }) {
-    const ref = React.useRef(null);
+    const containerRef = React.useRef(null);
+    const renderIdRef = React.useRef(0);
     React.useEffect(() => {
-        if (!ref.current || !chart) return;
-        ref.current.removeAttribute('data-processed');
-        ref.current.innerHTML = chart;
-        try {
-            const result = window.mermaid?.run({ nodes: [ref.current] });
-            // mermaid.run returns a promise — catch render errors silently
-            if (result && typeof result.catch === 'function') {
-                result.catch(err => {
-                    console.warn('[MERMAID] Chart render failed:', err?.message || err);
-                    if (ref.current) {
-                        ref.current.innerHTML = '<p style="color:#666;font-size:12px;font-family:monospace">⚠️ Chart could not be rendered</p>';
-                    }
-                });
+        if (!chart || !containerRef.current) return;
+        const currentRender = ++renderIdRef.current;
+        const container = containerRef.current;
+        const svgId = `mermaid_svg_${_mermaidRenderCounter++}`;
+
+        // Use mermaid.render() — renders to SVG string without touching the DOM
+        // This avoids ALL null-ref issues from run() operating on live DOM nodes
+        const renderChart = async () => {
+            try {
+                if (!window.mermaid) return;
+                const { svg } = await window.mermaid.render(svgId, chart);
+                // Only apply if this is still the latest render and container exists
+                if (currentRender === renderIdRef.current && container && container.isConnected) {
+                    container.innerHTML = svg;
+                }
+            } catch (err) {
+                // Silently degrade — don't spam console, show fallback
+                if (currentRender === renderIdRef.current && container && container.isConnected) {
+                    container.innerHTML = '<p style="color:#555;font-size:11px;font-family:monospace;padding:8px">⚠️ Diagram could not render</p>';
+                }
+                // Clean up any orphaned SVG element mermaid may have left in the DOM
+                const orphan = document.getElementById(svgId);
+                if (orphan) orphan.remove();
             }
-        } catch (err) {
-            console.warn('[MERMAID] Chart render error:', err);
-            if (ref.current) {
-                ref.current.innerHTML = '<p style="color:#666;font-size:12px;font-family:monospace">⚠️ Chart could not be rendered</p>';
-            }
-        }
+        };
+        renderChart();
+
+        return () => {
+            // Cleanup: abort stale renders
+            renderIdRef.current++;
+        };
     }, [chart]);
     if (!chart) return null;
     return (
         <div style={{ background: '#0a0a0a', border: '1px solid #333', padding: 16, marginTop: 12, borderRadius: 0, overflow: 'auto' }}>
-            <div className="mermaid" ref={ref}>{chart}</div>
+            <div ref={containerRef} />
             {caption && <p style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: '#666', marginTop: 8, textTransform: 'uppercase', letterSpacing: 1 }}>{caption}</p>}
         </div>
     );

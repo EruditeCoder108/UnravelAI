@@ -1,0 +1,7 @@
+{
+  "id": "file_handle_not_closed",
+  "category": "lifecycle",
+  "difficulty": "medium",
+  "symptom": "After processing hundreds of log files, the process crashes with EMFILE: too many open files.",
+  "files": ["fileProcessor.js"]
+}

@@ -1,0 +1,7 @@
+{
+  "id": "double_fetch_race",
+  "category": "async",
+  "difficulty": "hard",
+  "symptom": "Clicking prev/next quickly sometimes shows the wrong user — an older result appears after a newer one.",
+  "files": ["app.js"]
+}

@@ -154,20 +154,31 @@ function buildSharedPhases() {
             desc: `Read every provided file completely before forming any opinion.
 Do not diagnose, explain, or audit until a complete mental model of the codebase has been built.
 If you find yourself forming a conclusion before finishing — stop. Keep reading. The early conclusion is probably wrong.
-If necessary, reread sections to verify understanding before proceeding.`
+If necessary, reread sections to verify understanding before proceeding.
+
+⚠️ BUGGY CODE CONTEXT: The code you are analyzing contains at least one bug.
+This means the bug may look syntactically correct — it does exactly what it says, but what it says is wrong.
+Do NOT assume developer intent matches code behavior. Verify behavior from execution, not from naming conventions or appearance.`
         },
         {
             n: 2, name: 'UNDERSTAND INTENT',
             desc: `For each component, function, and module: what is this trying to accomplish?
 What problem does it solve? What does correct behavior look like from the perspective of whoever wrote it?
-Do not assume anything about implementation — derive intent from the code structure and naming.`
+Do not assume anything about implementation — derive intent from the code structure and naming.
+
+If cross-file symbols are present (exported variables, imported functions):
+  - Trace each exported symbol's full lifecycle across ALL provided files
+  - Check: mutated in one file, read in another? The root cause may be in File A even if the failure appears in File B.
+  - Never confine state analysis to a single file when cross-file symbols are visible in the AST context.`
         },
         {
             n: 3, name: 'UNDERSTAND REALITY',
             desc: `What is the code actually doing?
 Where does actual behavior diverge from intended behavior — even slightly?
 Trace data as it moves. Follow execution paths.
-Generate 3-5 competing explanations for any divergence you find.
+Generate exactly 3 competing hypotheses for any divergence you find.
+They MUST be mutually exclusive — if Hypothesis A is correct, B and C must be demonstrably wrong.
+Do NOT generate 3 variations of the same root mechanism.
 Do not commit to any single explanation yet.
 Prefer explanations supported by evidence from multiple locations in the code.
 Reject explanations contradicted by any line of code, regardless of how plausible they seem.
@@ -236,7 +247,7 @@ Document them as rules for future prevention.`
         'If the user\'s bug description contradicts actual code behavior, point out the contradiction instead of agreeing with a false premise.',
         'If you are uncertain, say "I cannot confirm this without runtime execution" — do NOT guess and present it as fact.',
         'Every bug claim MUST include the exact line number and code fragment that proves it. If you cannot cite evidence, do NOT claim the bug.',
-        'Generate at least 3 competing hypotheses before committing to a root cause. Do not anchor to the first plausible explanation.',
+        'Generate exactly 3 competing hypotheses before committing to a root cause. They must be MUTUALLY EXCLUSIVE mechanisms, not variations of the same idea.',
         'If multiple hypotheses survive evidence elimination, report all survivors with evidence for each. Do NOT pick one arbitrarily.',
         'The user\'s description is a symptom report, not a diagnosis. Do not treat their assumption about the bug\'s location or cause as fact.',
         'If critical files are missing, set needsMoreInfo to true and specify exactly what you need.',
@@ -244,6 +255,8 @@ Document them as rules for future prevention.`
         'Be warm like a senior developer friend, not cold like documentation.',
         'Confidence must be evidence-backed — list what you verified and what you could not.',
         'Bug type MUST be one of: STATE_MUTATION, STALE_CLOSURE, RACE_CONDITION, TEMPORAL_LOGIC, EVENT_LIFECYCLE, TYPE_COERCION, ENV_DEPENDENCY, ASYNC_ORDERING, DATA_FLOW, UI_LOGIC, MEMORY_LEAK, INFINITE_LOOP, OTHER.',
+        'Rule 6 — PROXIMATE FIXATION GUARD: The crash site is NEVER automatically the root cause. It is where failure became visible. Trace state BACKWARDS through mutation chains from the failure point. The root cause is where state was FIRST corrupted, not where it first caused a visible failure. Exception: single-line bugs where crash site and root cause are demonstrably the same.',
+        'Rule 7 — NAME-BEHAVIOR FALLACY: A variable named `isPaused` does not guarantee the code pauses. A function named `cleanup()` does not guarantee cleanup occurs. Verify BEHAVIOR from the execution chain — do not trust naming conventions as a substitute for tracing the actual code path.',
     ];
 
     return _formatPrompt(role, levelInst, langInst, allPhases, rules, provider);
@@ -490,6 +503,7 @@ export const ENGINE_SCHEMA = {
                 symptom: { type: "STRING" },
                 reproduction: { type: "ARRAY", items: { type: "STRING" } },
                 rootCause: { type: "STRING" },
+                proximate_crash_site: { type: "STRING", description: "Where the failure became VISIBLE (crash site) — often different from rootCause. Format: 'functionName() L{n} — what went wrong here'. Omit if crash site and root cause are the same line." },
                 codeLocation: { type: "STRING" },
                 minimalFix: { type: "STRING" },
                 whyFixWorks: { type: "STRING" },
@@ -516,7 +530,8 @@ export const ENGINE_SCHEMA = {
                         concept: { type: "STRING" },
                         whyItMatters: { type: "STRING" },
                         patternToAvoid: { type: "STRING" },
-                        realWorldAnalogy: { type: "STRING" }
+                        realWorldAnalogy: { type: "STRING" },
+                        whyVibeCodersHitThis: { type: "STRING", description: "Why AI-assisted developers specifically hit this bug — what the AI generated that looked correct but broke an invariant the AI didn't model." }
                     }
                 },
                 whyAILooped: {
@@ -597,7 +612,7 @@ export const ENGINE_SCHEMA = {
 
 // --- Schema Instruction (for Claude / OpenAI inline prompt injection) ---
 // This mirrors ENGINE_SCHEMA so that changes to one are reflected in both.
-export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, secondaryTags?: string[], customLabel?: string, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, whyAILooped: {pattern, explanation, loopSteps[]}, aiPrompt, timelineEdges: [{from, to, label, isBugPoint}], hypothesisTree: [{id, text, status, reason}], aiLoopEdges: [{from, to, label, isEscapePath}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}] } }`;
+export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, secondaryTags?: string[], customLabel?: string, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, proximate_crash_site?: string, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy, whyVibeCodersHitThis?: string}, whyAILooped: {pattern, explanation, loopSteps[]}, aiPrompt, timelineEdges: [{from, to, label, isBugPoint}], hypothesisTree: [{id, text, status, reason}], aiLoopEdges: [{from, to, label, isEscapePath}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}] } }`;
 
 // ═══════════════════════════════════════════════════
 // PHASE 4A: Mode-Specific Schemas
