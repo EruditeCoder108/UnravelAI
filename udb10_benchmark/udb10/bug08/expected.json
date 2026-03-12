@@ -1,0 +1,7 @@
+{
+    "root_cause": "loadInventory() is called as a floating promise — no await, no returned cleanup function. The useEffect has no way to cancel the in-flight fetch when the component unmounts or warehouseId changes. When the fetch completes after unmount, setInventory fires on an unmounted component.",
+    "root_cause_file": "useInventory.js",
+    "root_cause_line": 22,
+    "fix": "Use an AbortController: create one at the top of useEffect, pass its signal to fetch, and return a cleanup function that calls controller.abort(). Catch AbortError separately to avoid setting error state on intentional cancellation.",
+    "root_cause_keywords": ["floating promise", "no cleanup", "setInventory after unmount", "no AbortController", "missing return cleanup"]
+}

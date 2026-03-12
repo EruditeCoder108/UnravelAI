@@ -1,0 +1,6 @@
+{
+    "id": "usecallback_destructured_stale_step",
+    "category": "react",
+    "difficulty": "medium",
+    "symptom": "incrementByDouble always sets the step to 2 (1 * 2) regardless of what the current step is. Calling SET_STEP to change the step to 5, then calling incrementByDouble, results in step being set back to 2 instead of 10. The step value displayed in the UI is correct but incrementByDouble ignores it."
+}

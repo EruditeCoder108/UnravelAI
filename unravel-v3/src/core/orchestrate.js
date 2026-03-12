@@ -76,13 +76,20 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     // When many files are provided, use the import/call graph to select the
     // most relevant ones before AST analysis + LLM call.
     const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
+    let _routerStrategy = 'all-files'; // captured for provenance
     if (!_forceNoAST && jsFiles.length > 15) {
         try {
             onProgress?.('GRAPH ROUTER: Selecting relevant files from import graph...');
             const { selectedFiles, strategy } = await selectFilesByGraph(codeFiles, symptom);
+            _routerStrategy = strategy;
             if (strategy !== 'all-files') {
                 const before = codeFiles.length;
-                codeFiles = codeFiles.filter(f => selectedFiles.includes(f.name));
+                // selectedFiles contains short basenames — match by basename, not full path
+                const selectedSet = new Set(selectedFiles);
+                codeFiles = codeFiles.filter(f => {
+                    const base = f.name.split(/[\\/]/).pop();
+                    return selectedSet.has(base) || selectedSet.has(f.name);
+                });
                 console.log(`[GRAPH] Trimmed ${before} → ${codeFiles.length} files via ${strategy}`);
                 onProgress?.(`GRAPH ROUTER: Focused on ${codeFiles.length}/${before} most relevant files.`);
             }
@@ -203,7 +210,9 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         contextWarnings.push(`Total input was truncated to fit the context budget (${MAX_TOTAL_CHARS} chars).`);
     }
 
-    const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${cappedFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 8000)}`).join('\n\n')}\n\n${symptomLabel}:\n${symptom || symptomDefault}${schemaInstruction}`;
+    // Do NOT truncate files here — the totalChars guard above already handled budget.
+    // Per-file slice(0, 8000) was silently dropping content even when well within budget.
+    const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${cappedFiles.map(f => `=== FILE: ${f.name} ===\n${f.content}`).join('\n\n')}\n\n${symptomLabel}:\n${symptom || symptomDefault}${schemaInstruction}`;
 
     // ── Phase 3: Call AI (streaming when onPartialResult provided) ──
     const SAFE_STREAM_FIELDS = ['rootCause', 'evidence', 'fix', 'minimalFix', 'bugType', 'confidence', 'symptom', 'codeLocation', 'whyFixWorks', 'variableState', 'timeline', 'conceptExtraction', 'whyAILooped', 'hypotheses', 'reproduction', 'aiPrompt', 'timelineEdges', 'hypothesisTree', 'aiLoopEdges', 'variableStateEdges'];
@@ -368,7 +377,8 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     result._provenance = {
         engineVersion: '3.3',
         astVersion: '2.2',
-        routerStrategy: crossFileRaw ? 'graph-frontier' : 'llm-heuristic',
+        routerStrategy: _routerStrategy,        // actual strategy from selectFilesByGraph
+        crossFileAnalysis: !!crossFileRaw,       // whether cross-file AST ran
         model: options.model || 'unknown',
         provider: options.provider || 'unknown',
         timestamp: new Date().toISOString(),

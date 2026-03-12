@@ -51,8 +51,10 @@ const SectionBlock = ({ icon, title, color, borderSide = 'left', children, copyT
 
 // Generate UNIQUE Mermaid node IDs — uses a per-chart Map to ensure
 // two different labels never collide even if they share the same prefix.
+// The Map is reset before every builder call via resetMIds() so IDs are
+// local to each chart — no cross-chart collisions.
 let _mIdCounter = 0;
-const _mIdCache = new Map();
+let _mIdCache = new Map();
 function mId(s) {
     const key = String(s);
     if (_mIdCache.has(key)) return _mIdCache.get(key);
@@ -61,8 +63,9 @@ function mId(s) {
     _mIdCache.set(key, id);
     return id;
 }
-// Call before each builder to reset the ID space
-function resetMIds() { _mIdCounter = 0; _mIdCache.clear(); }
+// Full reset before each builder — creates a fresh Map each time to prevent
+// unbounded growth across many charts rendered during a long session.
+function resetMIds() { _mIdCounter = 0; _mIdCache = new Map(); }
 
 // Escape ALL Mermaid-special characters for use inside ["..."] labels.
 // Mermaid interprets |, [, ], (, ), {, }, `, # as syntax — escape them all.
@@ -171,32 +174,37 @@ function buildAILoopMermaid(edges) {
     return lines.join('\n');
 }
 
-// Build variable mutation flow from variableStateEdges (only for complex variables)
+// Build variable mutation flow from variableStateEdges
 function buildVariableMermaid(varEdges) {
     if (!varEdges || varEdges.length === 0) return null;
     const result = [];
     varEdges.forEach(({ variable, edges }) => {
-        if (!edges || edges.length < 5) return; // only complex variables
+        if (!edges || edges.length < 3) return; // only show variables with meaningful flow
         const validEdges = edges.filter(e => e && e.from && e.to);
-        if (validEdges.length < 5) return;
+        if (validEdges.length < 3) return;
         resetMIds();
         const lines = ['flowchart LR'];
-        const declId = 'DECL';
-        lines.push(`    ${declId}["${mLabel(variable)} declared"]`);
-        validEdges.forEach(({ from, to, label, type }, i) => {
-            const f = `V${i}F`, t = `V${i}T`;
-            lines.push(`    ${f}["${mLabel(from)}"]`);
-            lines.push(`    ${t}["${mLabel(to)}"]`);
-            if (i === 0) lines.push(`    ${declId} --> ${f}`);
+        // Shared nodeMap — shared nodes so the graph is connected, not disconnected pairs
+        const nodeMap = new Map();
+        const getNode = (label) => {
+            if (nodeMap.has(label)) return nodeMap.get(label);
+            const id = `V${nodeMap.size}`;
+            nodeMap.set(label, id);
+            lines.push(`    ${id}["${mLabel(label)}"]`);
+            return id;
+        };
+        validEdges.forEach(({ from, to, label, type }) => {
+            const f = getNode(from), t = getNode(to);
             lines.push(`    ${f} -->|"${mLabel(label, 30)}"| ${t}`);
-            if (type === 'write') lines.push(`    style ${f} fill:#ffaa00,color:#000`);
-            if (type === 'read') lines.push(`    style ${t} fill:#448aff,color:#fff`);
+            if (type === 'write')  lines.push(`    style ${f} fill:#ffaa00,color:#000`);
+            if (type === 'read')   lines.push(`    style ${t} fill:#448aff,color:#fff`);
             if (type === 'mutate') lines.push(`    style ${f} fill:#ff003c,color:#fff`);
         });
         result.push({ variable, mermaid: lines.join('\n') });
     });
-    return result;
+    return result.length > 0 ? result : null;
 }
+
 
 // Build data flow flowchart from flowchartEdges (Explain Mode)
 function buildDataFlowMermaid(edges) {

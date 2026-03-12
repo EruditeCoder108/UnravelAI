@@ -216,8 +216,21 @@ Populate hypothesisTree with each hypothesis, its status (survived/eliminated), 
         {
             n: 6, name: 'MINIMAL FIX',
             desc: `What is the smallest possible code change that fixes the bug?
-Do NOT rewrite the entire program. Show targeted surgical fixes only.
+Default: show targeted surgical fixes only. Do NOT rewrite the entire program.
 Explain exactly why this fix works at the root cause level.
+
+ARCHITECTURAL EXCEPTION — only applies when the root cause is structural:
+If the surviving hypothesis reveals that the bug exists because of a fundamental design flaw
+(e.g. shared mutable state across async boundaries, wrong ownership of data, missing abstraction layer),
+and the surgical patch would only hide the symptom while leaving the root cause intact:
+  1. Still provide the surgical patch (for immediate deployment)
+  2. Add a clearly-labeled "ARCHITECTURAL NOTE" paragraph in minimalFix that names:
+     - What structural property is violated
+     - What the correct design would look like (2-3 sentences max)
+     - Which files would need to change
+Do NOT add an architectural note for single-location bugs, typos, missing null checks, or
+off-by-one errors — only for cases where multiple patches in the same area over time are inevitable.
+
 Populate timelineEdges with the same timeline as directed edges between actors. Mark the exact edge where the bug manifests with isBugPoint: true.`
         },
         {

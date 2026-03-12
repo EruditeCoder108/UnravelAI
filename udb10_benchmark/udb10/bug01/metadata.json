@@ -1,0 +1,6 @@
+{
+    "id": "var_loop_closure_async",
+    "category": "closure",
+    "difficulty": "medium",
+    "symptom": "fetchAllReports always returns an empty array, and all fetch calls hit the same undefined report ID. Expected: results populated with data for each ID in the array."
+}

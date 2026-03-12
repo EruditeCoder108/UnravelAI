@@ -736,10 +736,12 @@ export async function runMultiFileAnalysis(files) {
             continue;
         }
 
-        // Count error nodes — skip files with too many parse errors
+        // Count error nodes — skip files with too many parse errors.
+        // Threshold is 5: tree-sitter handles partial syntax gracefully,
+        // but >5 errors means the file is too broken for reliable AST data.
         const errorCount = tree.rootNode.descendantsOfType('ERROR').length;
-        if (errorCount > 20) {
-            console.warn(`[AST-TS] Skipping ${shortName}: ${errorCount} parse errors`);
+        if (errorCount > 5) {
+            console.warn(`[AST-TS] Skipping ${shortName}: ${errorCount} parse errors (threshold: 5)`);
             totalFailed++;
             failedFiles.push(shortName);
             tree.delete();
@@ -898,8 +900,16 @@ export function detectReactPatterns(tree) {
                     return name && (TIMING_APIS.has(name) || name === 'subscribe' || name === 'on');
                 });
 
-                // Check if callback returns a cleanup function
-                const hasCleanupReturn = callback.descendantsOfType('return_statement').length > 0;
+                // Check if callback returns a cleanup function.
+                // Use top-level child walk — NOT descendantsOfType — to avoid counting
+                // return statements inside nested functions within the effect body.
+                let hasCleanupReturn = false;
+                const callbackBody = callback.childForFieldName('body') || callback;
+                if (callbackBody) {
+                    for (const stmt of callbackBody.namedChildren) {
+                        if (stmt.type === 'return_statement') { hasCleanupReturn = true; break; }
+                    }
+                }
 
                 if (hasTimingCall && !hasCleanupReturn) {
                     findings.push({

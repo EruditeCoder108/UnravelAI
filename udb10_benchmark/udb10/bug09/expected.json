@@ -1,0 +1,7 @@
+{
+    "root_cause": "incrementByDouble closes over the destructured step primitive but step is missing from useCallback's dependency array. The callback is memoized with step=1 from the initial render and never recreated. step * 2 always evaluates to 2.",
+    "root_cause_file": "useCounter.js",
+    "root_cause_line": 35,
+    "fix": "Add step to the useCallback dependency array for incrementByDouble: [step]. Alternatively use a ref to always have the current step, or use the functional dispatch pattern with a selector.",
+    "root_cause_keywords": ["step missing from deps", "destructured primitive stale", "memoized with initial value", "useCallback empty deps"]
+}

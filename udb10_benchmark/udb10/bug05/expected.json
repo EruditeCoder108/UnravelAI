@@ -1,0 +1,7 @@
+{
+    "root_cause": "initButtonGroup creates a new anonymous arrow function inside the loop for each addEventListener call. Anonymous functions cannot be removed with removeEventListener since there is no reference to pass. Each call to refreshDashboard calls initButtonGroup again, adding another set of listeners to new button elements. The setInterval in startPolling calls this every 5 seconds, accumulating handlers indefinitely.",
+    "root_cause_file": "buttonGroup.js",
+    "root_cause_line": 11,
+    "fix": "Store named handler references and return a cleanup function from initButtonGroup. Call the cleanup before re-initializing in refreshDashboard. Alternatively use event delegation on the container.",
+    "root_cause_keywords": ["anonymous function addEventListener", "no removeEventListener", "accumulates on re-init", "new function every iteration"]
+}

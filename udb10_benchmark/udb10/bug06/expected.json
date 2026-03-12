@@ -1,0 +1,7 @@
+{
+    "root_cause": "The setTimeout callback is created on line 8 before socket is assigned on line 20. However socket is a let variable in the outer function scope — closures over let capture the binding (the variable slot), not the value. So by the time the timeout fires, socket DOES have the WebSocket value. The actual bug is logic: the condition checks socket.readyState !== WebSocket.OPEN but WebSocket.OPEN is undefined in non-browser environments or before the connection establishes, causing the reconnect branch to always fire. The reconnect creates a new socket without closing the timer for the previous socket, causing cascade.",
+    "root_cause_file": "connectionManager.js",
+    "root_cause_line": 8,
+    "fix": "Clear reconnectTimer at the start of connect() before creating a new one. Check socket.readyState === WebSocket.CONNECTING as an additional guard to avoid reconnecting while a connection attempt is in progress.",
+    "root_cause_keywords": ["setTimeout before assignment", "reconnectTimer not cleared", "multiple sockets", "WebSocket.OPEN check"]
+}

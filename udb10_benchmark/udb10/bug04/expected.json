@@ -1,0 +1,7 @@
+{
+    "root_cause": "Both fetchProfile and fetchOrders write to results.requestId on a shared object. Promise.all runs them concurrently. Whichever resolves last wins — making results.requestId non-deterministic. The shared results object is mutated by two concurrent async branches with no coordination.",
+    "root_cause_file": "dataAggregator.js",
+    "root_cause_line": 12,
+    "fix": "Remove requestId writes from the individual fetch functions. Decide deterministically which requestId to use (e.g., always profile's) and assign it once after Promise.all resolves.",
+    "root_cause_keywords": ["results.requestId", "concurrent writes", "Promise.all", "non-deterministic", "last write wins"]
+}
