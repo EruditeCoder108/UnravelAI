@@ -38,7 +38,8 @@ export async function buildModuleMap(files) {
         for (const importNode of importNodes) {
             const sourceNode = importNode.childForFieldName('source');
             const source = sourceNode?.text?.replace(/['"`]/g, '');
-            if (!source || !source.startsWith('.')) continue; // skip node_modules
+            if (!source) continue;
+            if (isLikelyNodeModule(source, files)) continue;
             const resolvedSource = resolveModuleName(source, files);
             const line = importNode.startPosition.row + 1;
 
@@ -528,11 +529,15 @@ export async function selectFilesByGraph(allFiles, symptom, crossFileData) {
         }
     }
 
-    // ── Fallback: if graph walk found too few files, return all ──
+    // ── Fallback: graph walk found too few connected files ──
+    // Instead of dumping all files (which triggers the 25-file alphabetical cap),
+    // return the top GRAPH_MAX_FILES files by symptom score — best guess is better than none.
     if (selected.size < 3) {
+        const topScored = rankedFiles.slice(0, GRAPH_MAX_FILES);
+        console.warn(`[GRAPH] BFS found only ${selected.size} files — falling back to top-${topScored.length} by symptom score`);
         return {
-            selectedFiles: jsFiles.map(f => f.name),
-            strategy: 'llm-heuristic-fallback',
+            selectedFiles: topScored,
+            strategy: 'symptom-score-fallback',
         };
     }
 
@@ -654,35 +659,102 @@ function formatCrossFileContext(crossFileChains, riskSignals, callGraph) {
 // HELPER: Resolve module name from import path
 // ═══════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════
+// HELPER: isLikelyNodeModule
+// Decides whether an import string should be skipped
+// as an external dependency vs. attempted as a path alias.
+//
+// Skip (true):
+//   'react', 'lodash', 'fs', 'path'   → bare single-word, no slash
+//   '@scope/package'                   → scoped npm: starts with @ AND has exactly one slash
+//
+// Attempt resolution (false):
+//   './utils', '../store'              → relative (already handled upstream)
+//   'vs/base/common/event'             → multi-segment, no @, likely tsconfig alias
+//   '@/components/Button'              → @ prefix but multiple slashes = tsconfig @ alias
+//   '~/utils', 'src/components/Button' → tilde or root-relative alias
+// ═══════════════════════════════════════════════════
+
+function isLikelyNodeModule(source, files) {
+    // Relative imports are never node_modules
+    if (source.startsWith('.') || source.startsWith('/')) return false;
+
+    // Tilde aliases (~/) are always intra-project
+    if (source.startsWith('~')) return false;
+
+    // Scoped package: @scope/pkg — exactly one slash after the @
+    // But @scope/pkg/deep or @/anything are path aliases
+    if (source.startsWith('@')) {
+        const slashCount = (source.match(/\//g) || []).length;
+        // @scope/pkg → 1 slash → real npm package
+        // @/components/Button → starts with @/ → tsconfig alias
+        // @scope/pkg/subpath → 2+ slashes → treat as alias (rare for npm, common for aliases)
+        if (source.startsWith('@/')) return false; // tsconfig @ alias
+        if (slashCount === 1) return true;          // scoped npm package
+        return false;                               // deeper path, likely alias
+    }
+
+    // No slash at all → bare module name like 'react', 'fs', 'lodash'
+    if (!source.includes('/')) return true;
+
+    // Has slashes but no @ → could be a path alias like 'vs/base/common/event'
+    // or 'src/utils/store'. Try to resolve it — if we find a matching file, keep it.
+    // If no file matches, skip it (genuine node_module with subpath like 'lodash/fp').
+    const lastSeg = source.split('/').pop() || source;
+    const extensions = ['.js', '.jsx', '.ts', '.tsx'];
+    for (const f of files) {
+        const shortName = f.name.split(/[\\/]/).pop();
+        const shortNoExt = shortName.replace(/\.[^.]+$/, '');
+        if (shortNoExt === lastSeg || shortName === lastSeg) return false;
+        for (const ext of extensions) {
+            if (shortName === lastSeg + ext) return false;
+        }
+    }
+
+    // No file matched → likely a node_module subpath (e.g. 'lodash/fp', 'date-fns/format')
+    return true;
+}
+
 function resolveModuleName(importPath, files) {
     // Strip all leading ./ and ../ path segments
-    // e.g. '../../utils/store' → 'store', './api' → 'api'
+    // e.g. '../../utils/store' → 'utils/store', './api' → 'api'
     const segments = importPath.split('/');
     const cleaned = segments.filter(s => s !== '.' && s !== '..').join('/') || importPath;
 
-    // Try exact match first
+    // The last segment of the cleaned path is the actual filename (without extension)
+    // e.g. 'utils/store' → 'store', 'vs/base/common/event' → 'event'
+    const lastSegment = cleaned.split('/').pop() || cleaned;
+
+    const extensions = ['.js', '.jsx', '.ts', '.tsx'];
+
+    // Pass 1: exact full-path match (handles cases where f.name includes directory)
+    for (const f of files) {
+        const fNorm = f.name.replace(/\\/g, '/');
+        // Check if file path ends with cleaned (with or without extension)
+        if (fNorm.endsWith('/' + cleaned) || fNorm === cleaned) return f.name.split(/[\\/]/).pop();
+        for (const ext of extensions) {
+            if (fNorm.endsWith('/' + cleaned + ext) || fNorm === cleaned + ext) return f.name.split(/[\\/]/).pop();
+        }
+    }
+
+    // Pass 2: match by basename only — handles flat-uploaded files where f.name has no directory
+    for (const f of files) {
+        const shortName = f.name.split(/[\\/]/).pop(); // e.g. "store.ts"
+        const shortNoExt = shortName.replace(/\.[^.]+$/, ''); // e.g. "store"
+        if (shortNoExt === lastSegment || shortName === lastSegment) return shortName;
+        for (const ext of extensions) {
+            if (shortName === lastSegment + ext) return shortName;
+        }
+    }
+
+    // Pass 3: index files — e.g. import './store' could resolve to store/index.ts
     for (const f of files) {
         const shortName = f.name.split(/[\\/]/).pop();
-        if (shortName === cleaned) return shortName;
-    }
-
-    // Try with common extensions
-    const extensions = ['.js', '.jsx', '.ts', '.tsx'];
-    for (const ext of extensions) {
-        for (const f of files) {
-            const shortName = f.name.split(/[\\/]/).pop();
-            if (shortName === cleaned + ext) return shortName;
+        for (const ext of extensions) {
+            if (shortName === lastSegment + '/index' + ext) return shortName;
         }
     }
 
-    // Try index files
-    for (const ext of extensions) {
-        for (const f of files) {
-            const shortName = f.name.split(/[\\/]/).pop();
-            if (shortName === cleaned + '/index' + ext) return shortName;
-        }
-    }
-
-    // Fallback: return the cleaned path
-    return cleaned;
+    // Fallback: return the last segment (best guess for the model)
+    return lastSegment;
 }

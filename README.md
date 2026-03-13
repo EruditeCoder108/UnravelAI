@@ -4,68 +4,180 @@
 
 <br/>
 
-# A debugging pipeline that provides actual facts about code and forces any AI model to think before it guesses.
+<h1>Stop letting your AI guess.</h1>
 
-**Unravel runs a static analysis pass before any LLM sees your code** — extracting mutation chains, async boundaries, closure captures, and cross-file data flows as verified facts. These become ground truth injected into a structured 8-phase reasoning pipeline. Any model you already have becomes significantly more accurate on the bugs that actually matter.
-
-> *Not a smarter model. A smarter way to use the model you already have.*
+<p>
+<b>Unravel</b> runs a static AST analysis pass before any LLM sees your code.<br/>
+Every mutation chain. Every async boundary. Every closure capture — verified and injected as ground truth.<br/>
+<br/>
+<em>No more symptom-chasing. No more hallucinated fixes. Just exact root causes.</em>
+</p>
 
 <br/>
 
 [![Version](https://img.shields.io/badge/engine-v3.3-58a6ff?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI)
-[![Benchmark](https://img.shields.io/badge/UDB--51-in_progress-f0883e?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI/blob/main/ROADMAP.md)
+[![Benchmark](https://img.shields.io/badge/UDB--51-in_progress-f0883e?style=flat-square&labelColor=0d1117)](#benchmark)
+[![Languages](https://img.shields.io/badge/languages-JS%20%7C%20TS%20%7C%20JSX%20%7C%20TSX-3fb950?style=flat-square&labelColor=0d1117)](#language-support)
 [![License](https://img.shields.io/badge/license-BSL1.1-7d8590?style=flat-square&labelColor=0d1117)](LICENSE)
 [![Web App](https://img.shields.io/badge/web_app-live-58a6ff?style=flat-square&labelColor=0d1117&logo=netlify&logoColor=00C7B7)](https://vibeunravel.netlify.app)
 
 <br/>
 
-**[Web App →](https://vibeunravel.netlify.app)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Architecture →](ARCHITECTURE.md)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Roadmap →](ROADMAP.md)**
+**[Try it now →](https://vibeunravel.netlify.app)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Architecture →](ARCHITECTURE.md)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Benchmark →](#benchmark)**
 
 </div>
 
----
+<br/>
 
-## What Unravel Does
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
 
-Most AI debuggers pattern-match symptoms. They see a `TypeError` and suggest type fixes. They never ask: where did the data actually go wrong?
+<br/>
 
-Unravel answers that question deterministically. Before any model sees your code, a static AST pass using tree-sitter extracts verified facts — every variable mutation, every closure capture, every async boundary, every cross-file import chain, every React hook dependency gap. These become ground truth injected into an 8-phase structured reasoning pipeline. The model cannot hallucinate about what doesn't exist in the code. It cannot guess — it must trace.
+## How It Works
 
-The result: **exact file, exact line, exact variable, with evidence and confidence score.**
+```mermaid
+flowchart LR
+    A([Your Code]) --> B[AST Analysis]
+    B --> C[Verified Facts]
+    C --> D[LLM Reasoning]
+    D --> E([Root Cause + Fix])
 
----
+    style A fill:#0d1117,stroke:#58a6ff,color:#fff
+    style E fill:#0d1117,stroke:#58a6ff,color:#fff
+    style B fill:#161b22,stroke:#30363d,color:#c9d1d9
+    style C fill:#161b22,stroke:#30363d,color:#c9d1d9
+    style D fill:#161b22,stroke:#30363d,color:#c9d1d9
+```
+
+Unravel turns your code into verified facts first, then forces the AI to reason over those facts — instead of guessing from your description.
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
+
+## The Loop Every Developer Knows
+
+You paste a bug. The AI writes a patch. The patch breaks something else. You paste the new error. The AI forgets the original context. You add more explanation. It hallucinates a function that doesn't exist. You correct it. It apologizes and suggests the same fix it gave you three messages ago.
+
+**You are now the AI's QA tester.**
+
+This isn't a model quality problem. It's a *context* problem. The model never knew what your code actually does — it was pattern-matching from your description, not from the code itself. It saw a `TypeError` and suggested type fixes. It never asked: *where did the data first go wrong?*
+
+<br/>
+
+## The Unravel Difference
+
+Before any model sees your code, Unravel's AST engine runs a deterministic analysis pass. It extracts every variable mutation, every closure capture, every async boundary, every cross-file import chain, every React hook dependency gap — as **verified facts**. These become ground truth injected into the prompt. The model cannot hallucinate about what doesn't exist. It cannot guess. It must trace.
+
+The result: **exact file, exact line, exact variable, with evidence and a confidence score.**
+
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
+
+## Why AI Debugging Usually Fails
+
+Most LLM debugging tools fail for a simple reason: **they reason about text instead of code state.**
+
+When you describe a bug, the model sees your words — not your program's execution path. It pattern-matches against training data. It sees `TypeError: undefined is not a function` and suggests type fixes. It sees "timer is wrong after pause" and guesses stale closures. It never asks the question that actually matters: *where was state first corrupted?*
+
+Debugging is fundamentally about **state transitions** — which variable changed, in which function, at which line, and what downstream reads got the corrupted value. That information lives in the code, not in your description of the code. No amount of prompt engineering extracts it.
+
+Unravel solves this by running a deterministic AST pass first and extracting the state facts directly:
+
+- **Where variables mutate** — every write, by function, by line
+- **Where async boundaries occur** — every `setTimeout`, `setInterval`, `addEventListener`, floating promise
+- **Where closures capture stale state** — every inner function reading an outer scope binding
+- **How data flows across files** — every import chain, every cross-file call
+
+Only after these facts exist does the model reason. It cannot contradict them. It cannot hallucinate a mutation that isn't there. It must trace state backwards from the failure point to where it was first corrupted — or say it cannot confirm.
+
+> A real Pomodoro timer bug. Same model. Same code. Two contexts.
+
+<table>
+<thead>
+<tr>
+<th width="50%">❌ &nbsp; Standard ChatGPT / Claude</th>
+<th width="50%">✅ &nbsp; Unravel + Claude</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+
+```
+"This looks like a race condition or a 
+stale closure. Try adding a .catch() 
+block or wrapping the reset logic in 
+a setTimeout to let state settle."
+```
+
+> Confident. Plausible. **Wrong.**
+
+</td>
+<td>
+
+```
+AST VERIFIED — script.js
+
+duration: MUTATED at pause() L69 ⚠
+  written: pause() L69, setMode() L86
+  read:    tick() L55, reset() L79
+
+Root Cause: duration is a config 
+variable being overwritten as runtime 
+state. reset() at L79 reads the already-
+corrupted value.
+
+Fix: Remove mutation at L69.
+Add lastActiveRemaining for pause state.
+
+Confidence: 0.94
+```
+
+> Traced. Evidenced. **Exact.**
+
+</td>
+</tr>
+</tbody>
+</table>
+
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    %% Node Definitions
     A([<b>User Input</b><br/>Code + Bug Description])
-    
-    subgraph L0 ["Layer 0: AST Analyzer"]
+
+    subgraph L0 ["Layer 0 — AST Analyzer (Deterministic)"]
         direction TB
-        B["<b>tree-sitter (WASM)</b><br/><i>Primary Engine (Deterministic)</i><br/>──────────────────────<br/>• Variable mutation chains<br/>• Closure captures + React patterns<br/>• Async boundaries + floating promises<br/>• Cross-file import resolution<br/>• Custom scope resolver"]
+        B["<b>tree-sitter (WASM)</b><br/>──────────────────────────────<br/>• Variable mutation chains<br/>• Closure captures + React patterns<br/>• Async boundaries + floating promises<br/>• Cross-file import resolution<br/>• Custom scope resolver"]
     end
 
-    subgraph L1 ["Layer 1: Router Agent"]
+    subgraph L1 ["Layer 1 — Graph Router (Mode-Aware)"]
         direction TB
-        C["<b>Graph-Frontier BFS</b><br/><i>Mode-Aware Context Selection</i><br/>──────────────────────<br/>• <b>Debug</b>: 5–8 files near symptom<br/>• <b>Explain</b>: 15–25 files for breadth<br/>• <b>Security</b>: 8–12 files on attack surface"]
+        C["<b>BFS on import/call graph</b><br/>──────────────────────────────<br/>• Debug: 5–8 files near symptom<br/>• Explain: 15–25 files for breadth<br/>• Security: 8–12 files on attack surface"]
     end
 
-    subgraph L2 ["Layer 2: Core Engine"]
+    subgraph L2 ["Layer 2 — Core Engine (Single LLM Call)"]
         direction TB
-        D["<b>8-Phase Pipeline</b><br/><i>Single LLM Call (Context-Loaded)</i><br/>──────────────────────<br/>• Anti-sycophancy guardrails (7 rules)<br/>• Evidence-backed confidence score<br/>• Progressive streaming via SSE<br/>• Fix completeness verifier (cross-file)"]
+        D["<b>8-Phase Reasoning Pipeline</b><br/>──────────────────────────────<br/>• Anti-sycophancy guardrails (7 rules)<br/>• Evidence-backed confidence score<br/>• Progressive streaming via SSE<br/>• Fix completeness verifier (cross-file)"]
     end
 
-    E([<b>Final Output</b><br/>Structured JSON Report<br/>Web App · VS Code Sidebar])
+    E([<b>Structured JSON Report</b><br/>Web App · VS Code Sidebar])
 
-    %% Connections
     A --> L0
-    L0 -->|Verified Context| L1
+    L0 -->|Verified Ground Truth| L1
     L1 -->|Code Slices + AST Facts| L2
     L2 --> E
 
-    %% Styling
     style A fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#fff
     style E fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#fff
     style B fill:#0d1117,stroke:#30363d,color:#c9d1d9
@@ -76,7 +188,93 @@ flowchart TD
     style L2 fill:#161b22,stroke:#30363d,color:#8b949e
 ```
 
----
+<br/>
+
+<details>
+<summary><b>▸ &nbsp; Step-by-step: How Unravel processes a request</b></summary>
+
+<br/>
+
+**Step 1 — Input arrives.**
+User uploads files and describes the bug. Unravel immediately checks every file for truncation signals (unbalanced braces, missing closing tags) and injects completeness warnings if anything looks cut off.
+
+**Step 2 — Graph Router trims the search space.**
+If more than 15 files are provided, a BFS traversal of the import/call graph selects only the files most likely to contain the root cause. The debug mode focuses on 5–8 files around the symptom. Explain mode reads 15–25 for architectural breadth. Security mode follows the attack surface.
+
+**Step 3 — AST engine runs deterministically.**
+tree-sitter (WASM) walks every JS/TS file and extracts: all variable mutation chains (every write/read, by function, by line), all closure captures and stale closure candidates, all async boundaries and floating promises, all React hook patterns. A second cross-file pass builds the import/call graph and identifies functions called across file boundaries.
+
+**Step 4 — Ground truth is injected.**
+The AST output is framed as verified facts the model cannot contradict. Every mutation, every boundary, every closure — exact file and line. The model is explicitly told: *do not contradict these.*
+
+**Step 5 — The 8-phase pipeline runs.**
+One LLM call. The model is forced through: Read → Understand Intent → Symptom Mapping → AST Fact Injection → Hypothesis Generation → Hypothesis Elimination → Concept Extraction → Invariants. It cannot skip to a conclusion.
+
+**Step 6 — The claim verifier cross-checks the output.**
+Every file reference and line number in the model's response is verified against the actual files. Fabricated references trigger confidence penalties. A fabricated root cause triggers a hard rejection and a retry.
+
+**Step 7 — Fix completeness check.**
+The cross-file call graph (already built in Step 3) is checked against the proposed fix. If the fix modifies a function in file A but ignores file B which calls it, a warning is injected and confidence is penalized.
+
+**Step 8 — Structured JSON output.**
+The final result is a typed, schema-validated object with `rootCause`, `evidence[]`, `confidence`, `minimalFix`, `hypotheses[]`, `variableStateEdges[]`, Mermaid edge data, and `_provenance`. Every field is consumed by the web app and VS Code extension identically.
+
+</details>
+
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
+
+## Three Modes
+
+<table>
+<tr>
+<td width="33%" align="center">
+
+### 🐛 &nbsp; Debug
+**Root cause diagnosis**
+
+Full 8-phase pipeline. Traces state backwards from the symptom through mutation chains to the exact corruption point.
+
+Returns: root cause · evidence · fix · confidence · Mermaid diagrams
+
+*Best for: production bugs, async races, cross-file state corruption, anything that resisted multiple AI attempts.*
+
+</td>
+<td width="33%" align="center">
+
+### 🔍 &nbsp; Explain
+**Architecture walkthrough**
+
+Reads 15–25 files for breadth. Maps module responsibilities, data flow direction, entry points, and dependency graph.
+
+Returns: module map · data flow · dependency graph · onboarding guide
+
+*Best for: onboarding to a new codebase, pre-refactor mapping, understanding legacy code.*
+
+</td>
+<td width="33%" align="center">
+
+### 🛡️ &nbsp; Security
+**Vulnerability audit**
+
+Traces attack surface across 8–12 files. Requires a concrete exploit payload — no vague "could be vulnerable" claims.
+
+Returns: vulnerability type · attack vector · proof-of-exploit · severity · remediation
+
+*Best for: pre-deploy audits, user-input chains, third-party dependency reviews.*
+
+</td>
+</tr>
+</table>
+
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
 
 ## The 8-Phase Pipeline
 
@@ -85,7 +283,7 @@ The model is forced through these phases in sequence. It cannot skip to conclusi
 | Phase | Name | What Happens |
 |------:|------|--------------|
 | 1 | **Read** | Read every file completely. No opinions yet. |
-| 2 | **Understand Intent** | For each function and module: what is it trying to do? |
+| 2 | **Understand Intent** | For each function and module: what is it *trying* to do? |
 | 3 | **Symptom Mapping** | What observable behavior is failing? What is the exact failure event? |
 | 4 | **AST Fact Injection** | Inject verified mutation chains, closures, async boundaries as ground truth. |
 | 5 | **Hypothesis Generation** | Generate 3 mutually exclusive, non-overlapping hypotheses. |
@@ -93,124 +291,146 @@ The model is forced through these phases in sequence. It cannot skip to conclusi
 | 7 | **Concept Extraction** | What programming concept does this bug teach? |
 | 8 | **Invariants** | What conditions must hold for correctness? |
 
----
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
 
 ## Anti-Sycophancy Guardrails
 
-Hardcoded into every prompt. The model cannot override these.
+Every AI debugger has the same failure mode: it agrees with you. You say "race condition," it finds a race condition — whether or not one exists. Unravel has seven hardcoded rules that the model cannot override.
 
-```
-Rule 1  If the code is correct, say "No bug found." Do not invent problems.
-Rule 2  If the user's description contradicts the code, point out the contradiction.
-Rule 3  If uncertain, say "Cannot confirm without runtime execution."
-Rule 4  Every bug claim must cite exact line number + code fragment as proof.
-Rule 5  Never describe code behavior that cannot be verified from provided files.
-Rule 6  The crash site is never the root cause. It is the symptom.
-        Trace state backwards through mutation chains from the failure point.
-        The root cause is where state was first corrupted.
-Rule 7  A variable named isPaused does not guarantee the code is paused.
-        Verify behavior from the execution chain, not naming conventions.
-```
+> **Rule 1** — If the code is correct, say *"No bug found."* Do not invent problems.
 
----
+> **Rule 2** — If the user's description contradicts the code, point out the contradiction.
+
+> **Rule 3** — If uncertain, say *"Cannot confirm without runtime execution."*
+
+> **Rule 4** — Every bug claim must cite exact line number + code fragment as proof.
+
+> **Rule 5** — Never describe code behavior that cannot be verified from provided files.
+
+> **Rule 6** — The crash site is never the root cause. It is the symptom. Trace state backwards through mutation chains from the failure point. The root cause is where state was *first* corrupted.
+
+> **Rule 7** — A variable named `isPaused` does not guarantee the code is paused. A function named `cleanup()` does not guarantee cleanup occurs. Verify behavior from the execution chain, not naming conventions.
+
+Rules 6 and 7 were added from research analysis. Rule 6 guards against *proximate fixation* — LLMs blaming the crash site instead of the distant corruption. Rule 7 guards against the *name-behavior fallacy* — LLMs trusting variable semantics over actual execution paths.
+
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
 
 ## Fix Completeness Verifier
 
-After generating a fix, the engine cross-references it against the AST call graph. If the fix modifies a function in file A but fails to update file B which calls that function, the verifier:
+After the model proposes a fix, Unravel cross-references it against the AST call graph built during Layer 0. If the fix modifies a function in file A but fails to update file B which calls that function, the verifier automatically:
 
 - Penalizes the confidence score by `0.15`
-- Injects an explicit warning into the `uncertainties` block: `AST Guard: Fix modifies 'X' but misses updates to downstream caller 'Y'`
+- Injects a warning into the `uncertainties` block:
+  `AST Guard: Fix modifies 'X' but misses updates to downstream caller 'Y'`
 
-No additional LLM calls. Uses data already computed during Layer 0.
+No extra LLM calls. Zero added latency. Uses data already computed during analysis.
 
----
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
+
+## Proved in the Wild
+
+Before any formal benchmark, Unravel has already been used to diagnose and fix bugs in real production repositories — with the fixes merged and issues closed.
+
+<details>
+<summary><b>▸ &nbsp; cal.com #28283 — Settings toggles blocking each other (closed)</b></summary>
+
+<br/>
+
+**The report:** Toggle switches on the Settings page (e.g. "Search engine indexing", "Monthly digest") were not independent. Clicking one caused all others to show a `not-allowed` cursor and become unresponsive until the first API call completed.
+
+**What Unravel found:** A single `trpc.viewer.me.updateProfile.useMutation` hook at `general-view.tsx L44` was shared across all toggles. The global `isUpdateBtnLoading` state set at `L184` before `mutation.mutate` — and reset at `L87` on `onSettled` — was propagated to the `disabled` prop of every `SettingsToggle` in the form. The execution timeline traced T0 (click) → T0+δ (`isUpdateBtnLoading = true`, all toggles disabled) → T1 (second toggle unresponsive) → T2 (API resolves, `isUpdateBtnLoading = false`).
+
+**The fix:** Create a separate `useMutation` hook per toggle, so each toggle's `disabled` prop binds only to its own `isPending` state. Optimistic updates flip the UI instantly. The main form save button retains its own mutation and dirty-state guard.
+
+**What happened:** The fix pattern was implemented directly in [PR #28296](https://github.com/calcom/cal.com/pull/28296), which was merged and closed the issue. The reporter credited Unravel by name in the thread.
+
+</details>
+
+<details>
+<summary><b>▸ &nbsp; tldraw #8148 — create-tldraw CLI installing into current directory (closed)</b></summary>
+
+<br/>
+
+**The report:** `npm create tldraw my-app` installed everything into the current directory instead of creating a `my-app/` subdirectory. A second bug: files were created even after the user cancelled the "Directory is not empty" prompt.
+
+**What Unravel found:** `targetDir` was set from `process.cwd()` *before* the interactive `namePicker` prompt ran. The name entered interactively was only used to write the `name` field in `package.json` — it never updated `targetDir`. The data flow went: `args._[0]` → `maybeTargetDir` → `targetDir = maybeTargetDir ?? process.cwd()` → `namePicker(maybeTargetDir)` → name used for `package.json` only. For bug 2, static analysis showed `ensureDirectoryEmpty` calls `process.exit(1)` on cancel — the "files created" reports were from external npm scaffolding running before Unravel's code, not from the tool's post-cancel path.
+
+**The fix:** After `namePicker` returns, check if no argument was given *and* the user entered a name different from `pathToName(process.cwd())` — if so, resolve a new `targetDir` from that name before calling `ensureDirectoryEmpty`. This is exactly the `// START FIX` block committed in [PR #8161](https://github.com/tldraw/tldraw/pull/8161), which was merged and closed the issue.
+
+</details>
+
+<br/>
 
 ## Benchmark
 
-Unravel's edge is not on easy, isolated bugs — standalone LLMs handle those adequately. The engine is built for the opposite scenario: large repos, deep cross-file mutation chains, async races across multiple files, bugs where the symptom and root cause live in completely different modules.
+Unravel's edge is not on easy, isolated bugs — any modern LLM handles those adequately. This engine is built for the opposite scenario: large repos, deep cross-file mutation chains, async races across multiple files, bugs where the symptom and root cause live in completely different modules.
 
-Validation on real production repositories — including VS Code, Cal.com, and tldraw — shows the pipeline correctly tracing root causes that raw model queries either miss or misattribute.
+| Suite | Status | Model | Signal |
+|-------|--------|-------|--------|
+| UDB-11 (11 bugs) | ✅ Complete | Gemini 2.5 Flash | +9% RCA accuracy, −35% hallucination rate |
+| UDB-51 (51 bugs, 8 categories) | 🔄 In progress | Gemini 2.5 Flash → **Claude Opus 4.6** | Hard bugs, large context, multi-file. The real number. |
+| 20 real GitHub issues | 📋 Planned | Multi-model | Next.js, React, Vite, Express — vs. actual merged fixes |
 
-**Formal benchmark in progress:**
+**Target:** ≥85% RCA accuracy on hard bugs · ≥+10% delta over raw baseline · <5% hallucination rate
 
-| Suite | Status | Model | Notes |
-|-------|--------|-------|-------|
-| UDB-11 (11 bugs) | Complete | Gemini 2.5 Flash | Early signal. +9% RCA, −35% hallucination rate. |
-| UDB-51 (51 bugs, 8 categories) | In progress | Gemini 2.5 Flash → Claude Opus 4.6 | Hard bugs, large context, multi-file. The real number. |
-| 20 real GitHub issues | Planned | Multi-model | Next.js, React, Vite, Express — compared against actual merged fixes. |
-
-> UDB-51 with Claude Opus 4.6 on hard, large-context bugs is what gets published.
-
----
-
-## Three Analysis Modes
-
-<details>
-<summary><b>Debug Mode</b> — Full 8-phase root cause diagnosis</summary>
+> UDB-51 with Claude Opus 4.6 on hard, large-context bugs is what gets published. UDB-11 is early signal only.
 
 <br/>
 
-The full pipeline. Traces state backwards from the symptom through mutation chains to the exact corruption point. Returns: root cause, evidence, fix proposal, confidence score, and Mermaid visualizations.
+## Language Support
 
-Best for: production bugs, async races, cross-file state corruption, anything that resisted multiple AI attempts.
-
-</details>
-
-<details>
-<summary><b>Explain Mode</b> — Architecture walkthrough for unfamiliar codebases</summary>
+AST analysis currently supports **JavaScript · TypeScript · JSX · TSX**. More languages are coming — Python, Go, and Rust are next on the roadmap. The 8-phase pipeline and all three modes work for any language via the LLM layer today; AST ground truth extraction is JS/TS-only for now.
 
 <br/>
 
-Reads 15–25 files for breadth. Maps module responsibilities, data flow direction, entry points, and dependency graph. Generates Data Flow and Dependency diagrams. No fix proposed — insight is the goal.
-
-Best for: onboarding to a new codebase, understanding legacy code, pre-refactor mapping.
-
-</details>
-
-<details>
-<summary><b>Security Mode</b> — Vulnerability audit with exploit tracing</summary>
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
 
 <br/>
-
-Traces attack surface across 8–12 files. Requires a concrete exploit payload for any flagged vulnerability — no vague "this could be vulnerable" claims. Returns: vulnerability type, attack vector, proof-of-exploit, severity, and remediation.
-
-Best for: pre-deploy security checks, reviewing user-input handling, third-party dependency chains.
-
-</details>
-
----
 
 ## Output Presets
 
-| Preset | Fields |
-|--------|--------|
+| Preset | What You Get |
+|--------|-------------|
 | **Quick Fix** | Root cause + fix only. Read in 30 seconds. |
-| **Developer** | Root cause + fix + evidence + confidence. |
-| **Full Report** | All sections — hypothesis elimination, per-phase trace, all diagrams. |
-| **Custom** | Per-section checkboxes. Build your own report. |
+| **Developer** | Root cause + fix + evidence + confidence score. |
+| **Full Report** | All sections: hypothesis elimination, per-phase trace, all Mermaid diagrams. |
+| **Custom** | Per-section checkboxes. Build exactly the report you need. |
 
----
+Every Full Report includes auto-generated Mermaid diagrams: Timeline · Hypothesis Tree · Data Flow · Dependency Graph · Variable State · Attack Vector *(Security mode)*
 
-## Mermaid Visualizations
+<br/>
 
-Every Full Report includes auto-generated diagrams:
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
 
-- **Timeline** — Event sequence leading to the bug
-- **Hypothesis Tree** — Branching elimination logic
-- **Data Flow** — How data moves through the system
-- **Dependency Graph** — Module import relationships
-- **Attack Vector** *(Security mode)* — Exploit entry-to-impact path
-- **Variable State** — Mutation chain for the root cause variable
-
----
+<br/>
 
 ## Supported Models
 
-Any LLM whose API you have access to — Anthropic, Google, OpenAI.
+Any LLM you already have API access to. Your key. Your model. No data sent to Unravel servers.
 
-Your API key. Your model. No data sent to Unravel servers.
+| Provider | Models |
+|----------|--------|
+| **Anthropic** | Claude Opus 4.6 · Claude Sonnet 4.6 · Claude Haiku 4.5 |
+| **Google** | Gemini 2.5 Flash · Gemini 3 Flash · Gemini 3.1 Pro |
+| **OpenAI** | GPT-5.3 Instant |
 
----
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
 
 ## Bug Taxonomy
 
@@ -233,13 +453,17 @@ const BUG_TAXONOMY = {
 };
 ```
 
----
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
 
 ## Getting Started
 
-### Web App
+### Web App — No install required
 
-No install required. Visit **[vibeunravel.netlify.app](https://vibeunravel.netlify.app)** and:
+Visit **[vibeunravel.netlify.app](https://vibeunravel.netlify.app)**
 
 1. Enter your API key (Anthropic, Google, or OpenAI)
 2. Upload project files, paste code, or import a GitHub URL
@@ -258,7 +482,7 @@ npm install
 npm run build:extension
 ```
 
-Then install the generated `.vsix` file via **Extensions → Install from VSIX** in VS Code.
+Install the generated `.vsix` via **Extensions → Install from VSIX** in VS Code.
 
 ### Run Locally
 
@@ -269,7 +493,34 @@ npm install
 npm run dev
 ```
 
----
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
+
+## Design Principles
+
+> **1. Deterministic facts before AI reasoning.**
+> The AST pass runs first. The model receives verified ground truth, not a blank canvas.
+
+> **2. Evidence required for every claim.**
+> No bug report without exact line number and code fragment. No exceptions.
+
+> **3. Eliminate wrong hypotheses — don't guess at right ones.**
+> Generate multiple explanations, then kill the ones the evidence contradicts. The survivor is the diagnosis.
+
+> **4. Never hide uncertainty.**
+> *Uncertain* is better than *confident-wrong.* If two of three hypotheses survive elimination, say so.
+
+> **5. Optimize for developer understanding, not impressive output.**
+> The goal is insight. Not a longer report.
+
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
 
 ## Project Status
 
@@ -295,33 +546,7 @@ Phase 9    📋  Real-world validation — 20 real GitHub issues, API pitch data
 Phase 10   📋  Unravel Heavy — multi-agent parallel analysis
 ```
 
-**[See full roadmap →](ROADMAP.md)**
-
----
-
-## Design Principles
-
-Every decision flows from five rules:
-
-1. **Deterministic facts before AI reasoning.** AST runs first. The model gets verified ground truth.
-2. **Evidence required for every claim.** No bug report without exact line and code fragment.
-3. **Eliminate wrong hypotheses, don't guess at right ones.** Generate three, kill what the evidence contradicts.
-4. **Never hide uncertainty.** Uncertain is better than confident-wrong.
-5. **Optimize for developer understanding, not impressive output.** Insight over length.
-
----
-
-## The Number That Will Matter
-
-**RCA with AST pre-analysis vs without, on hard bugs, on a SOTA model, at scale.**
-
-The honest version of that number doesn't exist yet. UDB-11 is early signal. UDB-51 with Claude Opus 4.6 across 8 bug categories — async races, cross-file state, closures, React state, security, performance — run against the same bugs on a raw baseline, is what actually proves the claim.
-
-Target: **≥85% RCA enhanced, ≥+10% delta over baseline, <5% hallucination rate.**
-
-Until then: the pipeline is open source, the web app is live, and you can run it on your own hardest bugs right now.
-
----
+<br/>
 
 ## Contributing
 
@@ -335,22 +560,24 @@ node benchmarks/runner.js
 npm test
 ```
 
----
-
 ## License
 
 BSL 1.1 — see [LICENSE](LICENSE).
 
----
+<br/>
+
+<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
+<br/>
 
 <div align="center">
 
-<img src="assets/logo.png" alt="Unravel" width="80"/>
+<img src="assets/logo.png" alt="Unravel" width="72"/>
 
 <br/>
 
 **Built by [Sambhav Jain](https://github.com/EruditeCoder108)**
 
-*If Unravel found a bug your AI missed, a star helps.*
+*If Unravel found a bug your AI missed — a star helps.*
 
 </div>

@@ -41,19 +41,97 @@ let _initPromise = null;
 export async function initParser() {
     if (_initPromise) return _initPromise;
     _initPromise = (async () => {
-        // Load TreeSitter here (inside an async function) — never at module scope.
-        // top-level await breaks esbuild es2020 target used by Netlify.
-        if (!TreeSitter) {
-            TreeSitter = (await import('web-tree-sitter')).default;
+        try {
+            if (!TreeSitter) {
+                // ── web-tree-sitter module resolution ──────────────────────────────
+                //
+                // web-tree-sitter 0.22.x switched to a new Emscripten build pipeline
+                // that changes the export shape depending on the bundler/environment.
+                // Vite dev mode (even with optimizeDeps.exclude) can produce any of:
+                //
+                //   A  tsModule.default            — ESM default (most common)
+                //   B  tsModule.default.default     — double-wrapped CJS interop
+                //   C  tsModule.Parser              — named export
+                //   D  tsModule.default.Parser      — nested named export
+                //   E  tsModule.TreeSitter          — named export by old package name
+                //   F  tsModule                     — namespace IS the class (CJS passthrough)
+                //
+                // ADDITIONALLY, 0.22.x may use the Emscripten MODULARIZE factory pattern,
+                // where the export is an async factory function rather than the class itself:
+                //   G  await tsModule.default()     — factory returns the Parser class
+                //   H  await tsModule()             — namespace is the factory
+                //
+                // We probe A–F for `.init()` first (old-style direct class).
+                // If none match, we try G–H (new-style factory).
+                // ──────────────────────────────────────────────────────────────────
+                const tsModule = await import('web-tree-sitter');
+
+                // Debug: log the actual shape so we can diagnose on first failure
+                console.log('[AST-TS] web-tree-sitter module shape:', {
+                    moduleType:   typeof tsModule,
+                    moduleKeys:   Object.keys(tsModule).slice(0, 15),
+                    defaultType:  typeof tsModule.default,
+                    defaultKeys:  tsModule.default ? Object.keys(tsModule.default).slice(0, 15) : [],
+                    hasInit:      typeof tsModule.default?.init,
+                    hasDblDefault:typeof tsModule.default?.default,
+                    hasParser:    typeof tsModule.Parser ?? typeof tsModule.default?.Parser,
+                });
+
+                // ── Phase 1: direct class probe (shapes A–F) ──────────────────────
+                const directCandidates = [
+                    tsModule.default,             // A
+                    tsModule.default?.default,    // B
+                    tsModule.Parser,              // C
+                    tsModule.default?.Parser,     // D
+                    tsModule.TreeSitter,          // E
+                    tsModule,                     // F
+                ];
+                TreeSitter = directCandidates.find(c => c && typeof c.init === 'function') ?? null;
+
+                // ── Phase 2: factory function probe (shapes G–H) ──────────────────
+                // In web-tree-sitter >= 0.22 with MODULARIZE=1 Emscripten output,
+                // the export is a callable that returns a promise resolving to the class.
+                if (!TreeSitter) {
+                    for (const factory of [tsModule.default, tsModule]) {
+                        if (typeof factory !== 'function') continue;
+                        try {
+                            const result = await factory();
+                            const factoryCandidates = [result, result?.Parser, result?.default];
+                            const found = factoryCandidates.find(c => c && typeof c.init === 'function');
+                            if (found) {
+                                TreeSitter = found;
+                                console.log('[AST-TS] Resolved via factory pattern.');
+                                break;
+                            }
+                        } catch { /* factory call failed — try next */ }
+                    }
+                }
+
+                if (!TreeSitter) {
+                    throw new Error(
+                        'web-tree-sitter 0.22.x: Parser class not found after exhaustive probe ' +
+                        '(checked shapes A–H including Emscripten factory pattern). ' +
+                        'See [AST-TS] log above for the actual module shape. ' +
+                        'Try: npm install web-tree-sitter@0.20.8 to pin to the last stable API, ' +
+                        'or clear the Vite cache: rm -rf node_modules/.vite && npx vite --force'
+                    );
+                }
+            }
+
+            await TreeSitter.init({ locateFile: () => '/wasm/tree-sitter.wasm' });
+            jsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-javascript.wasm');
+            tsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-typescript.wasm');
+            tsxLang = await TreeSitter.Language.load('/wasm/tree-sitter-tsx.wasm');
+            parserInstance = new TreeSitter();
+            console.log('[AST-TS] Tree-sitter WASM parser initialized.');
+
+        } catch (err) {
+            // Reset so a hot-reload / next call can retry instead of returning
+            // a permanently cached rejected promise.
+            _initPromise = null;
+            TreeSitter = null;
+            throw err;
         }
-        await TreeSitter.init({
-            locateFile: () => '/wasm/tree-sitter.wasm'
-        });
-        jsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-javascript.wasm');
-        tsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-typescript.wasm');
-        tsxLang = await TreeSitter.Language.load('/wasm/tree-sitter-tsx.wasm');
-        parserInstance = new TreeSitter();
-        console.log('[AST-TS] Tree-sitter WASM parser initialized.');
     })();
     return _initPromise;
 }
@@ -708,26 +786,65 @@ export async function runMultiFileAnalysis(files) {
     let totalParsed = 0;
     let totalFailed = 0;
     const failedFiles = [];
+    const partialFiles = [];
+
+    console.log(`[AST-TS DIAG] Starting batch: ${files.length} file(s) — ${files.map(f => f.name.split(/[\\/]/).pop()).join(', ')}`);
 
     for (const file of files) {
         const shortName = file.name.split(/[\\/]/).pop();
+        console.log(`[AST-TS DIAG] Parsing: ${shortName} (${file.content?.length ?? 0} chars)`);
         const tree = parseCode(file.content, shortName);
         if (!tree) {
+            console.warn(`[AST-TS DIAG] parseCode() returned null for ${shortName} — WASM threw during parse`);
+            totalFailed++;
+            failedFiles.push(shortName);
+            continue;
+        }
+        console.log(`[AST-TS DIAG] parseCode() succeeded for ${shortName} — tree type: ${typeof tree}, rootNode: ${!!tree.rootNode}`);
+
+        // Count error nodes vs total named nodes to get an error ratio.
+        // Tree-sitter's key advantage is returning a partial tree even on syntax errors —
+        // extraction functions (descendantsOfType) naturally walk around ERROR nodes.
+        // Policy:
+        //   ratio < 10% → analyze normally
+        //   ratio 10–40% → analyze with PARTIAL_RESULT flag (injected into prompt as uncertain)
+        //   ratio > 40%  → skip (tree is too broken to yield reliable facts)
+        // Absolute floor: never skip a file with ≤ 20 total named nodes (tiny files are fine).
+        //
+        // IMPORTANT: this block is wrapped in try/catch because a tree can be returned by
+        // parseCode() but have an internally inconsistent rootNode (WASM edge case on very
+        // large/complex TS files). Calling .descendantsOfType() on such a tree causes a WASM
+        // panic that propagates all the way to the outer catch in orchestrate.js, which then
+        // skips AST analysis for ALL files. The try/catch here demotes that to a per-file skip.
+        let errorCount, totalNodes, errorRatio;
+        try {
+            errorCount = tree.rootNode.descendantsOfType('ERROR').length;
+            // descendantCount is the real web-tree-sitter API (total nodes at all depths).
+            // namedDescendantCount does NOT exist in web-tree-sitter.
+            totalNodes = tree.rootNode.descendantCount || 1;
+            errorRatio = errorCount / totalNodes;
+            console.log(`[AST-TS DIAG] ${shortName} — errorCount: ${errorCount}, totalNodes: ${totalNodes}, ratio: ${(errorRatio * 100).toFixed(1)}%`);
+        } catch (introspectErr) {
+            console.warn(`[AST-TS DIAG] Tree introspection CRASHED for ${shortName}: ${introspectErr.message}`);
+            console.warn(`[AST-TS DIAG]   tree object keys: ${Object.keys(tree).join(', ')}`);
+            console.warn(`[AST-TS DIAG]   rootNode: ${tree.rootNode}`);
+            tree.delete();
             totalFailed++;
             failedFiles.push(shortName);
             continue;
         }
 
-        // Count error nodes — skip files with too many parse errors.
-        // Threshold is 5: tree-sitter handles partial syntax gracefully,
-        // but >5 errors means the file is too broken for reliable AST data.
-        const errorCount = tree.rootNode.descendantsOfType('ERROR').length;
-        if (errorCount > 5) {
-            console.warn(`[AST-TS] Skipping ${shortName}: ${errorCount} parse errors (threshold: 5)`);
+        if (errorRatio > 0.40 && totalNodes > 20) {
+            console.warn(`[AST-TS] Skipping ${shortName}: error ratio ${(errorRatio * 100).toFixed(1)}% (${errorCount}/${totalNodes} nodes)`);
             totalFailed++;
             failedFiles.push(shortName);
             tree.delete();
             continue;
+        }
+
+        const isPartialResult = errorRatio > 0.10 && totalNodes > 20;
+        if (isPartialResult) {
+            console.warn(`[AST-TS] Partial analysis for ${shortName}: error ratio ${(errorRatio * 100).toFixed(1)}% — results flagged in output`);
         }
 
         let mutations = {}, closures = {}, timing = [], reactPatterns = [], floatingPromises = [];
@@ -757,6 +874,10 @@ export async function runMultiFileAnalysis(files) {
         }
 
         totalParsed++;
+        // Track partial files separately — DO NOT embed the flag in the map key.
+        // Downstream code (expandMutationChains, emitRiskSignals) does moduleMap[fileName]
+        // lookups using the extracted key fragment, so keys must stay clean shortNames.
+        if (isPartialResult) partialFiles.push(shortName);
 
         // Merge mutations
         for (const [varName, data] of Object.entries(mutations)) {
@@ -801,12 +922,16 @@ export async function runMultiFileAnalysis(files) {
     const failNote = totalFailed > 0
         ? ` (${totalFailed} failed: ${failedFiles.join(', ')})`
         : '';
-    const fullFormatted = `${header}${failNote}\n\n${formatted}`;
+    const partialNote = partialFiles.length > 0
+        ? `\n⚠️ Partial parse (10–40% error ratio, treat facts as uncertain): ${partialFiles.join(', ')}`
+        : '';
+    const fullFormatted = `${header}${failNote}${partialNote}\n\n${formatted}`;
 
     return {
         raw: { mutations: mergedMutations, closures: mergedClosures, timingNodes: mergedTiming,
                reactPatterns: mergedReactPatterns, floatingPromises: mergedFloatingPromises },
         formatted: fullFormatted,
+        partialFiles,
     };
 }
 
