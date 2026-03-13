@@ -39,25 +39,41 @@ The result: **exact file, exact line, exact variable, with evidence and confiden
 
 ```mermaid
 flowchart TD
-    A([User Code + Bug Description]) --> B
-
-    subgraph L0["Layer 0 — AST Analyzer (Deterministic)"]
-        B["tree-sitter (WASM) — primary engine\n──────────────────────\nVariable mutation chains\nClosure captures + React patterns\nAsync boundaries + floating promises\nCross-file import resolution\nCustom scope resolver (S-expression queries)"]
+    %% Node Definitions
+    A([<b>User Input</b><br/>Code + Bug Description])
+    
+    subgraph L0 ["Layer 0: AST Analyzer"]
+        direction TB
+        B["<b>tree-sitter (WASM)</b><br/><i>Primary Engine (Deterministic)</i><br/>──────────────────────<br/>• Variable mutation chains<br/>• Closure captures + React patterns<br/>• Async boundaries + floating promises<br/>• Cross-file import resolution<br/>• Custom scope resolver"]
     end
 
-    L0 -->|Verified Context Map| L1
-
-    subgraph L1["Layer 1 — Router Agent (Mode-Aware)"]
-        C["Graph-Frontier BFS (Phase 0.5) — always runs\n──────────────────────\nDebug      →  5–8 files near symptom\nExplain    →  15–25 files for breadth\nSecurity   →  8–12 files on attack surface"]
+    subgraph L1 ["Layer 1: Router Agent"]
+        direction TB
+        C["<b>Graph-Frontier BFS</b><br/><i>Mode-Aware Context Selection</i><br/>──────────────────────<br/>• <b>Debug</b>: 5–8 files near symptom<br/>• <b>Explain</b>: 15–25 files for breadth<br/>• <b>Security</b>: 8–12 files on attack surface"]
     end
 
+    subgraph L2 ["Layer 2: Core Engine"]
+        direction TB
+        D["<b>8-Phase Pipeline</b><br/><i>Single LLM Call (Context-Loaded)</i><br/>──────────────────────<br/>• Anti-sycophancy guardrails (7 rules)<br/>• Evidence-backed confidence score<br/>• Progressive streaming via SSE<br/>• Fix completeness verifier (cross-file)"]
+    end
+
+    E([<b>Final Output</b><br/>Structured JSON Report<br/>Web App · VS Code Sidebar])
+
+    %% Connections
+    A --> L0
+    L0 -->|Verified Context| L1
     L1 -->|Code Slices + AST Facts| L2
+    L2 --> E
 
-    subgraph L2["Layer 2 — Core Engine (Single LLM Call)"]
-        D["8-phase deterministic pipeline\nAnti-sycophancy guardrails (7 rules)\nEvidence-backed confidence score\nProgressive streaming via SSE\nFix completeness verifier (cross-file)"]
-    end
-
-    L2 --> E([Structured Report\nWeb App · VS Code Sidebar])
+    %% Styling
+    style A fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#fff
+    style E fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#fff
+    style B fill:#0d1117,stroke:#30363d,color:#c9d1d9
+    style C fill:#0d1117,stroke:#30363d,color:#c9d1d9
+    style D fill:#0d1117,stroke:#30363d,color:#c9d1d9
+    style L0 fill:#161b22,stroke:#30363d,color:#8b949e
+    style L1 fill:#161b22,stroke:#30363d,color:#8b949e
+    style L2 fill:#161b22,stroke:#30363d,color:#8b949e
 ```
 
 ---
