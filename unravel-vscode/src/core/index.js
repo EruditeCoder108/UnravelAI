@@ -27,8 +27,8 @@ export {
     estimateRuntime,
 } from './config.js';
 
-// AST pre-analysis engine
-export { runFullAnalysis, runMultiFileAnalysis } from './ast-engine.js';
+// AST pre-analysis engine (tree-sitter based)
+export { runFullAnalysis, runMultiFileAnalysis, initParser } from './ast-engine-ts.js';
 
 // Cross-file AST resolution
 export { runCrossFileAnalysis, buildModuleMap, resolveSymbolOrigins, expandMutationChains, emitRiskSignals, buildCallGraph, selectFilesByGraph } from './ast-project.js';

@@ -12,8 +12,8 @@ import {
     PRESETS,
     buildDynamicSchema, buildDynamicSchemaInstruction,
 } from './config.js';
-import { runMultiFileAnalysis } from './ast-engine.js';
-import { runCrossFileAnalysis } from './ast-project.js';
+import { runMultiFileAnalysis, initParser } from './ast-engine-ts.js';
+import { runCrossFileAnalysis, selectFilesByGraph } from './ast-project.js';
 import { parseAIJson } from './parse-json.js';
 import { callProvider, callProviderStreaming } from './provider.js';
 
@@ -72,16 +72,43 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         onProgress?.('⚠️ INPUT WARNING: Some files may be incomplete. Proceeding with reduced confidence...');
     }
 
+    // ── Phase 0.5: Graph Router ──
+    // When many files are provided, use the import/call graph to select the
+    // most relevant ones before AST analysis + LLM call.
+    const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
+    let _routerStrategy = 'all-files'; // captured for provenance
+    if (!_forceNoAST && jsFiles.length > 15) {
+        try {
+            onProgress?.('GRAPH ROUTER: Selecting relevant files from import graph...');
+            const { selectedFiles, strategy } = await selectFilesByGraph(codeFiles, symptom);
+            _routerStrategy = strategy;
+            if (strategy !== 'all-files') {
+                const before = codeFiles.length;
+                // selectedFiles contains short basenames — match by basename, not full path
+                const selectedSet = new Set(selectedFiles);
+                codeFiles = codeFiles.filter(f => {
+                    const base = f.name.split(/[\\/]/).pop();
+                    return selectedSet.has(base) || selectedSet.has(f.name);
+                });
+                console.log(`[GRAPH] Trimmed ${before} → ${codeFiles.length} files via ${strategy}`);
+                onProgress?.(`GRAPH ROUTER: Focused on ${codeFiles.length}/${before} most relevant files.`);
+            }
+        } catch (routerErr) {
+            console.warn('[GRAPH] Router failed, using all files:', routerErr.message);
+        }
+    }
+
     // ── Phase 1: AST Pre-Analysis ──
     onProgress?.('AST ANALYZER: Extracting verified ground truth from code...');
-    const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
+    const jsFilesForAST = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
     let astContext = '';
     let astRaw = null; // Preserved for claim verifier
     if (_forceNoAST) {
         console.log('[AST] Skipped — _forceNoAST flag set (baseline run)');
-    } else if (jsFiles.length > 0) {
+    } else if (jsFilesForAST.length > 0) {
         try {
-            const analysis = runMultiFileAnalysis(jsFiles);
+            await initParser(); // tree-sitter WASM: lazy init, no-op after first call
+            const analysis = await runMultiFileAnalysis(jsFilesForAST);
             astContext = analysis.formatted;
             astRaw = analysis.raw; // { mutations, closures, timingNodes }
             console.log('[AST] Verified context extracted:', astContext);
@@ -93,9 +120,9 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
 
     // ── Phase 1b: Cross-File AST Resolution ──
     let crossFileRaw = null;
-    if (jsFiles.length >= 2 && astRaw) {
+    if (jsFilesForAST.length >= 2 && astRaw) {
         try {
-            const crossFile = runCrossFileAnalysis(jsFiles, astRaw);
+            const crossFile = await runCrossFileAnalysis(jsFilesForAST, astRaw);
             if (crossFile.formatted) {
                 astContext += '\n' + crossFile.formatted;
                 crossFileRaw = crossFile.raw;
@@ -183,10 +210,12 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         contextWarnings.push(`Total input was truncated to fit the context budget (${MAX_TOTAL_CHARS} chars).`);
     }
 
-    const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${cappedFiles.map(f => `=== FILE: ${f.name} ===\n${f.content.slice(0, 8000)}`).join('\n\n')}\n\n${symptomLabel}:\n${symptom || symptomDefault}${schemaInstruction}`;
+    // Do NOT truncate files here — the totalChars guard above already handled budget.
+    // Per-file slice(0, 8000) was silently dropping content even when well within budget.
+    const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${cappedFiles.map(f => `=== FILE: ${f.name} ===\n${f.content}`).join('\n\n')}\n\n${symptomLabel}:\n${symptom || symptomDefault}${schemaInstruction}`;
 
     // ── Phase 3: Call AI (streaming when onPartialResult provided) ──
-    const SAFE_STREAM_FIELDS = ['rootCause', 'evidence', 'fix', 'minimalFix', 'bugType', 'confidence', 'symptom', 'codeLocation', 'whyFixWorks', 'variableState', 'timeline', 'conceptExtraction', 'whyAILooped', 'hypotheses', 'reproduction', 'aiPrompt', 'timelineEdges', 'hypothesisTree', 'aiLoopEdges', 'variableStateEdges'];
+    const SAFE_STREAM_FIELDS = ['rootCause', 'evidence', 'fix', 'minimalFix', 'bugType', 'confidence', 'symptom', 'codeLocation', 'whyFixWorks', 'variableState', 'timeline', 'conceptExtraction', 'hypotheses', 'reproduction', 'aiPrompt', 'timelineEdges', 'hypothesisTree', 'variableStateEdges'];
 
     let raw;
     if (onPartialResult) {
@@ -212,7 +241,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
                 if (!shouldParse) return;
 
                 try {
-                    const partial = parseAIJson(streamBuffer);
+                    const partial = parseAIJson(streamBuffer, true /* isStreaming — suppress noise */);
                     if (!partial) return;
 
                     // Dedup: only emit when content actually changes
@@ -294,7 +323,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
 
     // ── Phase 5: Claim Verification ──
     onProgress?.({ stage: 'verify', label: 'Verifying Claims', complete: false, elapsed: elapsed() });
-    const verification = verifyClaims(result, codeFiles, astRaw, mode);
+    const verification = verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode);
     if (verification.failures.length > 0) {
         result._verification = verification;
         console.warn('[Verify] Claim failures:', verification.failures);
@@ -348,7 +377,8 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     result._provenance = {
         engineVersion: '3.3',
         astVersion: '2.2',
-        routerStrategy: crossFileRaw ? 'graph-frontier' : 'llm-heuristic',
+        routerStrategy: _routerStrategy,        // actual strategy from selectFilesByGraph
+        crossFileAnalysis: !!crossFileRaw,       // whether cross-file AST ran
         model: options.model || 'unknown',
         provider: options.provider || 'unknown',
         timestamp: new Date().toISOString(),
@@ -407,7 +437,7 @@ function checkFileCompleteness(codeFiles) {
 //   - RootCause fails    → hard reject (needsMoreInfo = true)
 // ═══════════════════════════════════════════════════
 
-function verifyClaims(result, codeFiles, astRaw, mode) {
+function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
     const failures = [];
     let rootCauseRejected = false;
     let confidencePenalty = 0;
@@ -580,6 +610,42 @@ function verifyClaims(result, codeFiles, astRaw, mode) {
                     if (!findFile(fileName)) {
                         failures.push({ claim: `vulnerability: ${vuln.type}`, reason: `location references file "${fileName}" not in inputs` });
                         confidencePenalty += 0.2;
+                    }
+                }
+            }
+        }
+    }
+    // === Check 6: Fix Completeness (Cross-File Call Graph) ===
+    const callGraph = crossFileRaw?.callGraph;
+    const minimalFix = report.minimalFix || result.minimalFix;
+    if (callGraph?.length > 0 && minimalFix && typeof minimalFix === 'string') {
+        const fixText = minimalFix.toLowerCase();
+        
+        // A function is "modified" if the fix explicitly mentions the function AND its defining file
+        const modifiedFunctions = new Set();
+        for (const edge of callGraph) {
+            if (!edge.function || !edge.callee) continue;
+            const calleeBase = edge.callee.split(/[\\/]/).pop().toLowerCase();
+            if (fixText.includes(edge.function.toLowerCase()) && fixText.includes(calleeBase)) {
+                modifiedFunctions.add(edge.function);
+            }
+        }
+
+        // Now check if any dependent files are missing from the fix
+        for (const edge of callGraph) {
+            if (modifiedFunctions.has(edge.function)) {
+                const callerBase = edge.caller.split(/[\\/]/).pop().toLowerCase();
+                if (!fixText.includes(callerBase)) {
+                    failures.push({
+                        claim: `Fix Completeness: ${edge.function}`,
+                        reason: `Fix modifies ${edge.function} in ${edge.callee} but misses updates to caller ${edge.caller}`
+                    });
+                    confidencePenalty += 0.15;
+                    
+                    // Add an explicit warning to the uncertainties block
+                    const uncerts = report.uncertainties || result.uncertainties;
+                    if (Array.isArray(uncerts)) {
+                        uncerts.push(`AST Guard: Fix modifies '${edge.function}' but misses updates to downstream caller '${callerBase}'`);
                     }
                 }
             }

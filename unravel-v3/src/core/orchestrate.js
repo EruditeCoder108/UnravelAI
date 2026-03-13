@@ -215,7 +215,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     const enginePrompt = `${astBlock}${projectContext}\n\nFILES PROVIDED:\n${cappedFiles.map(f => `=== FILE: ${f.name} ===\n${f.content}`).join('\n\n')}\n\n${symptomLabel}:\n${symptom || symptomDefault}${schemaInstruction}`;
 
     // ── Phase 3: Call AI (streaming when onPartialResult provided) ──
-    const SAFE_STREAM_FIELDS = ['rootCause', 'evidence', 'fix', 'minimalFix', 'bugType', 'confidence', 'symptom', 'codeLocation', 'whyFixWorks', 'variableState', 'timeline', 'conceptExtraction', 'whyAILooped', 'hypotheses', 'reproduction', 'aiPrompt', 'timelineEdges', 'hypothesisTree', 'aiLoopEdges', 'variableStateEdges'];
+    const SAFE_STREAM_FIELDS = ['rootCause', 'evidence', 'fix', 'minimalFix', 'bugType', 'confidence', 'symptom', 'codeLocation', 'whyFixWorks', 'variableState', 'timeline', 'conceptExtraction', 'hypotheses', 'reproduction', 'aiPrompt', 'timelineEdges', 'hypothesisTree', 'variableStateEdges'];
 
     let raw;
     if (onPartialResult) {
@@ -323,7 +323,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
 
     // ── Phase 5: Claim Verification ──
     onProgress?.({ stage: 'verify', label: 'Verifying Claims', complete: false, elapsed: elapsed() });
-    const verification = verifyClaims(result, codeFiles, astRaw, mode);
+    const verification = verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode);
     if (verification.failures.length > 0) {
         result._verification = verification;
         console.warn('[Verify] Claim failures:', verification.failures);
@@ -437,7 +437,7 @@ function checkFileCompleteness(codeFiles) {
 //   - RootCause fails    → hard reject (needsMoreInfo = true)
 // ═══════════════════════════════════════════════════
 
-function verifyClaims(result, codeFiles, astRaw, mode) {
+function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
     const failures = [];
     let rootCauseRejected = false;
     let confidencePenalty = 0;
@@ -610,6 +610,42 @@ function verifyClaims(result, codeFiles, astRaw, mode) {
                     if (!findFile(fileName)) {
                         failures.push({ claim: `vulnerability: ${vuln.type}`, reason: `location references file "${fileName}" not in inputs` });
                         confidencePenalty += 0.2;
+                    }
+                }
+            }
+        }
+    }
+    // === Check 6: Fix Completeness (Cross-File Call Graph) ===
+    const callGraph = crossFileRaw?.callGraph;
+    const minimalFix = report.minimalFix || result.minimalFix;
+    if (callGraph?.length > 0 && minimalFix && typeof minimalFix === 'string') {
+        const fixText = minimalFix.toLowerCase();
+        
+        // A function is "modified" if the fix explicitly mentions the function AND its defining file
+        const modifiedFunctions = new Set();
+        for (const edge of callGraph) {
+            if (!edge.function || !edge.callee) continue;
+            const calleeBase = edge.callee.split(/[\\/]/).pop().toLowerCase();
+            if (fixText.includes(edge.function.toLowerCase()) && fixText.includes(calleeBase)) {
+                modifiedFunctions.add(edge.function);
+            }
+        }
+
+        // Now check if any dependent files are missing from the fix
+        for (const edge of callGraph) {
+            if (modifiedFunctions.has(edge.function)) {
+                const callerBase = edge.caller.split(/[\\/]/).pop().toLowerCase();
+                if (!fixText.includes(callerBase)) {
+                    failures.push({
+                        claim: `Fix Completeness: ${edge.function}`,
+                        reason: `Fix modifies ${edge.function} in ${edge.callee} but misses updates to caller ${edge.caller}`
+                    });
+                    confidencePenalty += 0.15;
+                    
+                    // Add an explicit warning to the uncertainties block
+                    const uncerts = report.uncertainties || result.uncertainties;
+                    if (Array.isArray(uncerts)) {
+                        uncerts.push(`AST Guard: Fix modifies '${edge.function}' but misses updates to downstream caller '${callerBase}'`);
                     }
                 }
             }

@@ -427,17 +427,7 @@ function renderDebug(r) {
             ${c.realWorldAnalogy ? `<p class="analogy">💡 ${esc(c.realWorldAnalogy)}</p>` : ''}`);
     }
 
-    if (r.whyAILooped) {
-        const loopSteps = (r.whyAILooped.loopSteps || []).map((s, i) =>
-            `<div class="loop-step">${i + 1}. ${esc(s)}</div>`).join('');
-        html += sectionBlock('🔄 Why AI Keeps Breaking It', '#ff00ff', `
-            <p>${esc(r.whyAILooped.explanation)}</p>
-            ${loopSteps ? `<div class="loop-block"><h4 class="sub-h">The AI Fix Loop</h4>${loopSteps}</div>` : ''}`);
-    }
 
-    if (r.aiLoopEdges?.length > 0) {
-        html += mermaidBlock(buildAILoopMermaid(r.aiLoopEdges), 'The fix loop AI tools fall into — green path is how Unravel escapes it');
-    }
 
     if (r.variableState?.length > 0) {
         const rows = r.variableState.map(st => `

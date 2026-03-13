@@ -8,9 +8,7 @@
 // Does NOT modify ast-engine.js — purely additive layer.
 // ═══════════════════════════════════════════════════
 
-import { parseCode } from './ast-engine.js';
-import _traverse from '@babel/traverse';
-const traverse = _traverse.default || _traverse;
+import { parseCode, initParser } from './ast-engine-ts.js';
 
 // ═══════════════════════════════════════════════════
 // STEP 1: Build Module Map
@@ -19,83 +17,109 @@ const traverse = _traverse.default || _traverse;
 
 /**
  * @param {Array<{name: string, content: string}>} files
- * @returns {{ moduleMap: Object, asts: Map }}
+ * @returns {Promise<{ moduleMap: Object, asts: Map }>}
  */
-export function buildModuleMap(files) {
+export async function buildModuleMap(files) {
+    await initParser(); // tree-sitter WASM: lazy init, no-op after first call
     const moduleMap = {};
-    const asts = new Map(); // filename -> AST (reuse later)
+    const asts = new Map(); // filename → tree-sitter tree (reuse later)
 
     for (const file of files) {
         const shortName = file.name.split(/[\\/]/).pop();
-        const ast = parseCode(file.content);
-        if (!ast) continue;
-        asts.set(shortName, ast);
+        const tree = parseCode(file.content, shortName);
+        if (!tree) continue;
+        asts.set(shortName, tree);
 
         const entry = { imports: {}, exports: {} };
+        const root = tree.rootNode;
 
-        traverse(ast, {
-            // import { foo, bar } from './module'
-            ImportDeclaration(path) {
-                const source = path.node.source?.value;
-                if (!source || !source.startsWith('.')) return; // skip node_modules
-                const resolvedSource = resolveModuleName(source, files);
+        // ── Import statements ──
+        const importNodes = root.descendantsOfType('import_statement');
+        for (const importNode of importNodes) {
+            const sourceNode = importNode.childForFieldName('source');
+            const source = sourceNode?.text?.replace(/['"`]/g, '');
+            if (!source || !source.startsWith('.')) continue; // skip node_modules
+            const resolvedSource = resolveModuleName(source, files);
+            const line = importNode.startPosition.row + 1;
 
-                for (const spec of path.node.specifiers) {
-                    if (spec.type === 'ImportSpecifier') {
-                        const localName = spec.local.name;
-                        const importedName = spec.imported?.name || localName;
-                        entry.imports[localName] = {
-                            from: resolvedSource,
-                            originalName: importedName,
-                            line: spec.loc?.start?.line || 0,
-                        };
-                    } else if (spec.type === 'ImportDefaultSpecifier') {
-                        entry.imports[spec.local.name] = {
-                            from: resolvedSource,
-                            originalName: 'default',
-                            line: spec.loc?.start?.line || 0,
-                        };
-                    } else if (spec.type === 'ImportNamespaceSpecifier') {
-                        entry.imports[spec.local.name] = {
-                            from: resolvedSource,
-                            originalName: '*',
-                            line: spec.loc?.start?.line || 0,
-                        };
-                    }
+            // import clause: import_clause contains default/namespace/named imports
+            const clause = importNode.namedChildren.find(c => c.type === 'import_clause');
+            if (!clause) continue;
+
+            for (const child of clause.namedChildren) {
+                // import X from '...'
+                if (child.type === 'identifier') {
+                    entry.imports[child.text] = { from: resolvedSource, originalName: 'default', line };
                 }
-            },
-
-            // export let foo = ..., export function bar() {}, export { x, y }
-            ExportNamedDeclaration(path) {
-                const decl = path.node.declaration;
-                if (decl) {
-                    if (decl.type === 'VariableDeclaration') {
-                        for (const d of decl.declarations) {
-                            if (d.id?.name) {
-                                entry.exports[d.id.name] = { line: d.loc?.start?.line || 0 };
-                            }
+                // import * as X from '...'
+                if (child.type === 'namespace_import') {
+                    const id = child.namedChildren.find(c => c.type === 'identifier');
+                    if (id) entry.imports[id.text] = { from: resolvedSource, originalName: '*', line };
+                }
+                // import { foo, bar as baz } from '...'
+                if (child.type === 'named_imports') {
+                    for (const spec of child.namedChildren) {
+                        if (spec.type !== 'import_specifier') continue;
+                        const nameNode = spec.childForFieldName('name');
+                        const aliasNode = spec.childForFieldName('alias');
+                        const localName = aliasNode?.text || nameNode?.text;
+                        const importedName = nameNode?.text;
+                        if (localName && importedName) {
+                            entry.imports[localName] = { from: resolvedSource, originalName: importedName, line };
                         }
-                    } else if (decl.id?.name) {
-                        // function or class declaration
-                        entry.exports[decl.id.name] = { line: decl.loc?.start?.line || 0 };
                     }
                 }
-                // export { x, y } — specifiers without declaration
-                for (const spec of path.node.specifiers || []) {
-                    const exportedName = spec.exported?.name || spec.local?.name;
-                    if (exportedName) {
-                        entry.exports[exportedName] = { line: spec.loc?.start?.line || 0 };
-                    }
+            }
+        }
+
+        // ── Export statements ──
+        // export { x, y } or export { x as foo }
+        const exportNamedNodes = root.descendantsOfType('export_statement');
+        for (const exp of exportNamedNodes) {
+            const line = exp.startPosition.row + 1;
+
+            // export { x, y }
+            const exportClause = exp.namedChildren.find(c => c.type === 'export_clause');
+            if (exportClause) {
+                for (const spec of exportClause.namedChildren) {
+                    if (spec.type !== 'export_specifier') continue;
+                    const nameNode = spec.childForFieldName('name');
+                    const aliasNode = spec.childForFieldName('alias');
+                    const exportedName = aliasNode?.text || nameNode?.text;
+                    if (exportedName) entry.exports[exportedName] = { line };
                 }
-            },
+            }
+
+            // export let/const/var x = ...
+            const declNode = exp.namedChildren.find(c =>
+                c.type === 'lexical_declaration' || c.type === 'variable_declaration'
+            );
+            if (declNode) {
+                for (const decl of declNode.namedChildren) {
+                    if (decl.type !== 'variable_declarator') continue;
+                    const id = decl.childForFieldName('name');
+                    if (id?.type === 'identifier') entry.exports[id.text] = { line };
+                }
+            }
+
+            // export function foo() {} / export class Foo {}
+            const fnNode = exp.namedChildren.find(c =>
+                c.type === 'function_declaration' || c.type === 'class_declaration' ||
+                c.type === 'generator_function_declaration'
+            );
+            if (fnNode) {
+                const id = fnNode.childForFieldName('name');
+                if (id) entry.exports[id.text] = { line };
+            }
 
             // export default ...
-            ExportDefaultDeclaration(path) {
-                const decl = path.node.declaration;
-                const name = decl?.id?.name || 'default';
-                entry.exports[name] = { line: path.node.loc?.start?.line || 0, isDefault: true };
-            },
-        });
+            const isDefault = exp.children.some(c => c.type === 'default');
+            if (isDefault) {
+                const decl = exp.namedChildren[0];
+                const name = decl?.childForFieldName?.('name')?.text || 'default';
+                entry.exports[name] = { line, isDefault: true };
+            }
+        }
 
         moduleMap[shortName] = entry;
     }
@@ -311,8 +335,8 @@ export function buildCallGraph(moduleMap, asts) {
     const callGraph = [];
 
     for (const [fileName, mod] of Object.entries(moduleMap)) {
-        const ast = asts.get(fileName);
-        if (!ast) continue;
+        const tree = asts.get(fileName);
+        if (!tree) continue;
 
         // Build a set of imported function names for this file
         const importedFunctions = new Map(); // localName → { from, originalName }
@@ -322,33 +346,34 @@ export function buildCallGraph(moduleMap, asts) {
 
         if (importedFunctions.size === 0) continue;
 
-        // Walk the AST looking for calls to imported functions
-        traverse(ast, {
-            CallExpression(path) {
-                const callee = path.node.callee;
-                let fnName = null;
+        // Walk the tree looking for calls to imported functions (tree-sitter)
+        const callNodes = tree.rootNode.descendantsOfType('call_expression');
+        for (const call of callNodes) {
+            const callee = call.childForFieldName('function');
+            if (!callee) continue;
 
-                // Direct call: importedFn()
-                if (callee.type === 'Identifier') {
-                    fnName = callee.name;
-                }
-                // Method call on imported obj: importedObj.method()
-                // We track the object, not the method
-                if (callee.type === 'MemberExpression' && callee.object?.type === 'Identifier') {
-                    fnName = callee.object.name;
-                }
+            let fnName = null;
 
-                if (fnName && importedFunctions.has(fnName)) {
-                    const importInfo = importedFunctions.get(fnName);
-                    callGraph.push({
-                        caller: fileName,
-                        callee: importInfo.from,
-                        function: importInfo.originalName,
-                        line: path.node.loc?.start?.line || 0,
-                    });
-                }
-            },
-        });
+            // Direct call: importedFn()
+            if (callee.type === 'identifier') {
+                fnName = callee.text;
+            }
+            // Method call on imported obj: importedObj.method()
+            if (callee.type === 'member_expression') {
+                const obj = callee.childForFieldName('object');
+                if (obj?.type === 'identifier') fnName = obj.text;
+            }
+
+            if (fnName && importedFunctions.has(fnName)) {
+                const importInfo = importedFunctions.get(fnName);
+                callGraph.push({
+                    caller: fileName,
+                    callee: importInfo.from,
+                    function: importInfo.originalName,
+                    line: call.startPosition.row + 1,
+                });
+            }
+        }
     }
 
     // Deduplicate (same caller+callee+function, keep first occurrence)
@@ -378,7 +403,7 @@ const GRAPH_MAX_FILES = 15;
  * @param {Object} [crossFileData] - raw output from runCrossFileAnalysis (optional, computed if missing)
  * @returns {{ selectedFiles: string[], strategy: string }}
  */
-export function selectFilesByGraph(allFiles, symptom, crossFileData) {
+export async function selectFilesByGraph(allFiles, symptom, crossFileData) {
     const jsFiles = allFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
 
     // Not enough files to need routing
@@ -396,7 +421,7 @@ export function selectFilesByGraph(allFiles, symptom, crossFileData) {
         callGraph = crossFileData.callGraph || [];
         crossFileChains = crossFileData.crossFileChains || {};
     } else {
-        const result = buildModuleMap(jsFiles);
+        const result = await buildModuleMap(jsFiles);
         moduleMap = result.moduleMap;
         callGraph = buildCallGraph(moduleMap, result.asts);
         crossFileChains = {};
@@ -529,14 +554,14 @@ export function selectFilesByGraph(allFiles, symptom, crossFileData) {
  * @param {Object} perFileAnalysis - The raw output from runMultiFileAnalysis()
  * @returns {{ formatted: string, raw: Object }}
  */
-export function runCrossFileAnalysis(files, perFileAnalysis) {
+export async function runCrossFileAnalysis(files, perFileAnalysis) {
     // Only analyze JS/TS files
     const jsFiles = files.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
     if (jsFiles.length < 2) {
         return { formatted: '', raw: null }; // No cross-file analysis for single files
     }
 
-    const { moduleMap, asts } = buildModuleMap(jsFiles);
+    const { moduleMap, asts } = await buildModuleMap(jsFiles);
     const symbolOrigins = resolveSymbolOrigins(moduleMap);
     const crossFileChains = expandMutationChains(
         perFileAnalysis?.mutations || {},
@@ -544,6 +569,9 @@ export function runCrossFileAnalysis(files, perFileAnalysis) {
         moduleMap
     );
     const callGraph = buildCallGraph(moduleMap, asts);
+
+    // Free WASM memory — trees were only needed for buildCallGraph
+    for (const tree of asts.values()) { try { tree.delete(); } catch (_) {} }
     const riskSignals = emitRiskSignals(
         crossFileChains,
         perFileAnalysis?.mutations || {},
@@ -627,8 +655,10 @@ function formatCrossFileContext(crossFileChains, riskSignals, callGraph) {
 // ═══════════════════════════════════════════════════
 
 function resolveModuleName(importPath, files) {
-    // Strip leading ./ or ../
-    const cleaned = importPath.replace(/^\.\//, '').replace(/^\.\.\//, '');
+    // Strip all leading ./ and ../ path segments
+    // e.g. '../../utils/store' → 'store', './api' → 'api'
+    const segments = importPath.split('/');
+    const cleaned = segments.filter(s => s !== '.' && s !== '..').join('/') || importPath;
 
     // Try exact match first
     for (const f of files) {
