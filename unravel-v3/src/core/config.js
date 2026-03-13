@@ -234,19 +234,13 @@ off-by-one errors — only for cases where multiple patches in the same area ove
 Populate timelineEdges with the same timeline as directed edges between actors. Mark the exact edge where the bug manifests with isBugPoint: true.`
         },
         {
-            n: 7, name: 'AI LOOP ANALYSIS',
-            desc: `Why would typical AI tools (ChatGPT, Cursor, Copilot) fail to fix this correctly?
-What symptom-chasing loop would they fall into? Be specific about the wrong path.
-Populate aiLoopEdges with the loop as directed edges. Mark the Unravel escape path with isEscapePath: true.`
-        },
-        {
-            n: 8, name: 'CONCEPT EXTRACTION',
+            n: 7, name: 'CONCEPT EXTRACTION',
             desc: `What programming concept does this bug teach?
 How should the user avoid this entire class of bug forever?
 Give a real-world analogy from Indian daily life.`
         },
         {
-            n: 9, name: 'INVARIANTS',
+            n: 8, name: 'INVARIANTS',
             desc: `What conditions MUST always be true for this program to work correctly?
 Document them as rules for future prevention.`
         },
@@ -258,7 +252,6 @@ Document them as rules for future prevention.`
         'NEVER make up code behavior you cannot verify from the provided files.',
         'If the code appears correct and the described bug cannot be reproduced from the code logic, say so clearly. Do NOT invent bugs to appear useful.',
         'If the user\'s bug description contradicts actual code behavior, point out the contradiction instead of agreeing with a false premise.',
-        'If you are uncertain, say "I cannot confirm this without runtime execution" — do NOT guess and present it as fact.',
         'Every bug claim MUST include the exact line number and code fragment that proves it. If you cannot cite evidence, do NOT claim the bug.',
         'Generate exactly 3 competing hypotheses before committing to a root cause. They must be MUTUALLY EXCLUSIVE mechanisms, not variations of the same idea.',
         'If multiple hypotheses survive evidence elimination, report all survivors with evidence for each. Do NOT pick one arbitrarily.',
@@ -266,7 +259,8 @@ Document them as rules for future prevention.`
         'If critical files are missing, set needsMoreInfo to true and specify exactly what you need.',
         'Use Indian daily-life analogies when explaining (ghar, sabzi, auto-rickshaw, chai, cricket).',
         'Be warm like a senior developer friend, not cold like documentation.',
-        'Confidence must be evidence-backed — list what you verified and what you could not.',
+        'CONFIDENCE CALIBRATION — This is static analysis, not runtime execution. Code evidence IS deterministic. If you have traced the exact code path where state is corrupted (line number + mechanism), confidence MUST be 0.85 or above. Do NOT lower confidence to 0.6 merely because you lack runtime logs — if the bug is visible in the code, that IS the evidence. Only drop below 0.75 if: (a) critical files are missing, or (b) two hypotheses genuinely survive elimination with equal evidence.',
+        'UNCERTAINTY FIELD — Only list SPECIFIC unknowns that change the diagnosis: e.g. "Cannot determine which branch of condition at L42 executes first without a debugger trace." Do NOT write generic disclaimers like "Without runtime logs it is hard to confirm" — that applies to every static analysis and adds no information. If you have code-level evidence for the root cause, uncertainties should be empty or contain only specific secondary unknowns.',
         'Bug type MUST be one of: STATE_MUTATION, STALE_CLOSURE, RACE_CONDITION, TEMPORAL_LOGIC, EVENT_LIFECYCLE, TYPE_COERCION, ENV_DEPENDENCY, ASYNC_ORDERING, DATA_FLOW, UI_LOGIC, MEMORY_LEAK, INFINITE_LOOP, OTHER.',
         'Rule 6 — PROXIMATE FIXATION GUARD: The crash site is NEVER automatically the root cause. It is where failure became visible. Trace state BACKWARDS through mutation chains from the failure point. The root cause is where state was FIRST corrupted, not where it first caused a visible failure. Exception: single-line bugs where crash site and root cause are demonstrably the same.',
         'Rule 7 — NAME-BEHAVIOR FALLACY: A variable named `isPaused` does not guarantee the code pauses. A function named `cleanup()` does not guarantee cleanup occurs. Verify BEHAVIOR from the execution chain — do not trust naming conventions as a substitute for tracing the actual code path.',
@@ -510,9 +504,9 @@ export const ENGINE_SCHEMA = {
                 bugType: { type: "STRING", description: "One of the BUG_TAXONOMY values — use closest match" },
                 secondaryTags: { type: "ARRAY", items: { type: "STRING" }, description: "Optional secondary classification tags for rare/complex bugs not fully captured by bugType (e.g. regex-catastrophic-backtracking, floating-point-precision, serialization-mismatch). Omit if bugType alone is sufficient." },
                 customLabel: { type: "STRING", description: "Optional short human label when none of the 12 taxonomy categories fit well. Only use if bugType=OTHER. Keep under 5 words." },
-                confidence: { type: "NUMBER", description: "0.0 to 1.0" },
-                evidence: { type: "ARRAY", items: { type: "STRING" }, description: "What evidence supports this diagnosis" },
-                uncertainties: { type: "ARRAY", items: { type: "STRING" }, description: "What could not be verified" },
+                confidence: { type: "NUMBER", description: "0.85+ when you have code-level evidence for the root cause. Only below 0.75 if critical files are missing or two hypotheses survive with equal evidence." },
+                evidence: { type: "ARRAY", items: { type: "STRING" }, description: "Specific code locations and mechanisms that confirm the diagnosis — file + line for each" },
+                uncertainties: { type: "ARRAY", items: { type: "STRING" }, description: "SPECIFIC unknowns only — e.g. 'Cannot determine which branch executes at L42 without runtime trace'. Do NOT write generic disclaimers like without runtime logs. If code evidence is clear, leave this empty." },
                 symptom: { type: "STRING" },
                 reproduction: { type: "ARRAY", items: { type: "STRING" } },
                 rootCause: { type: "STRING" },
@@ -543,16 +537,7 @@ export const ENGINE_SCHEMA = {
                         concept: { type: "STRING" },
                         whyItMatters: { type: "STRING" },
                         patternToAvoid: { type: "STRING" },
-                        realWorldAnalogy: { type: "STRING" },
-                        whyVibeCodersHitThis: { type: "STRING", description: "Why AI-assisted developers specifically hit this bug — what the AI generated that looked correct but broke an invariant the AI didn't model." }
-                    }
-                },
-                whyAILooped: {
-                    type: "OBJECT",
-                    properties: {
-                        pattern: { type: "STRING" },
-                        explanation: { type: "STRING" },
-                        loopSteps: { type: "ARRAY", items: { type: "STRING" } }
+                        realWorldAnalogy: { type: "STRING" }
                     }
                 },
                 aiPrompt: { type: "STRING", description: "Prompt to paste into Cursor/Bolt to fix it safely." },
@@ -582,19 +567,7 @@ export const ENGINE_SCHEMA = {
                         }
                     }
                 },
-                aiLoopEdges: {
-                    type: "ARRAY",
-                    description: "The AI fix loop as directed edges showing the cycle. Only populate if whyAILooped section is requested.",
-                    items: {
-                        type: "OBJECT",
-                        properties: {
-                            from: { type: "STRING" },
-                            to: { type: "STRING" },
-                            label: { type: "STRING" },
-                            isEscapePath: { type: "BOOLEAN", description: "TRUE only for the Unravel escape edge" }
-                        }
-                    }
-                },
+
                 variableStateEdges: {
                     type: "ARRAY",
                     description: "Variable mutation flow as edges. Only populate for variables with 5+ combined reads and writes. Only populate if variableState section is requested.",
@@ -625,7 +598,7 @@ export const ENGINE_SCHEMA = {
 
 // --- Schema Instruction (for Claude / OpenAI inline prompt injection) ---
 // This mirrors ENGINE_SCHEMA so that changes to one are reflected in both.
-export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, secondaryTags?: string[], customLabel?: string, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, proximate_crash_site?: string, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy, whyVibeCodersHitThis?: string}, whyAILooped: {pattern, explanation, loopSteps[]}, aiPrompt, timelineEdges: [{from, to, label, isBugPoint}], hypothesisTree: [{id, text, status, reason}], aiLoopEdges: [{from, to, label, isEscapePath}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}] } }`;
+export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, secondaryTags?: string[], customLabel?: string, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, proximate_crash_site?: string, codeLocation, minimalFix, whyFixWorks, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, aiPrompt, timelineEdges: [{from, to, label, isBugPoint}], hypothesisTree: [{id, text, status, reason}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}] } }`;
 
 // ═══════════════════════════════════════════════════
 // PHASE 4A: Mode-Specific Schemas
@@ -821,7 +794,7 @@ export const SECTION_REGISTRY = {
     reproduction: { label: 'Reproduction Steps', modes: ['debug'], defaultOn: true, tokenCost: 'low' },
     variableState: { label: 'Variable State Table', modes: ['debug'], defaultOn: false, tokenCost: 'medium' },
     timeline: { label: 'Execution Timeline', modes: ['debug'], defaultOn: false, tokenCost: 'high' },
-    whyAILooped: { label: 'Why AI Loops', modes: ['debug'], defaultOn: false, tokenCost: 'medium' },
+
     conceptExtraction: { label: 'Concept + Analogy', modes: ['debug'], defaultOn: false, tokenCost: 'medium' },
     invariants: { label: 'Invariants', modes: ['debug'], defaultOn: false, tokenCost: 'low' },
     hypotheses: { label: 'Hypotheses', modes: ['debug'], defaultOn: false, tokenCost: 'low' },
@@ -865,7 +838,7 @@ const SECTION_TO_SCHEMA_KEYS = {
     reproduction: ['symptom', 'reproduction'],
     variableState: ['variableState', 'variableStateEdges'],
     timeline: ['timeline', 'timelineEdges'],
-    whyAILooped: ['whyAILooped', 'aiLoopEdges'],
+
     conceptExtraction: ['conceptExtraction'],
     invariants: ['invariants'],
     hypotheses: ['hypotheses', 'hypothesisTree'],
@@ -907,7 +880,7 @@ export function buildDynamicSchemaInstruction(sections) {
         reproduction: 'symptom, reproduction[]',
         variableState: 'variableState: [{variable, meaning, whereChanged}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}]',
         timeline: 'timeline: [{time, event}], timelineEdges: [{from, to, label, isBugPoint}]',
-        whyAILooped: 'whyAILooped: {pattern, explanation, loopSteps[]}, aiLoopEdges: [{from, to, label, isEscapePath}]',
+
         conceptExtraction: 'conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}',
         invariants: 'invariants[]',
         hypotheses: 'hypotheses[], hypothesisTree: [{id, text, status, reason}]',

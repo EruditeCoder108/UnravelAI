@@ -150,30 +150,6 @@ function buildHypothesisMermaid(tree) {
     return lines.join('\n');
 }
 
-// Build AI loop cycle diagram from aiLoopEdges
-function buildAILoopMermaid(edges) {
-    if (!edges || edges.length === 0) return null;
-    const valid = edges.filter(e => e && e.from && e.to);
-    if (valid.length === 0) return null;
-    resetMIds();
-    // Declare nodes first, then connect with edges (avoids redeclaring labels on every edge)
-    const lines = ['flowchart LR'];
-    const nodeMap = new Map(); // label -> id
-    valid.forEach(({ from, to }) => {
-        if (!nodeMap.has(from)) { const id = `A${nodeMap.size}`; nodeMap.set(from, id); lines.push(`    ${id}["${mLabel(from)}"]`); }
-        if (!nodeMap.has(to)) { const id = `A${nodeMap.size}`; nodeMap.set(to, id); lines.push(`    ${id}["${mLabel(to)}"]`); }
-    });
-    valid.forEach(({ from, to, label, isEscapePath }) => {
-        const f = nodeMap.get(from), t = nodeMap.get(to);
-        lines.push(`    ${f} -->|"${mLabel(label, 40)}"| ${t}`);
-        if (isEscapePath) {
-            lines.push(`    style ${f} fill:#00ff88,color:#000`);
-            lines.push(`    style ${t} fill:#00ff88,color:#000`);
-        }
-    });
-    return lines.join('\n');
-}
-
 // Build variable mutation flow from variableStateEdges
 function buildVariableMermaid(varEdges) {
     if (!varEdges || varEdges.length === 0) return null;
@@ -1588,31 +1564,6 @@ export default function App() {
                                         </SectionBlock>
                                     )}
 
-                                    {/* Why AI Looped */}
-                                    {report.whyAILooped && (
-                                        <SectionBlock icon={<RefreshCw size={14} />} title="Why AI Keeps Breaking It" color="#ff00ff" copyId="ailoop" copiedId={copiedSection} onCopy={handleCopy}
-                                            copyText={`Pattern: ${report.whyAILooped.pattern}\n\n${report.whyAILooped.explanation}\n\nLoop:\n${(report.whyAILooped.loopSteps || []).join('\n')}`}>
-                                            <p style={{ color: '#e0e0e0', lineHeight: 1.7, marginBottom: 14 }}>{report.whyAILooped.explanation}</p>
-                                            {report.whyAILooped.loopSteps?.length > 0 && (
-                                                <div style={{ background: '#ff00ff11', border: '1px solid #ff00ff33', padding: 14 }}>
-                                                    <h4 style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: '#ff00ff', textTransform: 'uppercase', marginBottom: 8 }}>The AI Fix Loop</h4>
-                                                    {report.whyAILooped.loopSteps.map((s, i) => (
-                                                        <div key={i} style={{ color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 12, padding: '4px 0', borderBottom: i < report.whyAILooped.loopSteps.length - 1 ? '1px solid #333' : 'none' }}>
-                                                            {i + 1}. {s}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </SectionBlock>
-                                    )}
-                                    {/* AI Loop Chart */}
-                                    {report.aiLoopEdges?.length > 0 && (
-                                        <MermaidChart
-                                            chart={buildAILoopMermaid(report.aiLoopEdges)}
-                                            caption="The fix loop AI tools fall into — green path is how Unravel escapes it"
-                                        />
-                                    )}
-
                                     {/* --- TECH VIEW --- */}
                                     {report.variableState?.length > 0 && (
                                         <SectionBlock icon={<Database size={14} />} title="State Mutation Tracker" color="#00ffff" borderSide="top"
@@ -1693,6 +1644,22 @@ export default function App() {
                                             <p style={{ color: '#e0e0e0', lineHeight: 1.7, marginBottom: 12 }}>{report.rootCause}</p>
                                             <div style={{ background: '#050505', padding: 10, border: '1px solid #333', fontFamily: "'JetBrains Mono',monospace", color: '#00ffff', fontSize: 13 }}>
                                                 Location: {report.codeLocation}
+                                            </div>
+                                        </SectionBlock>
+                                    )}
+
+                                    {/* Proximate Crash Site — only shown when different from root cause */}
+                                    {report.proximate_crash_site && (
+                                        <SectionBlock icon={<AlertOctagon size={14} />} title="Crash Site" color="#ffaa00"
+                                            copyText={report.proximate_crash_site} copyId="crash-site" copiedId={copiedSection} onCopy={handleCopy}>
+                                            <div style={{ background: '#ffaa0008', borderLeft: '3px solid #ffaa00', padding: 14 }}>
+                                                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: '#ffaa00', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 1 }}>
+                                                    WHERE THE FAILURE BECAME VISIBLE ↓
+                                                </div>
+                                                <p style={{ color: '#fff', fontSize: 15, fontWeight: 600, lineHeight: 1.6, marginBottom: 8 }}>{report.proximate_crash_site}</p>
+                                                <p style={{ color: '#666', fontSize: 11, fontFamily: "'JetBrains Mono',monospace", margin: 0 }}>
+                                                    ↑ This is where the exception or wrong value surfaced — the actual root cause is above.
+                                                </p>
                                             </div>
                                         </SectionBlock>
                                     )}

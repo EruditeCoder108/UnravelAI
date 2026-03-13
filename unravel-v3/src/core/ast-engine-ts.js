@@ -7,24 +7,11 @@
 
 const isBrowser = typeof window !== 'undefined';
 
-// Browser: ES module import. Node.js: require() via dynamic import.
-let TreeSitter;
-if (isBrowser) {
-    // In Browser, we assume web-tree-sitter is available via ESM
-    // Vite will handle this if it's in the dependencies
-    TreeSitter = (await import('web-tree-sitter')).default;
-} else {
-    const { createRequire } = await import('module');
-    const { fileURLToPath } = await import('url');
-    const { join, dirname } = await import('path');
-    const require = createRequire(import.meta.url);
-    TreeSitter = require('web-tree-sitter');
-    
-    // Only needed in Node.js
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    globalThis.__astEngineDir = __dirname; // stash for WASM path below
-}
+// TreeSitter is loaded lazily inside initParser()
+// — NOT at module scope so there is no top-level await
+// that would break esbuild's es2020 target.
+let TreeSitter = null;
+
 // --- Timing/Async API names we care about ---
 const TIMING_APIS = new Set([
     'setTimeout', 'setInterval', 'clearInterval', 'clearTimeout',
@@ -54,22 +41,17 @@ let _initPromise = null;
 export async function initParser() {
     if (_initPromise) return _initPromise;
     _initPromise = (async () => {
-        if (isBrowser) {
-            await TreeSitter.init({
-                locateFile: () => '/wasm/tree-sitter.wasm'
-            });
-            jsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-javascript.wasm');
-            tsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-typescript.wasm');
-            tsxLang = await TreeSitter.Language.load('/wasm/tree-sitter-tsx.wasm');
-        } else {
-            const { join } = await import('path');
-            const dir = globalThis.__astEngineDir;
-            const WASMS = join(dir, '..', '..', 'node_modules', 'tree-sitter-wasms', 'out');
-            await TreeSitter.init();
-            jsLang  = await TreeSitter.Language.load(join(WASMS, 'tree-sitter-javascript.wasm'));
-            tsLang  = await TreeSitter.Language.load(join(WASMS, 'tree-sitter-typescript.wasm'));
-            tsxLang = await TreeSitter.Language.load(join(WASMS, 'tree-sitter-tsx.wasm'));
+        // Load TreeSitter here (inside an async function) — never at module scope.
+        // top-level await breaks esbuild es2020 target used by Netlify.
+        if (!TreeSitter) {
+            TreeSitter = (await import('web-tree-sitter')).default;
         }
+        await TreeSitter.init({
+            locateFile: () => '/wasm/tree-sitter.wasm'
+        });
+        jsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-javascript.wasm');
+        tsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-typescript.wasm');
+        tsxLang = await TreeSitter.Language.load('/wasm/tree-sitter-tsx.wasm');
         parserInstance = new TreeSitter();
         console.log('[AST-TS] Tree-sitter WASM parser initialized.');
     })();
