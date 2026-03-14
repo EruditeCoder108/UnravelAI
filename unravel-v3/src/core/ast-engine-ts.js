@@ -294,6 +294,42 @@ function _collectDestructuredBindings(patternNode, scope, kind) {
     }
 }
 
+/**
+ * Recursively collect all identifier bindings from a destructure LHS pattern,
+ * pushing them as `type: 'reassigned'` writes into the mutations map.
+ * Handles: simple { a, b }, aliases { a: b }, nested { a: { b } }, arrays [x, [y]],
+ * rest elements (...z), and assignment defaults ({ a = 1 }).
+ */
+function _collectDestructuredMutations(patternNode, mutations, fn, line) {
+    if (!patternNode) return;
+    for (const child of patternNode.namedChildren) {
+        if (child.type === 'identifier') {
+            if (!mutations[child.text]) mutations[child.text] = { writes: [], reads: [] };
+            mutations[child.text].writes.push({ fn, line, type: 'reassigned' });
+        } else if (child.type === 'shorthand_property_identifier_pattern' || child.type === 'shorthand_property_identifier') {
+            if (!mutations[child.text]) mutations[child.text] = { writes: [], reads: [] };
+            mutations[child.text].writes.push({ fn, line, type: 'reassigned' });
+        } else if (child.type === 'pair_pattern') {
+            // { key: localName } — the local name is the value child
+            const value = child.childForFieldName('value');
+            if (value) _collectDestructuredMutations(value, mutations, fn, line);
+        } else if (child.type === 'assignment_pattern') {
+            // { a = defaultVal } — 'a' is the left child
+            const left = child.childForFieldName('left');
+            if (left) _collectDestructuredMutations(left, mutations, fn, line);
+        } else if (child.type === 'rest_pattern') {
+            // [...rest] or {...rest}
+            const inner = child.namedChildren[0];
+            if (inner?.type === 'identifier') {
+                if (!mutations[inner.text]) mutations[inner.text] = { writes: [], reads: [] };
+                mutations[inner.text].writes.push({ fn, line, type: 'reassigned' });
+            }
+        } else if (child.type === 'object_pattern' || child.type === 'array_pattern') {
+            _collectDestructuredMutations(child, mutations, fn, line);
+        }
+    }
+}
+
 function _walkForScopes(node, currentScope, scopeMap) {
     for (const child of node.namedChildren) {
         if (SCOPE_NODE_TYPES.has(child.type)) {
@@ -504,6 +540,10 @@ export function extractMutationChains(tree) {
     const root = tree.rootNode;
 
     // --- Track assignments ---
+    // write.type: 'reassigned' = variable gets a new value entirely
+    //             'written'    = property/element on an existing object is mutated
+    // This distinction matters for dependency analysis: reassignment breaks object
+    // identity, while a property write preserves it but mutates shared state.
     const assignments = root.descendantsOfType('assignment_expression');
     for (const node of assignments) {
         const left = node.childForFieldName('left');
@@ -514,32 +554,19 @@ export function extractMutationChains(tree) {
         if (left.type === 'identifier') {
             const name = left.text;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-            mutations[name].writes.push({ fn, line });
+            mutations[name].writes.push({ fn, line, type: 'reassigned' });
         }
-        if (left.type === 'array_pattern') {
-            for (const el of left.namedChildren) {
-                if (el.type === 'identifier') {
-                    const name = el.text;
-                    if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                    mutations[name].writes.push({ fn, line });
-                }
-            }
-        }
-        if (left.type === 'object_pattern') {
-            for (const prop of left.namedChildren) {
-                const val = prop.childForFieldName('value') || prop;
-                if (val.type === 'identifier' || val.type === 'shorthand_property_identifier_pattern') {
-                    const name = val.text;
-                    if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                    mutations[name].writes.push({ fn, line });
-                }
-            }
+        if (left.type === 'array_pattern' || left.type === 'object_pattern') {
+            // Use the recursive helper that handles nested patterns, aliases, rest elements.
+            // e.g. [a, [b, c]] = x  or  { a: { b }, c: d } = x
+            _collectDestructuredMutations(left, mutations, fn, line);
         }
         if (left.type === 'member_expression') {
+            // obj.prop = value  — property write, object identity preserved
             const name = getMemberExpressionName(left);
             if (name) {
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line });
+                mutations[name].writes.push({ fn, line, type: 'written' });
             }
         }
         // subscript_expression: cache[key] = value → track as cache[]
@@ -548,21 +575,90 @@ export function extractMutationChains(tree) {
             if (obj?.type === 'identifier') {
                 const name = `${obj.text}[]`;
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line });
+                mutations[name].writes.push({ fn, line, type: 'written' });
             }
         }
     }
 
-    // --- Track update expressions: i++, --count ---
+    // --- Track augmented assignments: +=, -=, ||=, ??=, &&=, **=, etc. ---
+    // Strategy A: tree-sitter grammars that emit augmented_assignment_expression as a
+    //   distinct node type (most modern grammars).
+    // Strategy B: fallback — scan assignment_expression nodes where the operator is not
+    //   plain '=' (older grammars that lump all assignments under one node type).
+    const AUG_OPERATORS = new Set(['+=','-=','*=','/=','%=','**=','|=','&=','^=','<<=','>>=','>>>=','||=','&&=','??=']);
+
+    const augAssignments = root.descendantsOfType('augmented_assignment_expression');
+    for (const node of augAssignments) {
+        const left = node.childForFieldName('left');
+        if (!left) continue;
+        const fn = getEnclosingFunction(node);
+        const line = node.startPosition.row + 1;
+        if (left.type === 'identifier') {
+            const name = left.text;
+            if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
+            mutations[name].writes.push({ fn, line, type: 'reassigned' });
+        } else if (left.type === 'member_expression') {
+            const name = getMemberExpressionName(left);
+            if (name) {
+                if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
+                mutations[name].writes.push({ fn, line, type: 'written' });
+            }
+        }
+    }
+    // Strategy B fallback: catch grammars where augmented = plain assignment_expression + operator
+    for (const node of root.descendantsOfType('assignment_expression')) {
+        const op = node.childForFieldName('operator')?.text || node.children.find(c => AUG_OPERATORS.has(c.text))?.text;
+        if (!op || !AUG_OPERATORS.has(op)) continue;
+        const left = node.childForFieldName('left');
+        if (!left) continue;
+        const fn = getEnclosingFunction(node);
+        const line = node.startPosition.row + 1;
+        const col  = node.startPosition.column; // used in dedup key — multiple stmts can share a line
+        if (left.type === 'identifier') {
+            const name = left.text;
+            if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
+            // Avoid double-counting if Strategy A already found it (match on line+col+fn)
+            if (!mutations[name].writes.some(w => w.line === line && w.col === col && w.fn === fn)) {
+                mutations[name].writes.push({ fn, line, col, type: 'reassigned' });
+            }
+        } else if (left.type === 'member_expression') {
+            const name = getMemberExpressionName(left);
+            if (name) {
+                if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
+                if (!mutations[name].writes.some(w => w.line === line && w.col === col && w.fn === fn)) {
+                    mutations[name].writes.push({ fn, line, col, type: 'written' });
+                }
+            }
+        }
+    }
+
+    // --- Track update expressions: i++, --count, obj.count++ ---
     const updates = root.descendantsOfType('update_expression');
     for (const node of updates) {
         const arg = node.childForFieldName('argument');
-        if (arg?.type === 'identifier') {
+        if (!arg) continue;
+        const fn = getEnclosingFunction(node);
+        const line = node.startPosition.row + 1;
+        if (arg.type === 'identifier') {
             const name = arg.text;
-            const fn = getEnclosingFunction(node);
-            const line = node.startPosition.row + 1;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-            mutations[name].writes.push({ fn, line });
+            mutations[name].writes.push({ fn, line, type: 'reassigned' });
+        } else if (arg.type === 'member_expression') {
+            // obj.count++  — property is mutated in-place → 'written'
+            const name = getMemberExpressionName(arg);
+            if (name) {
+                if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
+                mutations[name].writes.push({ fn, line, type: 'written' });
+            }
+        } else if (arg.type === 'subscript_expression') {
+            // obj[expr]++  — computed property mutation. We can't know which element
+            // statically, so record as objectName[] with computed: true.
+            const obj = arg.namedChildren[0];
+            if (obj?.type === 'identifier') {
+                const name = `${obj.text}[]`;
+                if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
+                mutations[name].writes.push({ fn, line, type: 'written', computed: true });
+            }
         }
     }
 
@@ -1027,6 +1123,46 @@ export function detectReactPatterns(tree) {
                     });
                 }
 
+                // Also flag useEffect that contains async operations (await) without a cleanup.
+                // An async fetch inside an effect with no cleanup is a classic stale-update race:
+                // if the component unmounts before the promise resolves, setState fires on dead state.
+                //
+                // IMPORTANT: only check top-level return statements (not returns inside nested
+                // callbacks/functions). A return inside a .then() does NOT count as a cleanup.
+                // Also: only flag when the return yields a function (cleanup fn), not just any return.
+                const hasAwait = callback.descendantsOfType('await_expression').length > 0;
+                if (hasAwait && !hasCleanupReturn) {
+                    // Verify hasCleanupReturn is not being fooled by a return inside nested fn.
+                    // Re-check: look for a top-level return that itself returns a function node.
+                    let hasSyncFunctionReturn = false;
+                    if (callbackBody) {
+                        for (const stmt of callbackBody.namedChildren) {
+                            if (stmt.type === 'return_statement') {
+                                const retVal = stmt.namedChildren[0];
+                                // A cleanup return must yield a function: () => {} or named fn
+                                if (retVal && (
+                                    retVal.type === 'arrow_function' ||
+                                    retVal.type === 'function' ||
+                                    retVal.type === 'function_expression' ||
+                                    retVal.type === 'identifier'  // return cleanup (named fn ref)
+                                )) {
+                                    hasSyncFunctionReturn = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!hasSyncFunctionReturn && !hasTimingCall) {
+                        // hasTimingCall already caught above — only emit once per useEffect
+                        findings.push({
+                            type: 'react_effect_async_no_cleanup',
+                            description: `${hookName}() — contains async/await but no cleanup return (stale update risk on unmount)`,
+                            line,
+                            fn: enclosingFn,
+                        });
+                    }
+                }
+
                 // Missing deps array entirely
                 if (!depsArray) {
                     findings.push({
@@ -1137,6 +1273,152 @@ export function detectFloatingPromises(tree) {
 }
 
 // ═══════════════════════════════════════════════════
+// CAUSAL CHAIN BUILDER
+// Connects timing nodes → state writes into explicit
+// cause→effect chains using already-extracted data.
+// No new AST traversal — pure post-processing.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Build cause→effect chains by joining timing nodes with downstream state writes.
+ * A chain is: async trigger → React state setter in same function, after trigger line.
+ *
+ * @param {Array<{api,callback,line,enclosingFn,file?}>} timing  — from findTimingNodes()
+ * @param {Object} mutations  — from extractMutationChains(), keys "varName [file]" or "varName"
+ * @param {Array<{type,line,file?}>} reactPatterns  — from detectReactPatterns()
+ * @returns {Array<{trigger,write,triggerFn,guardPresent,inEffectNoCleanup,file?}>}
+ */
+function buildCausalChains(timing, mutations, reactPatterns) {
+    const chains = [];
+
+    // Index: fn → writes [{name, line, type}]
+    const writesByFn = {};
+    for (const [key, data] of Object.entries(mutations)) {
+        const varName = key.split(/\s*\[/)[0].trim();
+        for (const w of data.writes) {
+            if (!writesByFn[w.fn]) writesByFn[w.fn] = [];
+            writesByFn[w.fn].push({ name: varName, line: w.line });
+        }
+    }
+
+    // Index: fn → reads [{name, line}]  (for cancellation guard detection)
+    const readsByFn = {};
+    for (const [key, data] of Object.entries(mutations)) {
+        const varName = key.split(/\s*\[/)[0].trim();
+        for (const r of data.reads) {
+            if (!readsByFn[r.fn]) readsByFn[r.fn] = [];
+            readsByFn[r.fn].push({ name: varName, line: r.line });
+        }
+    }
+
+    // Index: fn → writes (for detecting let cancelled = false; and cleanup return patterns)
+    const writeNamesByFn = {};
+    for (const [key, data] of Object.entries(mutations)) {
+        const varName = key.split(/\s*\[/)[0].trim();
+        for (const w of data.writes) {
+            if (!writeNamesByFn[w.fn]) writeNamesByFn[w.fn] = new Set();
+            writeNamesByFn[w.fn].add(varName);
+        }
+    }
+
+    // Substring keywords as LOW-CONFIDENCE fallback only.
+    // Primary guard detection is structural (see below).
+    const CANCEL_KEYWORDS_SUBSTR = ['cancel', 'abort', 'ignore', 'stale', 'mount', 'active'];
+
+    // AbortController variable names — variables whose name contains 'controller' or 'abort'
+    // and are written in the same function as the trigger.
+    const ABORT_CONTROLLER_SUBSTR = ['controller', 'abort', 'ac'];
+
+    // Only async-boundary triggers produce stale-write risk
+    const ASYNC_APIS = new Set(['fetch', 'then', 'catch', 'finally']);
+
+    for (const t of timing) {
+        if (!ASYNC_APIS.has(t.api)) continue;
+
+        // Resolve effective callback function name.
+        const callbackFn = (t.callback === '(inline)' || t.callback === '(arrow)')
+            ? t.enclosingFn
+            : t.callback;
+
+        // Find state writes in this function that occur AFTER the trigger line.
+        // React setter convention: /^set[A-Z]/, dispatch, or this.setState
+        const writesAfter = (writesByFn[callbackFn] || []).filter(w => w.line > t.line);
+        const stateWrites = writesAfter.filter(w =>
+            /^set[A-Z]/.test(w.name) || w.name === 'dispatch' || w.name === 'setState'
+        );
+
+        if (stateWrites.length === 0) continue;
+
+        for (const sw of stateWrites) {
+            const readsInFn = readsByFn[callbackFn] || [];
+            const writtenInFn = writeNamesByFn[callbackFn] || new Set();
+
+            // ── Guard detection (three strategies, strongest first) ────────────
+
+            // Strategy 1 (strongest): AbortController pattern
+            // Detected when: a variable containing 'controller'/'abort'/'ac' is written
+            // in this function AND read between trigger and write lines.
+            const hasAbortController = [...writtenInFn].some(name =>
+                ABORT_CONTROLLER_SUBSTR.some(kw => name.toLowerCase().includes(kw))
+            ) && readsInFn.some(r =>
+                r.line > t.line && r.line <= sw.line &&
+                ABORT_CONTROLLER_SUBSTR.some(kw => r.name.toLowerCase().includes(kw))
+            );
+
+            // Strategy 2 (strong): boolean flag pattern
+            // let cancelled = false written in fn, then read as a condition before the write.
+            // Detected: a variable written (assigned) in this fn that is also read between
+            // trigger and write → classic `if (!cancelled) setState(...)` guard.
+            const hasBooleanFlagGuard = readsInFn.some(r =>
+                r.line > t.line && r.line <= sw.line &&
+                writtenInFn.has(r.name) &&
+                // Must look like a boolean guard name (not just any variable read)
+                CANCEL_KEYWORDS_SUBSTR.some(kw => r.name.toLowerCase().includes(kw))
+            );
+
+            // Strategy 3 (fallback, low confidence): pure substring heuristic on reads
+            const hasSubstringGuard = !hasAbortController && !hasBooleanFlagGuard &&
+                readsInFn.some(r =>
+                    r.line > t.line && r.line <= sw.line &&
+                    CANCEL_KEYWORDS_SUBSTR.some(kw => r.name.toLowerCase().includes(kw))
+                );
+
+            const guardPresent = hasAbortController || hasBooleanFlagGuard || hasSubstringGuard;
+            const guardConfidence = hasAbortController ? 'high'
+                : hasBooleanFlagGuard ? 'high'
+                : hasSubstringGuard ? 'low'
+                : null;
+
+            // Missing async cleanup signal
+            const inEffectNoCleanup = reactPatterns.some(p =>
+                (p.type === 'react_effect_no_cleanup' || p.type === 'react_effect_async_no_cleanup') &&
+                (!t.file || !p.file || p.file === t.file)
+            );
+
+            chains.push({
+                trigger: `${t.api}() [L${t.line}]`,
+                triggerFn: callbackFn,
+                write: `${sw.name}() in ${callbackFn} [L${sw.line}]`,
+                guardPresent,
+                guardConfidence,  // 'high' | 'low' | null
+                inEffectNoCleanup,
+                file: t.file,
+                // Provenance for downstream UI / solvability logic
+                _provenance: {
+                    triggerLine: t.line,
+                    writeLine: sw.line,
+                    triggerApi: t.api,
+                    writeVar: sw.name,
+                    file: t.file || null,
+                },
+            });
+        }
+    }
+
+    return chains;
+}
+
+// ═══════════════════════════════════════════════════
 // FORMAT: Same output format as the old engine
 // ═══════════════════════════════════════════════════
 
@@ -1176,14 +1458,25 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
 
             lines.push(`  ${name}`);
             if (data.writes.length > 0) {
-                const writeStr = data.writes.map(w => `${w.fn} L${w.line}`).join(', ');
-                let annotation = '';
-                if (isPropertyMutation) {
-                    annotation = name.includes('[]')
-                        ? ' ← property mutation on array element'
-                        : ' ← property write';
+                // Split by mutation type for clearer output:
+                //   reassigned: variable received a new value (a = x, augmented +=, destructured)
+                //   written:    property/element on the object was mutated (a.x = y, a[k] = y)
+                // Unlabeled writes (pre-migration data) fall back to old behaviour.
+                const reassigned = data.writes.filter(w => w.type === 'reassigned' || (!w.type && !isPropertyMutation));
+                const written    = data.writes.filter(w => w.type === 'written'    || (!w.type && isPropertyMutation));
+                if (reassigned.length > 0) {
+                    lines.push(`    reassigned: ${reassigned.map(w => `${w.fn} L${w.line}`).join(', ')}`);
                 }
-                lines.push(`    written: ${writeStr}${annotation}`);
+                if (written.length > 0) {
+                    const annotation = name.includes('[]')
+                        ? (written.some(w => w.computed) ? ' ← computed property write' : ' ← array element')
+                        : ' ← property write';
+                    lines.push(`    written: ${written.map(w => `${w.fn} L${w.line}`).join(', ')}${annotation}`);
+                }
+                if (reassigned.length === 0 && written.length === 0) {
+                    // Fallback — shouldn't occur after full migration but keeps output safe
+                    lines.push(`    written: ${data.writes.map(w => `${w.fn} L${w.line}`).join(', ')}`);
+                }
             }
             if (data.reads.length > 0) {
                 const readFns = [...new Set(data.reads.map(r => `${r.fn} L${r.line}`))];
@@ -1231,6 +1524,30 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
             lines.push(`  ${p.api}()  in ${p.fn}  [L${p.line}]  ← not awaited`);
         }
         lines.push('');
+    }
+
+    // Causal chains — connects async triggers to downstream state writes.
+    // Only emitted when there is at least one unguarded chain worth flagging.
+    const chains = buildCausalChains(timing, mutations, reactPatterns);
+    const flaggedChains = chains.filter(c => !c.guardPresent);
+    const lowConfGuarded = chains.filter(c => c.guardPresent && c.guardConfidence === 'low');
+    if (flaggedChains.length > 0 || lowConfGuarded.length > 0) {
+        lines.push('Causal Chains (async → state write):');
+        for (const c of flaggedChains) {
+            const fileTag = c.file ? ` [${c.file}]` : '';
+            lines.push(`  ${c.trigger}${fileTag}  →  ${c.write}`);
+            lines.push(`  ⚠ no cancellation guard — stale write risk`);
+            if (c.inEffectNoCleanup) {
+                lines.push(`  ⚠ async inside useEffect with no cleanup return`);
+            }
+            lines.push('');
+        }
+        for (const c of lowConfGuarded) {
+            const fileTag = c.file ? ` [${c.file}]` : '';
+            lines.push(`  ${c.trigger}${fileTag}  →  ${c.write}`);
+            lines.push(`  ~ guard detected (low confidence — verify manually)`);
+            lines.push('');
+        }
     }
 
     if (mutatedVars.length === 0 && timing.length === 0 && captureEntries.length === 0

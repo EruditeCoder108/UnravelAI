@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "html2pdf.js": "^0.14.0",
     "lucide-react": "^0.468.0",
     "mermaid": "^11.12.3",
     "react": "^19.0.0",

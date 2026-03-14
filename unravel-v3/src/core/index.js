@@ -25,6 +25,7 @@ export {
     buildDynamicSchema,
     buildDynamicSchemaInstruction,
     estimateRuntime,
+    LAYER_BOUNDARY_VERDICT,
 } from './config.js';
 
 // AST pre-analysis engine (tree-sitter based)
@@ -41,4 +42,3 @@ export { callProvider, callProviderStreaming } from './provider.js';
 
 // Full analysis pipeline
 export { orchestrate } from './orchestrate.js';
-
