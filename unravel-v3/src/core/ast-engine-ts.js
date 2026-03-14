@@ -1066,8 +1066,8 @@ const ASYNC_CALL_PATTERNS = new Set([
     'fetch', 'axios', 'got', 'request',
     'then', 'catch', 'finally',
     'readFile', 'writeFile', 'readdir',
-    'connect', 'query', 'find', 'findOne', 'save', 'create', 'delete',
-    'send', 'get', 'post', 'put', 'patch',
+    'connect', 'query', 'findOne', 'save', 'create',
+    'send', 'post', 'put', 'patch',
 ]);
 
 /**
