@@ -750,6 +750,74 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
         return [...new Set(refs)];
     }
 
+    /**
+     * Extract file:line pairs by scanning text left-to-right.
+     * Associates each line number with the most recently seen filename before it.
+     * Handles formats like:
+     *   "sessionStore.js L8 & L12, useSessionData.js L9-10 & L32"
+     *   "bug9/sessionStore.js line 8 and useSessionData.js line 32"
+     *   "The mutation at sessionStore.js:8 and the read at useSessionData.js:32"
+     *
+     * @param {string} text
+     * @returns {Array<{file: string, line: number}>}
+     */
+    function extractFileLinePairs(text) {
+        if (!text) return [];
+
+        // Build a combined token stream of files and line numbers in order of appearance.
+        // Strategy: find all matches for both patterns, sort by index, then walk left-to-right
+        // assigning each line number to the last file seen before it.
+        const tokens = [];
+
+        // File pattern — capture position and short name
+        const fileRe = /[\w\-./\\]+\.(js|jsx|ts|tsx|json|html|css|py|vue|svelte)\b/gi;
+        let m;
+        while ((m = fileRe.exec(text)) !== null) {
+            tokens.push({ type: 'file', index: m.index, value: m[0].split(/[\\/]/).pop() });
+        }
+
+        // Line number pattern — all common formats
+        const lineRe = /(?:^|[\s,;&—–-])(?:line\s*[:.]?\s*|[Ll])(\d{1,5})\b/g;
+        while ((m = lineRe.exec(text)) !== null) {
+            const num = parseInt(m[1], 10);
+            if (num > 0 && num < 100000) {
+                tokens.push({ type: 'line', index: m.index, value: num });
+            }
+        }
+
+        // Also catch bare :N patterns (e.g. "sessionStore.js:8")
+        const colonRe = /:(\d{1,5})\b/g;
+        while ((m = colonRe.exec(text)) !== null) {
+            const num = parseInt(m[1], 10);
+            if (num > 0 && num < 100000) {
+                tokens.push({ type: 'line', index: m.index, value: num });
+            }
+        }
+
+        // Sort all tokens by their position in the string
+        tokens.sort((a, b) => a.index - b.index);
+
+        // Walk tokens: track current file, emit pair when we see a line number
+        const pairs = [];
+        let currentFile = null;
+        for (const tok of tokens) {
+            if (tok.type === 'file') {
+                currentFile = tok.value;
+            } else if (tok.type === 'line' && currentFile) {
+                pairs.push({ file: currentFile, line: tok.value });
+            }
+        }
+
+        // Deduplicate identical pairs
+        const seen = new Set();
+        return pairs.filter(p => {
+            const key = `${p.file}:${p.line}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
     // Skip verification for explain mode (no claims about bugs)
     // NOTE: Vague evidence strings without file/line references (e.g. "duration mutated
     // inside pause() — confirmed by AST") pass the verifier silently. This is intentional:
@@ -781,36 +849,37 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
     }
 
     // === Check 2: codeLocation ===
-    // Only verifies that referenced files exist — NOT line numbers.
-    // codeLocation often contains multiple files with multiple line ranges
-    // (e.g. "sessionStore.js L8 & L12, useSessionData.js L9-10 & L32").
-    // extractLineRefs pulls ALL numbers from the whole string and checks them
-    // against ALL files — which creates false positives when line 32 (from file B)
-    // gets checked against file A that only has 20 lines.
-    // Line number accuracy in codeLocation is enforced by Check 3 (rootCause) instead.
+    // Checks file existence AND line numbers, but only pairs each line with its own file.
+    // Uses extractFileLinePairs() to avoid the cross-contamination bug where line 32 from
+    // "useSessionData.js L32" was being checked against sessionStore.js (20 lines).
     const codeLocation = report.codeLocation || result.codeLocation;
     if (codeLocation && typeof codeLocation === 'string') {
+        // File existence check (unpaired)
         const locFileRefs = extractFileRefs(codeLocation);
         for (const fileName of locFileRefs) {
-            const fileData = findFile(fileName);
-            if (!fileData) {
+            if (!findFile(fileName)) {
                 failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `file "${fileName}" not in inputs` });
                 confidencePenalty += 0.3;
             }
-            // Line number check intentionally omitted — see comment above.
+        }
+        // Line validation — only check each line against its paired file
+        const locPairs = extractFileLinePairs(codeLocation);
+        for (const { file, line } of locPairs) {
+            const fileData = findFile(file);
+            if (!fileData) continue; // Already caught above
+            if (line > fileData.lines.length + 6) {
+                failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `line ${line} in ${file} exceeds file length (${fileData.lines.length})` });
+                confidencePenalty += 0.3;
+            }
         }
     }
 
-    // === Check 3: rootCause — hard reject ONLY if file is fabricated (nonexistent) ===
-    // Line number checking is intentionally removed from rootCause as well.
-    // When rootCause references multiple files ("sessionStore.js L8, useSessionData.js L32"),
-    // extractLineRefs returns [8, 32] as a flat list with no file association.
-    // The verifier then checks line 32 against sessionStore.js (20 lines) → false failure.
-    // There is no safe way to pair line numbers to their correct files from a narrative string.
-    //
-    // The ONLY reliable hallucination signal here is file existence.
-    // If a model cites a file that doesn't exist → hard reject (fabrication).
-    // If a model miscounts lines in a file that does exist → not fabrication, not rejected.
+    // === Check 3: rootCause — hard reject if file is fabricated, soft penalty if line is fabricated ===
+    // Uses extractFileLinePairs() so line numbers are only checked against their own file.
+    // Example: "sessionStore.js L8, useSessionData.js L32"
+    //   → pair (sessionStore.js, 8)   checked against sessionStore.js  (20 lines) → OK
+    //   → pair (useSessionData.js, 32) checked against useSessionData.js (20 lines) → fails +10 slack
+    // Without pairing, both 8 and 32 would be checked against sessionStore.js → false failure.
     const rootCause = report.rootCause || result.rootCause;
     if (rootCause && typeof rootCause === 'string') {
         const rcFileRefs = extractFileRefs(rootCause);
@@ -821,7 +890,18 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
                 failures.push({ claim: `rootCause: ${rootCause.slice(0, 100)}`, reason: `references nonexistent file "${fileName}"` });
                 rootCauseRejected = true;
             }
-            // Line number check intentionally omitted — see comment above.
+        }
+        // Line validation — soft penalty only, each line checked against its own file only
+        const rcPairs = extractFileLinePairs(rootCause);
+        for (const { file, line } of rcPairs) {
+            const fileData = findFile(file);
+            if (!fileData) continue; // Already caught above
+            if (line > fileData.lines.length + 10) {
+                // Soft failure — line is clearly wrong but file exists.
+                // NOT rootCauseRejected: diagnosis may still be correct, model just miscounted.
+                failures.push({ claim: `rootCause: ${file} line ${line}`, reason: `line ${line} exceeds file length (${fileData.lines.length}) by more than 10` });
+                confidencePenalty += 0.15;
+            }
         }
     }
 
