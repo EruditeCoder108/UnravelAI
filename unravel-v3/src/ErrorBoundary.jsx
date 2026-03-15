@@ -22,19 +22,22 @@ export class ReportErrorBoundary extends React.Component {
         if (this.state.hasError) {
             return (
                 <div style={{
-                    background: '#0a0a0a',
-                    border: '2px solid #ff003c',
-                    padding: '24px',
+                    background: 'var(--surface-base)',
+                    border: '1px solid var(--accent-red)',
+                    padding: '32px',
+                    borderRadius: 'var(--radius-lg)',
                     margin: '20px',
-                    fontFamily: 'Consolas, monospace',
-                    color: '#ccc',
+                    fontFamily: 'inherit',
+                    color: 'var(--text-primary)',
+                    backdropFilter: 'var(--blur-md)',
+                    WebkitBackdropFilter: 'var(--blur-md)'
                 }}>
-                    <h3 style={{ color: '#ff003c', margin: '0 0 12px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '2px' }}>
-                        ⚠️ Report Rendering Failed
+                    <h3 style={{ color: 'var(--accent-red)', margin: '0 0 16px', fontSize: '16px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <ShieldAlert size={20} /> Report Rendering Failed
                     </h3>
-                    <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '24px', lineHeight: 1.6 }}>
                         The analysis completed but the report could not be rendered. This is usually caused by unexpected data in a Mermaid diagram.
-                        The raw result is shown below — you can copy it.
+                        The raw result is shown below for recovery.
                     </p>
                     {this.props.rawResult && (
                         <>
@@ -44,29 +47,27 @@ export class ReportErrorBoundary extends React.Component {
                                     this.setState({ copied: true });
                                     setTimeout(() => this.setState({ copied: false }), 2000);
                                 }}
+                                className="matte-button"
                                 style={{
-                                    background: 'rgba(204,255,0,0.1)',
-                                    border: '1px solid #ccff00',
-                                    color: '#ccff00',
-                                    padding: '8px 16px',
-                                    cursor: 'pointer',
-                                    fontFamily: 'Consolas, monospace',
-                                    fontSize: '12px',
-                                    marginBottom: '12px',
+                                    marginBottom: '16px',
+                                    background: this.state.copied ? 'var(--accent-green)22' : 'var(--surface-hover)',
+                                    color: this.state.copied ? 'var(--accent-green)' : 'var(--text-primary)',
+                                    borderColor: this.state.copied ? 'var(--accent-green)' : 'var(--border-light)'
                                 }}
                             >
-                                {this.state.copied ? '✅ Copied!' : '📋 Copy Raw JSON'}
+                                {this.state.copied ? '✅ COPIED' : '📋 COPY RAW JSON'}
                             </button>
                             <pre style={{
-                                background: '#050505',
-                                border: '1px solid #2a2a2a',
-                                padding: '14px',
+                                background: 'var(--surface-solid)',
+                                border: '1px solid var(--border-light)',
+                                padding: '20px',
                                 fontSize: '11px',
                                 maxHeight: '400px',
+                                borderRadius: 'var(--radius-md)',
                                 overflow: 'auto',
                                 whiteSpace: 'pre-wrap',
                                 wordBreak: 'break-word',
-                                color: '#00ffff',
+                                color: 'var(--text-tertiary)',
                             }}>
                                 {JSON.stringify(this.props.rawResult, null, 2)}
                             </pre>

@@ -50,83 +50,130 @@ const Logo = ({ isAnalyzing }) => (
     </svg>
 );
 
-const SvgLoader = () => (
-    <div className="loader" style={{ width: 450, height: 'auto', filter: 'drop-shadow(0 12px 24px rgba(0,0,0,0.4))' }}>
-        <svg viewBox="60 85 680 265" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <linearGradient id="chipGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#2d2d2d"></stop>
-                    <stop offset="100%" stopColor="#0f0f0f"></stop>
-                </linearGradient>
+const SvgLoader = ({ style = { width: 450 } }) => (
+    <div className="main-container" style={{ ...style, perspective: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div className="loader">
+            <svg width="100%" height="100%" viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="chipGradient" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#2c2c36"></stop>
+                        <stop offset="25%" stopColor="#18181c"></stop>
+                        <stop offset="70%" stopColor="#0a0a0e"></stop>
+                        <stop offset="100%" stopColor="#020203"></stop>
+                    </linearGradient>
 
-                <linearGradient id="textGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#eeeeee"></stop>
-                    <stop offset="100%" stopColor="#888888"></stop>
-                </linearGradient>
+                    <linearGradient id="goldPin" x1="1" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#ffdf00"></stop>
+                        <stop offset="40%" stopColor="#d4af37"></stop>
+                        <stop offset="60%" stopColor="#aa7c11"></stop>
+                        <stop offset="100%" stopColor="#553e05"></stop>
+                    </linearGradient>
 
-                <linearGradient id="pinGradient" x1="1" y1="0" x2="0" y2="0">
-                    <stop offset="0%" stopColor="#bbbbbb"></stop>
-                    <stop offset="50%" stopColor="#888888"></stop>
-                    <stop offset="100%" stopColor="#555555"></stop>
-                </linearGradient>
-            </defs>
+                    <linearGradient id="textGradient" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="#ffffff"></stop>
+                        <stop offset="50%" stopColor="#aafff0"></stop>
+                        <stop offset="100%" stopColor="#ffffff"></stop>
+                    </linearGradient>
 
-            <g id="traces">
-                <path d="M100 100 H200 V210 H326" className="trace-bg"></path>
-                <path d="M100 100 H200 V210 H326" className="trace-flow purple"></path>
+                    <pattern id="circuit-pattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+                        <path d="M 10 0 L 10 20 M 0 10 L 20 10" fill="none" stroke="#00ffcc" strokeWidth="0.5" strokeOpacity="0.1" />
+                        <circle cx="10" cy="10" r="1.5" fill="#00ffcc" fillOpacity="0.2" />
+                    </pattern>
 
-                <path d="M80 180 H180 V230 H326" className="trace-bg"></path>
-                <path d="M80 180 H180 V230 H326" className="trace-flow blue"></path>
+                    <pattern id="bg-grid" width="30" height="30" patternUnits="userSpaceOnUse">
+                        <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#00e5ff" strokeWidth="1" strokeOpacity="0.25" />
+                    </pattern>
 
-                <path d="M60 260 H150 V250 H326" className="trace-bg"></path>
-                <path d="M60 260 H150 V250 H326" className="trace-flow yellow"></path>
+                    <radialGradient id="grid-mask-grad" cx="400" cy="240" r="280" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+                        <stop offset="40%" stopColor="#ffffff" stopOpacity="0.6" />
+                        <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+                    </radialGradient>
 
-                <path d="M100 350 H200 V270 H326" className="trace-bg"></path>
-                <path d="M100 350 H200 V270 H326" className="trace-flow green"></path>
+                    <mask id="grid-mask">
+                        <rect width="100%" height="100%" fill="url(#grid-mask-grad)" />
+                    </mask>
+                </defs>
 
-                <path d="M700 90 H560 V210 H474" className="trace-bg"></path>
-                <path d="M700 90 H560 V210 H474" className="trace-flow blue"></path>
+                <circle cx="400" cy="240" r="160" fill="#00e5ff" filter="blur(55px)" opacity="0.06"></circle>
+                <rect width="100%" height="100%" fill="url(#bg-grid)" mask="url(#grid-mask)"></rect>
 
-                <path d="M740 160 H580 V230 H474" className="trace-bg"></path>
-                <path d="M740 160 H580 V230 H474" className="trace-flow green"></path>
+                <g id="traces-bg">
+                    <path d="M100 100 H180 L200 120 V200 L210 210 H326" className="trace-bg"></path>
+                    <path d="M80 180 H160 L180 200 V220 L190 230 H326" className="trace-bg"></path>
+                    <path d="M60 260 H130 L150 240 V240 L160 250 H326" className="trace-bg"></path>
+                    <path d="M100 350 H180 L200 330 V280 L210 270 H326" className="trace-bg"></path>
+                    <path d="M700 90 H600 L560 130 V200 L550 210 H474" className="trace-bg"></path>
+                    <path d="M740 160 H620 L580 200 V220 L570 230 H474" className="trace-bg"></path>
+                    <path d="M720 250 H610 L590 250 V250 L590 250 H474" className="trace-bg"></path>
+                    <path d="M680 340 H610 L570 300 V280 L560 270 H474" className="trace-bg"></path>
+                </g>
 
-                <path d="M720 250 H590 V250 H474" className="trace-bg"></path>
-                <path d="M720 250 H590 V250 H474" className="trace-flow red"></path>
+                <g className="purple flow-1"><path d="M100 100 H180 L200 120 V200 L210 210 H326" className="trace-glow"></path><path d="M100 100 H180 L200 120 V200 L210 210 H326" className="trace-core"></path></g>
+                <g className="blue flow-2"><path d="M80 180 H160 L180 200 V220 L190 230 H326" className="trace-glow"></path><path d="M80 180 H160 L180 200 V220 L190 230 H326" className="trace-core"></path></g>
+                <g className="yellow flow-3"><path d="M60 260 H130 L150 240 V240 L160 250 H326" className="trace-glow"></path><path d="M60 260 H130 L150 240 V240 L160 250 H326" className="trace-core"></path></g>
+                <g className="green flow-4"><path d="M100 350 H180 L200 330 V280 L210 270 H326" className="trace-glow"></path><path d="M100 350 H180 L200 330 V280 L210 270 H326" className="trace-core"></path></g>
+                <g className="cyan flow-5"><path d="M700 90 H600 L560 130 V200 L550 210 H474" className="trace-glow"></path><path d="M700 90 H600 L560 130 V200 L550 210 H474" className="trace-core"></path></g>
+                <g className="green flow-6"><path d="M740 160 H620 L580 200 V220 L570 230 H474" className="trace-glow"></path><path d="M740 160 H620 L580 200 V220 L570 230 H474" className="trace-core"></path></g>
+                <g className="red flow-7"><path d="M720 250 H610 L590 250 V250 L590 250 H474" className="trace-glow"></path><path d="M720 250 H610 L590 250 V250 L590 250 H474" className="trace-core"></path></g>
+                <g className="yellow flow-8"><path d="M680 340 H610 L570 300 V280 L560 270 H474" className="trace-glow"></path><path d="M680 340 H610 L570 300 V280 L560 270 H474" className="trace-core"></path></g>
 
-                <path d="M680 340 H570 V270 H474" className="trace-bg"></path>
-                <path d="M680 340 H570 V270 H474" className="trace-flow yellow"></path>
-            </g>
+                <g id="nodes">
+                    <circle cx="100" cy="100" r="7" className="node-outer"></circle><circle cx="100" cy="100" r="3" className="node-inner glow-p"></circle>
+                    <circle cx="80" cy="180" r="7" className="node-outer"></circle><circle cx="80" cy="180" r="3" className="node-inner glow-b"></circle>
+                    <circle cx="60" cy="260" r="7" className="node-outer"></circle><circle cx="60" cy="260" r="3" className="node-inner glow-y"></circle>
+                    <circle cx="100" cy="350" r="7" className="node-outer"></circle><circle cx="100" cy="350" r="3" className="node-inner glow-g"></circle>
+                    <circle cx="700" cy="90" r="7" className="node-outer"></circle><circle cx="700" cy="90" r="3" className="node-inner glow-c"></circle>
+                    <circle cx="740" cy="160" r="7" className="node-outer"></circle><circle cx="740" cy="160" r="3" className="node-inner glow-g"></circle>
+                    <circle cx="720" cy="250" r="7" className="node-outer"></circle><circle cx="720" cy="250" r="3" className="node-inner glow-r"></circle>
+                    <circle cx="680" cy="340" r="7" className="node-outer"></circle><circle cx="680" cy="340" r="3" className="node-inner glow-y"></circle>
+                </g>
 
-            <rect x="330" y="190" width="140" height="100" rx="20" ry="20" fill="url(#chipGradient)" stroke="#222" strokeWidth="3" filter="drop-shadow(0 0 6px rgba(0,0,0,0.8))"></rect>
+                <g className="chip-group">
+                    <rect x="325" y="178" width="150" height="140" fill="#06060a" stroke="#151520" strokeWidth="1" rx="12" ry="12"></rect>
 
-            <g>
-                <rect x="322" y="205" width="8" height="10" fill="url(#pinGradient)" rx="2"></rect>
-                <rect x="322" y="225" width="8" height="10" fill="url(#pinGradient)" rx="2"></rect>
-                <rect x="322" y="245" width="8" height="10" fill="url(#pinGradient)" rx="2"></rect>
-                <rect x="322" y="265" width="8" height="10" fill="url(#pinGradient)" rx="2"></rect>
-            </g>
+                    <g>
+                        <path d="M315 204 h15 v12 h-15 a3 3 0 0 1 -3 -3 v-6 a3 3 0 0 1 3 -3 z" fill="url(#goldPin)" className="chip-pin"></path>
+                        <path d="M315 224 h15 v12 h-15 a3 3 0 0 1 -3 -3 v-6 a3 3 0 0 1 3 -3 z" fill="url(#goldPin)" className="chip-pin"></path>
+                        <path d="M315 244 h15 v12 h-15 a3 3 0 0 1 -3 -3 v-6 a3 3 0 0 1 3 -3 z" fill="url(#goldPin)" className="chip-pin"></path>
+                        <path d="M315 264 h15 v12 h-15 a3 3 0 0 1 -3 -3 v-6 a3 3 0 0 1 3 -3 z" fill="url(#goldPin)" className="chip-pin"></path>
+                    </g>
+                    <g transform="scale(-1, 1) translate(-800, 0)">
+                        <path d="M315 204 h15 v12 h-15 a3 3 0 0 1 -3 -3 v-6 a3 3 0 0 1 3 -3 z" fill="url(#goldPin)" className="chip-pin"></path>
+                        <path d="M315 224 h15 v12 h-15 a3 3 0 0 1 -3 -3 v-6 a3 3 0 0 1 3 -3 z" fill="url(#goldPin)" className="chip-pin"></path>
+                        <path d="M315 244 h15 v12 h-15 a3 3 0 0 1 -3 -3 v-6 a3 3 0 0 1 3 -3 z" fill="url(#goldPin)" className="chip-pin"></path>
+                        <path d="M315 264 h15 v12 h-15 a3 3 0 0 1 -3 -3 v-6 a3 3 0 0 1 3 -3 z" fill="url(#goldPin)" className="chip-pin"></path>
+                    </g>
 
-            <g>
-                <rect x="470" y="205" width="8" height="10" fill="url(#pinGradient)" rx="2"></rect>
-                <rect x="470" y="225" width="8" height="10" fill="url(#pinGradient)" rx="2"></rect>
-                <rect x="470" y="245" width="8" height="10" fill="url(#pinGradient)" rx="2"></rect>
-                <rect x="470" y="265" width="8" height="10" fill="url(#pinGradient)" rx="2"></rect>
-            </g>
-
-            <text x="400" y="240" fontFamily="Arial, sans-serif" fontSize="22" fontWeight="bold" fill="url(#textGradient)" textAnchor="middle" alignmentBaseline="middle">
-                Analyzing
-            </text>
-
-            <circle cx="100" cy="100" r="5" fill="black"></circle>
-            <circle cx="80" cy="180" r="5" fill="black"></circle>
-            <circle cx="60" cy="260" r="5" fill="black"></circle>
-            <circle cx="100" cy="350" r="5" fill="black"></circle>
-
-            <circle cx="700" cy="90" r="5" fill="black"></circle>
-            <circle cx="740" cy="160" r="5" fill="black"></circle>
-            <circle cx="720" cy="250" r="5" fill="black"></circle>
-            <circle cx="680" cy="340" r="5" fill="black"></circle>
-        </svg>
+                    <rect x="325" y="170" width="150" height="140" fill="url(#chipGradient)" className="chip-body"></rect>
+                    <rect x="326" y="171" width="148" height="138" fill="none" stroke="#4a4a5a" strokeWidth="1.5" strokeOpacity="0.6" rx="11" ry="11"></rect>
+                    <rect x="332" y="177" width="136" height="126" fill="none" stroke="#ffffff" strokeWidth="0.5" strokeOpacity="0.05" rx="8"></rect>
+                    <rect x="340" y="185" width="120" height="110" className="chip-die" fill="url(#circuit-pattern)"></rect>
+                    <circle cx="400" cy="240" r="42" fill="none" stroke="#00ffcc" strokeWidth="1.5" strokeOpacity="0.1" filter="drop-shadow(0 0 2px #000)"></circle>
+                    
+                    <foreignObject x="250" y="90" width="300" height="300">
+                        <div xmlns="http://www.w3.org/1999/xhtml" className="fluid-core-container">
+                            <div className="fluid-loader">
+                                <svg width="100" height="100" viewBox="0 0 100 100" className="fluid-svg">
+                                    <defs>
+                                        <mask id="clipping">
+                                            <polygon points="0,0 100,0 100,100 0,100" fill="black"></polygon>
+                                            <polygon points="25,25 75,25 50,75" fill="white"></polygon>
+                                            <polygon points="50,25 75,75 25,75" fill="white"></polygon>
+                                            <polygon points="35,35 65,35 50,65" fill="white"></polygon>
+                                            <polygon points="35,35 65,35 50,65" fill="white"></polygon>
+                                            <polygon points="35,35 65,35 50,65" fill="white"></polygon>
+                                            <polygon points="35,35 65,35 50,65" fill="white"></polygon>
+                                        </mask>
+                                    </defs>
+                                </svg>
+                                <div className="fluid-box"></div>
+                            </div>
+                        </div>
+                    </foreignObject>
+                </g>
+            </svg>
+        </div>
     </div>
 );
 
@@ -398,6 +445,8 @@ function MermaidChart({ chart, caption }) {
 // ─── Main App ───────────────────────────────────────────
 export default function App() {
     // State
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
+    const [isSplashExiting, setIsSplashExiting] = useState(false);
     const [step, setStep] = useState(1);
     const [level, setLevel] = useState('vibe');
     const [language, setLanguage] = useState('hinglish');
@@ -449,6 +498,11 @@ export default function App() {
             if (saved.language) setLanguage(saved.language);
             if (saved.theme) setTheme(saved.theme);
         } catch { /* ignore corrupt localStorage */ }
+        
+        // Initial splash screen with dissolve effect
+        const exitTimer = setTimeout(() => setIsSplashExiting(true), 2000);
+        const finishTimer = setTimeout(() => setIsInitialLoading(false), 3200); // 2s + 1.2s dissolve
+        return () => { clearTimeout(exitTimer); clearTimeout(finishTimer); };
     }, []);
     
     // Apply theme to document root
@@ -910,11 +964,18 @@ export default function App() {
 
     return (
         <div id="app-root" style={{ position: 'relative', overflowX: 'hidden' }}>
-            {/* Ambient background noise remains subtle */}
-            <div className="bg-noise" />
+            {isInitialLoading && (
+                <div className={`splash-overlay ${isSplashExiting ? 'splash-exit' : ''}`}>
+                    <SvgLoader style={{ width: 'min(90vw, 500px)' }} />
+                </div>
+            )}
 
-            {/* Header */}
-            <header style={{ borderBottom: '1px solid var(--border-light)', background: 'var(--surface-base)', backdropFilter: 'var(--blur-md)', WebkitBackdropFilter: 'var(--blur-md)', position: 'sticky', top: 0, zIndex: 50, transition: 'all 0.3s' }}>
+            <div className={isSplashExiting ? "app-dissolve-in" : ""} style={{ opacity: isInitialLoading && !isSplashExiting ? 0 : 1 }}>
+                {/* Ambient background noise remains subtle */}
+                <div className="bg-noise" />
+
+                {/* Header */}
+                <header style={{ borderBottom: '1px solid var(--border-light)', background: 'var(--surface-base)', backdropFilter: 'var(--blur-md)', WebkitBackdropFilter: 'var(--blur-md)', position: 'sticky', top: 0, zIndex: 50, transition: 'all 0.3s' }}>
                 <div style={{ ...S.wrap, paddingTop: 16, paddingBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => setStep(1)}>
@@ -1548,22 +1609,24 @@ export default function App() {
                             {/* Streaming indicator */}
                             {report._streaming && (
                                 <div style={{
-                                    background: 'linear-gradient(90deg, #ccff0022, #00ffff22, #ccff0022)',
+                                    background: 'linear-gradient(90deg, var(--accent-cyan)11, var(--accent-purple)11, var(--accent-cyan)11)',
                                     backgroundSize: '200% 100%',
                                     animation: 'streamPulse 2s ease-in-out infinite',
-                                    border: '1px solid #ccff0044',
-                                    borderRadius: 6,
-                                    padding: '10px 16px',
-                                    marginBottom: 20,
+                                    border: '1px solid var(--accent-cyan)33',
+                                    borderRadius: 12,
+                                    padding: '12px 20px',
+                                    marginBottom: 24,
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 10,
-                                    fontFamily: "'JetBrains Mono',monospace",
-                                    fontSize: 12,
-                                    color: '#ccff00',
+                                    gap: 12,
+                                    fontFamily: 'inherit',
+                                    fontSize: 13,
+                                    color: 'var(--accent-cyan)',
+                                    fontWeight: 600,
+                                    backdropFilter: 'var(--blur-sm)'
                                 }}>
-                                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                                    Sections appearing as they generate...
+                                    <Loader2 size={16} className="animate-spin" />
+                                    Parsing internal logic traces — results appearing in real-time...
                                 </div>
                             )}
 
@@ -1571,12 +1634,12 @@ export default function App() {
                             {analysisMode === 'explain' && (
                                 <div>
                                     {report.summary && (
-                                        <SectionBlock icon={<BookOpen size={14} />} title="Summary" color="#00ffff" copyText={report.summary} copyId="expl-sum" copiedId={copiedSection} onCopy={handleCopy}>
-                                            <p style={{ fontSize: 18, color: '#e0e0e0', lineHeight: 1.8 }}>{report.summary}</p>
+                                        <SectionBlock icon={<BookOpen size={14} />} title="Summary" color="var(--accent-cyan)" copyText={report.summary} copyId="expl-sum" copiedId={copiedSection} onCopy={handleCopy}>
+                                            <p style={{ fontSize: 18, color: 'var(--text-primary)', lineHeight: 1.8 }}>{report.summary}</p>
                                         </SectionBlock>
                                     )}
                                     {report.entryPoints?.length > 0 && (
-                                        <SectionBlock icon={<Zap size={14} />} title="Entry Points" color="#ff00ff" copyId="expl-entry" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <SectionBlock icon={<Zap size={14} />} title="Entry Points" color="var(--accent-purple)" copyId="expl-entry" copiedId={copiedSection} onCopy={handleCopy}>
                                             {report.entryPoints.map((ep, i) => (
                                                 <div key={i} style={{ background: 'var(--surface-base)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: 16, marginBottom: 12 }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1591,8 +1654,8 @@ export default function App() {
                                     )}
                                     {/* Architecture Layers */}
                                     {report.architectureLayers?.length > 0 && (
-                                        <SectionBlock icon={<Layers size={14} />} title="Architecture Layers" color="#ccff00" copyId="expl-layers" copiedId={copiedSection} onCopy={handleCopy}>
-                                            <p style={{ color: '#aaa', fontSize: 13, marginBottom: 16, fontFamily: "'JetBrains Mono',monospace" }}>High-level semantic grouping of the system</p>
+                                        <SectionBlock icon={<Layers size={14} />} title="Architecture Layers" color="var(--accent-indigo)" copyId="expl-layers" copiedId={copiedSection} onCopy={handleCopy}>
+                                            <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 16 }}>High-level semantic grouping of the system</p>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
                                                 {report.architectureLayers.map((layer, i) => (
                                                     <div key={i} className="glass-panel" style={{ borderTop: `4px solid ${['var(--accent-cyan)', 'var(--accent-orange)', 'var(--accent-purple)', 'var(--accent-green)', 'var(--accent-blue)'][i % 5]}`, padding: 20, display: 'flex', flexDirection: 'column' }}>
@@ -1614,7 +1677,7 @@ export default function App() {
                                     )}
                                     {/* Data Flow + Mermaid Chart */}
                                     {report.dataFlow?.length > 0 && (
-                                        <SectionBlock icon={<GitMerge size={14} />} title="Data Flow" color="#ffaa00" copyId="expl-flow" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <SectionBlock icon={<GitMerge size={14} />} title="Data Flow" color="var(--accent-orange)" copyId="expl-flow" copiedId={copiedSection} onCopy={handleCopy}>
                                             <MermaidChart
                                                 chart={buildDataFlowMermaid(report.flowchartEdges || [])}
                                                 caption="How data moves through the system"
@@ -1645,7 +1708,7 @@ export default function App() {
                                     )}
                                     {/* Component & Dependency Map + Mermaid Chart */}
                                     {report.componentMap?.length > 0 && (
-                                        <SectionBlock icon={<FolderTree size={14} />} title="Component & Dependency Map" color="#ccff00" copyId="expl-comp" copiedId={copiedSection} onCopy={handleCopy}>
+                                        <SectionBlock icon={<FolderTree size={14} />} title="Component & Dependency Map" color="var(--accent-blue)" copyId="expl-comp" copiedId={copiedSection} onCopy={handleCopy}>
                                             <MermaidChart
                                                 chart={buildDependencyMermaid(report.dependencyEdges || [])}
                                                 caption="File-level import dependencies — explicit imports only"
@@ -1848,9 +1911,9 @@ export default function App() {
 
                                     {/* Metaphor / Analogy */}
                                     {report.conceptExtraction?.realWorldAnalogy && (
-                                        <SectionBlock icon={<Lightbulb size={14} />} title="Real World Analogy" color="#ccff00" copyId="analogy" copiedId={copiedSection} onCopy={handleCopy}
+                                        <SectionBlock icon={<Lightbulb size={14} />} title="Real World Analogy" color="var(--accent-yellow)" copyId="analogy" copiedId={copiedSection} onCopy={handleCopy}
                                             copyText={report.conceptExtraction.realWorldAnalogy}>
-                                            <p style={{ fontSize: 18, color: '#e0e0e0', lineHeight: 1.7, fontStyle: 'italic' }}>
+                                            <p style={{ fontSize: 18, color: 'var(--text-secondary)', lineHeight: 1.7, fontStyle: 'italic' }}>
                                                 "{report.conceptExtraction.realWorldAnalogy}"
                                             </p>
                                         </SectionBlock>
@@ -1922,9 +1985,9 @@ export default function App() {
                                     )}
 
                                     {report.invariants?.length > 0 && (
-                                        <SectionBlock icon={<ShieldAlert size={14} />} title="Invariant Violations" color="#ff003c"
+                                        <SectionBlock icon={<ShieldAlert size={14} />} title="Invariant Violations" color="var(--accent-red)"
                                             copyText={report.invariants.join('\n')} copyId="inv" copiedId={copiedSection} onCopy={handleCopy}>
-                                            <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: '#ccc', fontFamily: "'JetBrains Mono',monospace", fontSize: 13, lineHeight: 1.8 }}>
+                                            <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.8 }}>
                                                 {report.invariants.map((inv, i) => <li key={i}>{inv}</li>)}
                                             </ul>
                                         </SectionBlock>
@@ -1978,7 +2041,7 @@ export default function App() {
                                                 <h3 style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--accent-purple)', fontSize: 18, margin: 0 }}>Deterministic AI Fix Prompt</h3>
                                                 <button onClick={() => handleCopy(report.aiPrompt, 'ai-prompt')}
                                                     className="matte-button"
-                                                    style={{ background: 'var(--accent-purple)', color: '#fff', border: 'none' }}>
+                                                    style={{ background: 'var(--accent-purple)', color: 'var(--text-inverse)', border: 'none' }}>
                                                     {copiedSection === 'ai-prompt' ? <Check size={16} /> : <Copy size={16} />}
                                                     {copiedSection === 'ai-prompt' ? 'COPIED!' : 'COPY PROMPT'}
                                                 </button>
@@ -2003,8 +2066,8 @@ export default function App() {
                                                     {report.minimalFix}
                                                 </pre>
                                             </SectionBlock>
-                                            <SectionBlock icon={<CheckSquare size={14} />} title="Why This Works" color="#fff">
-                                                <p style={{ fontSize: 17, color: '#fff', lineHeight: 1.7 }}>{report.whyFixWorks}</p>
+                                            <SectionBlock icon={<CheckSquare size={14} />} title="Why This Works" color="var(--accent-green)">
+                                                <p style={{ fontSize: 17, color: 'var(--text-primary)', lineHeight: 1.7 }}>{report.whyFixWorks}</p>
                                             </SectionBlock>
                                         </>
                                     )}
@@ -2082,8 +2145,8 @@ export default function App() {
                     </ReportErrorBoundary>
                 )
                 }
-
-            </main >
-        </div >
+            </main>
+        </div>
+        </div>
     );
 }
