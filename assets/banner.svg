@@ -109,7 +109,7 @@
         fill: #06b6d4;
         filter: url(#nodeGlow);
         opacity: 0;
-        animation: showNode 0.4s ease-out 4.2s forwards;
+        animation: showNode 0.4s ease-out 3.0s forwards;
       }
 
       @keyframes showNode {
@@ -142,7 +142,7 @@
       <stop offset="100%" stop-color="#000000" stop-opacity="0" />
     </radialGradient>
 
-    <filter id="brandGlow" x="-50%" y="-50%" width="200%" height="200%">
+    <filter id="brandGlow" x="-100%" y="-1500%" width="300%" height="3100%" filterUnits="objectBoundingBox">
       <feGaussianBlur stdDeviation="15" result="blur" />
       <feMerge>
         <feMergeNode in="blur" />
@@ -150,7 +150,7 @@
       </feMerge>
     </filter>
 
-    <filter id="whiteGlow" x="-50%" y="-50%" width="200%" height="200%">
+    <filter id="whiteGlow" x="-200%" y="-2000%" width="500%" height="4100%" filterUnits="objectBoundingBox">
       <feGaussianBlur stdDeviation="6" result="blur" />
       <feMerge>
         <feMergeNode in="blur" />
@@ -158,7 +158,7 @@
       </feMerge>
     </filter>
 
-    <filter id="nodeGlow" x="-100%" y="-100%" width="300%" height="300%">
+    <filter id="nodeGlow" x="-500%" y="-500%" width="1100%" height="1100%" filterUnits="objectBoundingBox">
       <feGaussianBlur stdDeviation="28" result="blur" />
       <feMerge>
         <feMergeNode in="blur" />
@@ -218,7 +218,7 @@
     
     <!-- Under-layers for Weaving (Letters behind the path) -->
     <text x="-375" y="30" class="letter">U</text>
-    <text x="-125" y="30" class="letter letter-gradient">R</text>
+    <text x="-115" y="30" class="letter letter-gradient">R</text>
     <text x="110" y="30" class="letter letter-gradient">V</text>
     <text x="345" y="30" class="letter letter-gradient">L</text>
 
@@ -226,7 +226,7 @@
     <path class="logo-line-weaving" d="M -540, -30 C -300, -30 -150, 0 100, 0 L 520, 0" />
 
     <!-- Over-layers for Weaving (Letters in front of the path) -->
-    <text x="-260" y="30" class="letter">N</text>
+    <text x="-250" y="30" class="letter">N</text>
     <text x="5" y="30" class="letter letter-gradient">A</text>
     <text x="215" y="30" class="letter letter-gradient">E</text>
     

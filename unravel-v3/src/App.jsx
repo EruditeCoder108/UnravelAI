@@ -177,6 +177,176 @@ const SvgLoader = ({ style = { width: 450 } }) => (
     </div>
 );
 
+const BannerSplash = () => (
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#030303', overflow: 'hidden' }}>
+        <svg width="100%" height="100%" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <style>{`
+                    .splash-bg { fill: #030303; }
+                    .splash-grid { stroke: #ffffff; stroke-width: 0.5; opacity: 0.06; }
+                    .splash-tech { font-family: 'JetBrains Mono', monospace; font-size: 10px; fill: #38bdf8; opacity: 0.15; }
+                    .splash-cross { stroke: #ffffff; stroke-width: 0.8; opacity: 0.2; }
+                    
+                    .knot-path {
+                        stroke-dasharray: 1000;
+                        stroke-dashoffset: 1000;
+                        stroke-linecap: round;
+                        stroke-linejoin: round;
+                        animation: drawKnot 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+                    }
+                    .kp-1 { animation-delay: 0.1s; }
+                    .kp-2 { animation-delay: 0.3s; }
+                    .kp-3 { animation-delay: 0.5s; }
+                    .kp-4 { animation-delay: 0.7s; }
+                    .kp-5 { animation-delay: 0.9s; }
+
+                    @keyframes drawKnot { to { stroke-dashoffset: 0; } }
+                    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+                    @keyframes floatParallax { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(2px, -6px); } }
+
+                    .float-base { animation: float 6s ease-in-out infinite; }
+                    .float-front { animation: floatParallax 6s ease-in-out infinite; }
+
+                    .logo-line-weaving {
+                        fill: none;
+                        stroke: url(#brandGradientSplash);
+                        stroke-width: 9;
+                        stroke-linecap: round;
+                        filter: url(#brandGlowSplash);
+                        stroke-dasharray: 2000;
+                        stroke-dashoffset: 2000;
+                        animation: drawLine 3.5s cubic-bezier(0.1, 0, 0, 1) 1.2s forwards;
+                    }
+
+                    @keyframes drawLine { to { stroke-dashoffset: 0; } }
+
+                    .letter { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 156px; fill: #ffffff; }
+                    .letter-gradient { fill: url(#textGradientSplash); }
+                    .subtitle { font-family: 'JetBrains Mono', monospace; font-size: 13px; fill: #94a3b8; letter-spacing: 12px; text-transform: uppercase; opacity: 0.6; }
+                    .tag-pill { fill: #1e293b; stroke: #334155; stroke-width: 1; }
+                    .tag-text { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #38bdf8; font-weight: 900; }
+                    .node-end { fill: #06b6d4; filter: url(#nodeGlowSplash); opacity: 0; animation: showNode 0.4s ease-out 3.0s forwards; }
+
+                    @keyframes showNode { to { opacity: 1; } }
+                    .mask-cutout { stroke: #030303; stroke-width: 16; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+                `}</style>
+
+                <linearGradient id="brandGradientSplash" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#7e22ce" />
+                    <stop offset="30%" stopColor="#6366f1" />
+                    <stop offset="70%" stopColor="#0891b2" />
+                    <stop offset="100%" stopColor="#22d3ee" />
+                </linearGradient>
+
+                <linearGradient id="textGradientSplash" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#ffffff" />
+                    <stop offset="100%" stopColor="#64748b" />
+                </linearGradient>
+
+                <radialGradient id="mainGlowSplash" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.18" />
+                    <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+                </radialGradient>
+
+                <filter id="brandGlowSplash" x="-100%" y="-1500%" width="300%" height="3100%" filterUnits="objectBoundingBox">
+                    <feGaussianBlur stdDeviation="15" result="blur" />
+                    <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+
+                <filter id="whiteGlowSplash" x="-200%" y="-2000%" width="500%" height="4100%" filterUnits="objectBoundingBox">
+                    <feGaussianBlur stdDeviation="6" result="blur" />
+                    <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+
+                <filter id="nodeGlowSplash" x="-500%" y="-500%" width="1100%" height="1100%" filterUnits="objectBoundingBox">
+                    <feGaussianBlur stdDeviation="28" result="blur" />
+                    <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+            </defs>
+
+            <rect width="1200" height="400" className="splash-bg" />
+            <circle cx="500" cy="200" r="500" fill="url(#mainGlowSplash)" />
+
+            <g className="splash-grid">
+                {[50, 100, 150, 200, 250, 300, 350].map(v => <line key={`h${v}`} x1="0" y1={v} x2="1200" y2={v} />)}
+                {[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100].map(v => <line key={`v${v}`} x1={v} y1="0" x2={v} y2="400" />)}
+            </g>
+
+            <g className="splash-tech">
+                <text x="30" y="30">FAST_INVERSE_SQRT_0x5F3759DF</text>
+                <text x="1050" y="380">AST_RESOLVER_V3</text>
+                <text x="30" y="380">MUTATION_TRACE_ENGINE_ENABLED</text>
+                <text x="1080" y="30">BUILD_2026.03.15</text>
+                <text x="50" y="150" opacity="0.6">_STATIC_ANALYSIS</text>
+                <text x="1080" y="250" opacity="0.6">_ROOT_CAUSE</text>
+            </g>
+
+            <g className="splash-cross">
+                <path d="M40 40 L40 60 M30 50 L50 50" />
+                <path d="M1160 40 L1160 60 M1150 50 L1170 50" />
+                <path d="M40 340 L40 360 M30 350 L50 350" />
+                <path d="M1160 340 L1160 360 M1150 350 L1170 350" />
+            </g>
+
+            <g transform="translate(600, 200)">
+                <text x="-375" y="30" className="letter">U</text>
+                <text x="-115" y="30" className="letter letter-gradient">R</text>
+                <text x="110" y="30" className="letter letter-gradient">V</text>
+                <text x="345" y="30" className="letter letter-gradient">L</text>
+
+                <path className="logo-line-weaving" d="M -540, -30 C -300, -30 -150, 0 100, 0 L 520, 0" />
+
+                <text x="-250" y="30" className="letter">N</text>
+                <text x="5" y="30" className="letter letter-gradient">A</text>
+                <text x="215" y="30" className="letter letter-gradient">E</text>
+                
+                <circle cx="520" cy="0" r="20" className="node-end" />
+
+                <g transform="translate(-720, -215) scale(1.1)">
+                    <g className="float-base">
+                        <g strokeOpacity="0.9">
+                            <path d="M130,180 L160,130 L210,150 L240,100 L290,140 L260,190" className="knot-path kp-1 mask-cutout" />
+                            <path d="M120,210 L150,250 L200,220 L230,270 L280,230 L300,180 L280,140" className="knot-path kp-2 mask-cutout" />
+                            <path d="M150,150 L180,190 L160,230 L210,250 L250,210 L300,240" className="knot-path kp-3 mask-cutout" />
+                            
+                            <path d="M130,180 L160,130 L210,150 L240,100 L290,140 L260,190" className="knot-path kp-1" fill="none" stroke="#f8fafc" strokeWidth="4.5" filter="url(#whiteGlowSplash)" />
+                            <path d="M120,210 L150,250 L200,220 L230,270 L280,230 L300,180 L280,140" className="knot-path kp-2" fill="none" stroke="#f8fafc" strokeWidth="4.5" filter="url(#whiteGlowSplash)" />
+                            <path d="M150,150 L180,190 L160,230 L210,250 L250,210 L300,240" className="knot-path kp-3" fill="none" stroke="#f8fafc" strokeWidth="4.5" filter="url(#whiteGlowSplash)" />
+                        </g>
+                    </g>
+
+                    <g className="float-front">
+                        <g strokeOpacity="0.9">
+                            <path d="M160,200 L200,160 L250,190 L280,150 L310,200 L270,240 L230,200" className="knot-path kp-4 mask-cutout" />
+                            <path d="M180,240 L220,200 L270,250 L300,210 L250,170 L210,120 L170,160" className="knot-path kp-5 mask-cutout" />
+                            
+                            <path d="M160,200 L200,160 L250,190 L280,150 L310,200 L270,240 L230,200" className="knot-path kp-4" fill="none" stroke="#f8fafc" strokeWidth="4.5" filter="url(#whiteGlowSplash)" />
+                            <path d="M180,240 L220,200 L270,250 L300,210 L250,170 L210,120 L170,160" className="knot-path kp-5" fill="none" stroke="#f8fafc" strokeWidth="4.5" filter="url(#whiteGlowSplash)" />
+                        </g>
+                    </g>
+                    <circle cx="210" cy="185" r="5" fill="#ffffff" filter="url(#whiteGlowSplash)" />
+                </g>
+
+                <text x="0" y="115" className="subtitle" textAnchor="middle">THE AST-ENHANCED AI DEBUGGING ENGINE</text>
+
+                <g transform="translate(-110, 150)">
+                    <rect width="220" height="30" rx="15" className="tag-pill" />
+                    <text x="110" y="20" className="tag-text" textAnchor="middle">STABLE RELEASE V3.3.4</text>
+                </g>
+            </g>
+        </svg>
+    </div>
+);
+
 const CopyBtn = ({ text, id, copiedId, onCopy, label = 'COPY' }) => (
     <button onClick={() => onCopy(text, id)}
         className="matte-button"
@@ -500,8 +670,8 @@ export default function App() {
         } catch { /* ignore corrupt localStorage */ }
         
         // Initial splash screen with dissolve effect
-        const exitTimer = setTimeout(() => setIsSplashExiting(true), 2000);
-        const finishTimer = setTimeout(() => setIsInitialLoading(false), 3200); // 2s + 1.2s dissolve
+        const exitTimer = setTimeout(() => setIsSplashExiting(true), 4800);
+        const finishTimer = setTimeout(() => setIsInitialLoading(false), 5600); // 4.8s + 0.8s dissolve
         return () => { clearTimeout(exitTimer); clearTimeout(finishTimer); };
     }, []);
     
@@ -966,7 +1136,7 @@ export default function App() {
         <div id="app-root" style={{ position: 'relative', overflowX: 'hidden' }}>
             {isInitialLoading && (
                 <div className={`splash-overlay ${isSplashExiting ? 'splash-exit' : ''}`}>
-                    <SvgLoader style={{ width: 'min(90vw, 500px)' }} />
+                    <BannerSplash />
                 </div>
             )}
 
@@ -1903,9 +2073,7 @@ export default function App() {
                                                 <span style={{ color: 'var(--accent-green)', fontWeight: 700, fontSize: 13 }}>PATTERN TO AVOID:</span>
                                                 <p style={{ color: 'var(--text-primary)', marginTop: 8, margin: 0 }}>{report.conceptExtraction.patternToAvoid}</p>
                                             </div>
-                                            {report.conceptExtraction.realWorldAnalogy && (
-                                                <p style={{ color: 'var(--text-tertiary)', fontStyle: 'italic', lineHeight: 1.7 }}>💡 {report.conceptExtraction.realWorldAnalogy}</p>
-                                            )}
+
                                         </SectionBlock>
                                     )}
 
@@ -1913,7 +2081,7 @@ export default function App() {
                                     {report.conceptExtraction?.realWorldAnalogy && (
                                         <SectionBlock icon={<Lightbulb size={14} />} title="Real World Analogy" color="var(--accent-yellow)" copyId="analogy" copiedId={copiedSection} onCopy={handleCopy}
                                             copyText={report.conceptExtraction.realWorldAnalogy}>
-                                            <p style={{ fontSize: 18, color: 'var(--text-secondary)', lineHeight: 1.7, fontStyle: 'italic' }}>
+                                            <p style={{ fontSize: 18, color: 'var(--text-primary)', lineHeight: 1.7, fontStyle: 'italic' }}>
                                                 "{report.conceptExtraction.realWorldAnalogy}"
                                             </p>
                                         </SectionBlock>

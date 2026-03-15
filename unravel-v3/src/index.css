@@ -2,6 +2,9 @@
    UNRAVEL v3 — Fluid Glassmorphism Design System
    ═══════════════════════════════════════════════════ */
 
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;800&family=JetBrains+Mono:wght@400;800&display=swap');
+
+
 *,
 *::before,
 *::after {
@@ -81,7 +84,7 @@
   --accent-pink: #FF2D55;
   --accent-red: #FF3B30;
   --accent-orange: #FF9500;
-  --accent-yellow: #FFCC00;
+  --accent-yellow: #B45309;
   --accent-green: #34C759;
 }
 
@@ -582,12 +585,12 @@ button:disabled, .matte-button:disabled {
 /* --- God-Level Dissolve Transitions --- */
 @keyframes dissolveOut {
   0% { opacity: 1; filter: blur(0px); transform: scale(1); }
-  100% { opacity: 0; filter: blur(30px); transform: scale(1.1); }
+  100% { opacity: 0; filter: blur(12px); transform: scale(1.05); }
 }
 
 @keyframes dissolveIn {
-  0% { opacity: 0; filter: blur(10px); }
-  100% { opacity: 1; filter: blur(0px); }
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 .splash-overlay {
@@ -599,13 +602,18 @@ button:disabled, .matte-button:disabled {
   align-items: center;
   justify-content: center;
   pointer-events: all;
+  will-change: transform, filter, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .splash-exit {
-  animation: dissolveOut 1.2s forwards cubic-bezier(0.4, 0, 0.2, 1);
+  animation: dissolveOut 0.8s forwards cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
 }
 
 .app-dissolve-in {
-  animation: dissolveIn 1.5s forwards cubic-bezier(0.4, 0, 0.2, 1);
+  animation: dissolveIn 1s forwards cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+  transform: translateZ(0);
 }
