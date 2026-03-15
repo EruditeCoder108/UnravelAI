@@ -4,6 +4,10 @@
 
 <br/>
 
+<video src="assets/demo.mp4" controls="controls" width="900" autoplay loop muted></video>
+
+<br/>
+
 <h1>Stop letting your AI guess.</h1>
 
 <p>
@@ -17,6 +21,10 @@ Every mutation chain. Every async boundary. Every closure capture — verified a
 
 [![Version](https://img.shields.io/badge/engine-v3.3-58a6ff?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI)
 [![Benchmark](https://img.shields.io/badge/UDB--51-in_progress-f0883e?style=flat-square&labelColor=0d1117)](#benchmark)
+
+[![React](https://img.shields.io/badge/react-18.3-61dafb?style=flat-square&labelColor=0d1117&logo=react&logoColor=61dafb)]()
+[![Node.js](https://img.shields.io/badge/node.js-%3E%3D18-339933?style=flat-square&labelColor=0d1117&logo=node.js&logoColor=339933)]()
+[![Tree-Sitter](https://img.shields.io/badge/tree--sitter-wasm-89e051?style=flat-square&labelColor=0d1117)]()
 [![Languages](https://img.shields.io/badge/languages-JS%20%7C%20TS%20%7C%20JSX%20%7C%20TSX-3fb950?style=flat-square&labelColor=0d1117)](#language-support)
 [![License](https://img.shields.io/badge/license-BSL1.1-7d8590?style=flat-square&labelColor=0d1117)](LICENSE)
 [![Web App](https://img.shields.io/badge/web_app-live-58a6ff?style=flat-square&labelColor=0d1117&logo=netlify&logoColor=00C7B7)](https://vibeunravel.netlify.app)
@@ -27,10 +35,28 @@ Every mutation chain. Every async boundary. Every closure capture — verified a
 
 </div>
 
-<br/>
+## Table of Contents
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
-
+- [How It Works](#how-it-works)
+- [The Loop Every Developer Knows](#the-loop-every-developer-knows)
+- [The Unravel Difference](#the-unravel-difference)
+- [Proved in the Wild](#proved-in-the-wild)
+- [Getting Started](#getting-started)
+- [Why AI Debugging Usually Fails](#why-ai-debugging-usually-fails)
+- [Architecture](#architecture)
+- [Three Modes](#three-modes)
+- [The 8-Phase Pipeline](#the-8-phase-pipeline)
+- [Anti-Sycophancy Guardrails](#anti-sycophancy-guardrails)
+- [Fix Completeness Verifier](#fix-completeness-verifier)
+- [Benchmark](#benchmark)
+- [Language Support](#language-support)
+- [Output Presets](#output-presets)
+- [Supported Models](#supported-models)
+- [Bug Taxonomy](#bug-taxonomy)
+- [Design Principles](#design-principles)
+- [Project Status](#project-status)
+- [Contributing](#contributing)
+- [License](#license)
 <br/>
 
 ## How It Works
@@ -51,8 +77,6 @@ flowchart LR
 
 Unravel turns your code into verified facts first, then forces the AI to reason over those facts — instead of guessing from your description.
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
-
 <br/>
 
 ## The Loop Every Developer Knows
@@ -64,7 +88,6 @@ You paste a bug. The AI writes a patch. The patch breaks something else. You pas
 This isn't a model quality problem. It's a *context* problem. The model never knew what your code actually does — it was pattern-matching from your description, not from the code itself. It saw a `TypeError` and suggested type fixes. It never asked: *where did the data first go wrong?*
 
 <br/>
-
 ## The Unravel Difference
 
 Before any model sees your code, Unravel's AST engine runs a deterministic analysis pass. It extracts every variable mutation, every closure capture, every async boundary, every cross-file import chain, every React hook dependency gap — as **verified facts**. These become ground truth injected into the prompt. The model cannot hallucinate about what doesn't exist. It cannot guess. It must trace.
@@ -73,7 +96,74 @@ The result: **exact file, exact line, exact variable, with evidence and a confid
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+## Proved in the Wild
+
+Before any formal benchmark, Unravel has already been used to diagnose and fix bugs in real production repositories — with the fixes merged and issues closed.
+
+<details>
+<summary><b>▸ &nbsp; cal.com #28283 — Settings toggles blocking each other (closed)</b></summary>
+
+<br/>
+
+**The report:** Toggle switches on the Settings page (e.g. "Search engine indexing", "Monthly digest") were not independent. Clicking one caused all others to show a `not-allowed` cursor and become unresponsive until the first API call completed.
+
+**What Unravel found:** A single `trpc.viewer.me.updateProfile.useMutation` hook at `general-view.tsx L44` was shared across all toggles. The global `isUpdateBtnLoading` state set at `L184` before `mutation.mutate` — and reset at `L87` on `onSettled` — was propagated to the `disabled` prop of every `SettingsToggle` in the form. The execution timeline traced T0 (click) → T0+δ (`isUpdateBtnLoading = true`, all toggles disabled) → T1 (second toggle unresponsive) → T2 (API resolves, `isUpdateBtnLoading = false`).
+
+**The fix:** Create a separate `useMutation` hook per toggle, so each toggle's `disabled` prop binds only to its own `isPending` state. Optimistic updates flip the UI instantly. The main form save button retains its own mutation and dirty-state guard.
+
+**What happened:** The fix pattern was implemented directly in [PR #28296](https://github.com/calcom/cal.com/pull/28296), which was merged and closed the issue. The reporter credited Unravel by name in the thread.
+
+</details>
+
+<details>
+<summary><b>▸ &nbsp; tldraw #8148 — create-tldraw CLI installing into current directory (closed)</b></summary>
+
+<br/>
+
+**The report:** `npm create tldraw my-app` installed everything into the current directory instead of creating a `my-app/` subdirectory. A second bug: files were created even after the user cancelled the "Directory is not empty" prompt.
+
+**What Unravel found:** `targetDir` was set from `process.cwd()` *before* the interactive `namePicker` prompt ran. The name entered interactively was only used to write the `name` field in `package.json` — it never updated `targetDir`. The data flow went: `args._[0]` → `maybeTargetDir` → `targetDir = maybeTargetDir ?? process.cwd()` → `namePicker(maybeTargetDir)` → name used for `package.json` only. For bug 2, static analysis showed `ensureDirectoryEmpty` calls `process.exit(1)` on cancel — the "files created" reports were from external npm scaffolding running before Unravel's code, not from the tool's post-cancel path.
+
+**The fix:** After `namePicker` returns, check if no argument was given *and* the user entered a name different from `pathToName(process.cwd())` — if so, resolve a new `targetDir` from that name before calling `ensureDirectoryEmpty`. This is exactly the `// START FIX` block committed in [PR #8161](https://github.com/tldraw/tldraw/pull/8161), which was merged and closed the issue.
+
+</details>
+
+<br/>
+## Getting Started
+
+### Web App — No install required
+
+Visit **[vibeunravel.netlify.app](https://vibeunravel.netlify.app)**
+
+1. Enter your API key (Anthropic, Google, or OpenAI)
+2. Upload project files, paste code, or import a GitHub URL
+3. Describe the bug symptom
+4. Select Debug, Explain, or Security mode
+5. Read the diagnosis
+
+### VS Code Extension
+
+The extension is currently in development and not yet published to the Marketplace. To use it locally:
+
+```bash
+git clone https://github.com/EruditeCoder108/UnravelAI.git
+cd UnravelAI
+npm install
+npm run build:extension
+```
+
+Install the generated `.vsix` via **Extensions → Install from VSIX** in VS Code.
+
+### Run Locally
+
+```bash
+git clone https://github.com/EruditeCoder108/UnravelAI.git
+cd UnravelAI
+npm install
+npm run dev
+```
+
+<br/>
 
 <br/>
 
@@ -146,10 +236,9 @@ Confidence: 0.94
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
 ## Architecture
 
 ```mermaid
@@ -223,10 +312,9 @@ The final result is a typed, schema-validated object with `rootCause`, `evidence
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
 ## Three Modes
 
 <table>
@@ -272,10 +360,9 @@ Returns: vulnerability type · attack vector · proof-of-exploit · severity · 
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
 ## The 8-Phase Pipeline
 
 The model is forced through these phases in sequence. It cannot skip to conclusions.
@@ -293,10 +380,9 @@ The model is forced through these phases in sequence. It cannot skip to conclusi
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
 ## Anti-Sycophancy Guardrails
 
 Every AI debugger has the same failure mode: it agrees with you. You say "race condition," it finds a race condition — whether or not one exists. Unravel has seven hardcoded rules that the model cannot override.
@@ -319,10 +405,9 @@ Rules 6 and 7 were added from research analysis. Rule 6 guards against *proximat
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
 ## Fix Completeness Verifier
 
 After the model proposes a fix, Unravel cross-references it against the AST call graph built during Layer 0. If the fix modifies a function in file A but fails to update file B which calls that function, the verifier automatically:
@@ -335,44 +420,9 @@ No extra LLM calls. Zero added latency. Uses data already computed during analys
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
-## Proved in the Wild
-
-Before any formal benchmark, Unravel has already been used to diagnose and fix bugs in real production repositories — with the fixes merged and issues closed.
-
-<details>
-<summary><b>▸ &nbsp; cal.com #28283 — Settings toggles blocking each other (closed)</b></summary>
-
-<br/>
-
-**The report:** Toggle switches on the Settings page (e.g. "Search engine indexing", "Monthly digest") were not independent. Clicking one caused all others to show a `not-allowed` cursor and become unresponsive until the first API call completed.
-
-**What Unravel found:** A single `trpc.viewer.me.updateProfile.useMutation` hook at `general-view.tsx L44` was shared across all toggles. The global `isUpdateBtnLoading` state set at `L184` before `mutation.mutate` — and reset at `L87` on `onSettled` — was propagated to the `disabled` prop of every `SettingsToggle` in the form. The execution timeline traced T0 (click) → T0+δ (`isUpdateBtnLoading = true`, all toggles disabled) → T1 (second toggle unresponsive) → T2 (API resolves, `isUpdateBtnLoading = false`).
-
-**The fix:** Create a separate `useMutation` hook per toggle, so each toggle's `disabled` prop binds only to its own `isPending` state. Optimistic updates flip the UI instantly. The main form save button retains its own mutation and dirty-state guard.
-
-**What happened:** The fix pattern was implemented directly in [PR #28296](https://github.com/calcom/cal.com/pull/28296), which was merged and closed the issue. The reporter credited Unravel by name in the thread.
-
-</details>
-
-<details>
-<summary><b>▸ &nbsp; tldraw #8148 — create-tldraw CLI installing into current directory (closed)</b></summary>
-
-<br/>
-
-**The report:** `npm create tldraw my-app` installed everything into the current directory instead of creating a `my-app/` subdirectory. A second bug: files were created even after the user cancelled the "Directory is not empty" prompt.
-
-**What Unravel found:** `targetDir` was set from `process.cwd()` *before* the interactive `namePicker` prompt ran. The name entered interactively was only used to write the `name` field in `package.json` — it never updated `targetDir`. The data flow went: `args._[0]` → `maybeTargetDir` → `targetDir = maybeTargetDir ?? process.cwd()` → `namePicker(maybeTargetDir)` → name used for `package.json` only. For bug 2, static analysis showed `ensureDirectoryEmpty` calls `process.exit(1)` on cancel — the "files created" reports were from external npm scaffolding running before Unravel's code, not from the tool's post-cancel path.
-
-**The fix:** After `namePicker` returns, check if no argument was given *and* the user entered a name different from `pathToName(process.cwd())` — if so, resolve a new `targetDir` from that name before calling `ensureDirectoryEmpty`. This is exactly the `// START FIX` block committed in [PR #8161](https://github.com/tldraw/tldraw/pull/8161), which was merged and closed the issue.
-
-</details>
-
-<br/>
-
 ## Benchmark
 
 Unravel's edge is not on easy, isolated bugs — any modern LLM handles those adequately. This engine is built for the opposite scenario: large repos, deep cross-file mutation chains, async races across multiple files, bugs where the symptom and root cause live in completely different modules.
@@ -388,17 +438,15 @@ Unravel's edge is not on easy, isolated bugs — any modern LLM handles those ad
 > UDB-51 with Claude Opus 4.6 on hard, large-context bugs is what gets published. UDB-11 is early signal only.
 
 <br/>
-
 ## Language Support
 
 AST analysis currently supports **JavaScript · TypeScript · JSX · TSX**. More languages are coming — Python, Go, and Rust are next on the roadmap. The 8-phase pipeline and all three modes work for any language via the LLM layer today; AST ground truth extraction is JS/TS-only for now.
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
 ## Output Presets
 
 | Preset | What You Get |
@@ -412,10 +460,9 @@ Every Full Report includes auto-generated Mermaid diagrams: Timeline · Hypothes
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
 ## Supported Models
 
 Any LLM you already have API access to. Your key. Your model. No data sent to Unravel servers.
@@ -428,10 +475,9 @@ Any LLM you already have API access to. Your key. Your model. No data sent to Un
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
 ## Bug Taxonomy
 
 Every diagnosis is classified across 12 formal categories:
@@ -455,50 +501,9 @@ const BUG_TAXONOMY = {
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
-## Getting Started
-
-### Web App — No install required
-
-Visit **[vibeunravel.netlify.app](https://vibeunravel.netlify.app)**
-
-1. Enter your API key (Anthropic, Google, or OpenAI)
-2. Upload project files, paste code, or import a GitHub URL
-3. Describe the bug symptom
-4. Select Debug, Explain, or Security mode
-5. Read the diagnosis
-
-### VS Code Extension
-
-The extension is currently in development and not yet published to the Marketplace. To use it locally:
-
-```bash
-git clone https://github.com/EruditeCoder108/UnravelAI.git
-cd UnravelAI
-npm install
-npm run build:extension
-```
-
-Install the generated `.vsix` via **Extensions → Install from VSIX** in VS Code.
-
-### Run Locally
-
-```bash
-git clone https://github.com/EruditeCoder108/UnravelAI.git
-cd UnravelAI
-npm install
-npm run dev
-```
-
-<br/>
-
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
-
-<br/>
-
 ## Design Principles
 
 > **1. Deterministic facts before AI reasoning.**
@@ -518,10 +523,9 @@ npm run dev
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
-
 ## Project Status
 
 ```
@@ -547,7 +551,6 @@ Phase 10   📋  Unravel Heavy — multi-agent parallel analysis
 ```
 
 <br/>
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports, new benchmark bugs, and prompt improvement proposals are especially welcome.
@@ -559,14 +562,13 @@ node benchmarks/runner.js
 # Run tests
 npm test
 ```
-
 ## License
 
 BSL 1.1 — see [LICENSE](LICENSE).
 
 <br/>
 
-<p align="center"><sub>─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</sub></p>
+
 
 <br/>
 
