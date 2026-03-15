@@ -5,7 +5,7 @@
 <br/>
 
 <div align="center">
-  <video src="https://github.com/EruditeCoder108/UnravelAI/blob/main/assets/demo.mp4?raw=true" width="900" controls muted loop>
+  <video src="https://raw.githubusercontent.com/EruditeCoder108/UnravelAI/main/assets/demo.mp4" width="900" controls muted loop>
     Your browser does not support the video tag.
   </video>
 </div>
