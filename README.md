@@ -4,7 +4,7 @@
 
 <br/>
 
-<video src="assets/demo.mp4" controls="controls" width="900" autoplay loop muted></video>
+<video src="https://github.com/EruditeCoder108/UnravelAI/blob/main/assets/demo.mp4?raw=true" width="100%" autoplay loop muted playsinline></video>
 
 <br/>
 
@@ -498,12 +498,6 @@ const BUG_TAXONOMY = {
   INFINITE_LOOP:   "Recursive or cyclic behavior creates runaway effect",
 };
 ```
-
-<br/>
-
-
-
-<br/>
 ## Design Principles
 
 > **1. Deterministic facts before AI reasoning.**
@@ -520,10 +514,6 @@ const BUG_TAXONOMY = {
 
 > **5. Optimize for developer understanding, not impressive output.**
 > The goal is insight. Not a longer report.
-
-<br/>
-
-
 
 <br/>
 ## Project Status
@@ -555,28 +545,13 @@ Phase 10   📋  Unravel Heavy — multi-agent parallel analysis
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports, new benchmark bugs, and prompt improvement proposals are especially welcome.
 
-```bash
-# Run the benchmark suite
-node benchmarks/runner.js
-
-# Run tests
-npm test
-```
 ## License
 
 BSL 1.1 — see [LICENSE](LICENSE).
 
 <br/>
 
-
-
-<br/>
-
 <div align="center">
-
-<img src="assets/logo.png" alt="Unravel" width="72"/>
-
-<br/>
 
 **Built by [Sambhav Jain](https://github.com/EruditeCoder108)**
 
