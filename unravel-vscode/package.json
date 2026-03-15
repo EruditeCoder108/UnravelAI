@@ -124,11 +124,10 @@
         "package": "npx -y @vscode/vsce package --no-dependencies"
     },
     "devDependencies": {
-        "esbuild": "^0.20.0",
-        "@vscode/vsce": "^2.22.0"
+        "@vscode/vsce": "^2.22.0",
+        "esbuild": "^0.20.0"
     },
     "dependencies": {
-        "@babel/parser": "^7.24.0",
-        "@babel/traverse": "^7.24.0"
+        "web-tree-sitter": "^0.26.7"
     }
 }

@@ -118,10 +118,11 @@ export async function initParser() {
                 }
             }
 
-            await TreeSitter.init({ locateFile: () => '/wasm/tree-sitter.wasm' });
-            jsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-javascript.wasm');
-            tsLang  = await TreeSitter.Language.load('/wasm/tree-sitter-typescript.wasm');
-            tsxLang = await TreeSitter.Language.load('/wasm/tree-sitter-tsx.wasm');
+            const wasmBase = typeof __dirname !== 'undefined' ? __dirname + '/../wasm' : '/wasm';
+            await TreeSitter.init({ locateFile: () => `${wasmBase}/tree-sitter.wasm` });
+            jsLang  = await TreeSitter.Language.load(`${wasmBase}/tree-sitter-javascript.wasm`);
+            tsLang  = await TreeSitter.Language.load(`${wasmBase}/tree-sitter-typescript.wasm`);
+            tsxLang = await TreeSitter.Language.load(`${wasmBase}/tree-sitter-tsx.wasm`);
             parserInstance = new TreeSitter();
             console.log('[AST-TS] Tree-sitter WASM parser initialized.');
 

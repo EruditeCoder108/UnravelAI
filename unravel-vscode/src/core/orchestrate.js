@@ -11,6 +11,7 @@ import {
     SECURITY_SCHEMA, SECURITY_SCHEMA_INSTRUCTION,
     PRESETS,
     buildDynamicSchema, buildDynamicSchemaInstruction,
+    LAYER_BOUNDARY_VERDICT,
 } from './config.js';
 import { runMultiFileAnalysis, initParser } from './ast-engine-ts.js';
 import { runCrossFileAnalysis, selectFilesByGraph } from './ast-project.js';
@@ -349,6 +350,46 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     }
     onProgress?.({ stage: 'verify', label: 'Verifying Claims', complete: true, elapsed: elapsed() });
 
+    // ── Phase 5.5: Solvability Check ──
+    // Runs after claim verification so we have verification.failures available.
+    // If the bug is upstream of all provided files, skip the fix and return
+    // a LAYER_BOUNDARY verdict instead. This prevents the engine from generating
+    // a patch that would be wrong by construction (information already lost upstream).
+    if (mode === 'debug' && !result.needsMoreInfo) {
+        const solvability = checkSolvability(result, verification, codeFiles, symptom);
+        if (solvability.isLayerBoundary) {
+            console.warn('[Solvability] LAYER_BOUNDARY detected:', solvability.reason);
+            // Telemetry — log enough to tune heuristics, no PII
+            console.log('[Telemetry] LAYER_BOUNDARY', {
+                confidence: solvability.confidence,
+                rootCauseLayer: solvability.rootCauseLayer,
+                model: options.model || 'unknown',
+                provider: options.provider || 'unknown',
+                fileCount: codeFiles.length,
+            });
+            onProgress?.({ stage: 'complete', label: 'Analysis Complete', complete: true, elapsed: elapsed() });
+            return {
+                verdict: LAYER_BOUNDARY_VERDICT,
+                schemaVersion: '1.0',
+                confidence: solvability.confidence,
+                rootCauseLayer: solvability.rootCauseLayer,
+                reason: solvability.reason,
+                suggestedFixLayer: solvability.suggestedFixLayer,
+                symptom: result.report?.symptom || result.symptom || symptom,
+                _mode: mode,
+                _provenance: {
+                    engineVersion: '3.3',
+                    astVersion: '2.2',
+                    routerStrategy: _routerStrategy,
+                    crossFileAnalysis: !!crossFileRaw,
+                    model: options.model || 'unknown',
+                    provider: options.provider || 'unknown',
+                    timestamp: new Date().toISOString(),
+                },
+            };
+        }
+    }
+
     // ── Phase 6: Handle missing files or return ──
     if (result.needsMoreInfo && result.missingFilesRequest && onMissingFiles && _depth < 2) {
         onProgress?.(`SELF-HEAL: Engine requesting additional files (attempt ${_depth + 1}/2)...`);
@@ -427,6 +468,206 @@ function checkFileCompleteness(codeFiles) {
         }
     }
     return warnings;
+}
+
+// ═══════════════════════════════════════════════════
+// Solvability Check — Layer Boundary Detection
+// Determines if a bug is unfixable from within the
+// provided codebase (root cause is upstream: OS,
+// browser event system, native layer, etc.)
+//
+// Trigger conditions (ALL must be met):
+//   1. PRIMARY (deterministic): verifyClaims produced
+//      zero successful file citations — meaning the
+//      rootCause text referenced no line/file from the
+//      provided inputs that passed verification.
+//      This is the hard signal. If any provided file is
+//      cited in rootCause, this check does NOT fire.
+//
+//   2. SECONDARY (heuristic): evidence/rootCause/symptom
+//      text contains keywords indicating an external
+//      system layer. Required to avoid mis-classifying
+//      cross-file bugs that just lack file citations.
+//
+// If verifyClaims rejected the rootCause (hallucination),
+// that is NOT a layer boundary — it's a bad model output.
+// ═══════════════════════════════════════════════════
+
+const UPSTREAM_LAYER_KEYWORDS = [
+    // Input / event layer
+    'keycode', 'key code', 'keyboard', 'keybinding', 'key event',
+    'keyboardevent', 'keyboard layout', 'keyboard mapping', 'scancode',
+    'raw event', 'native event', 'os event', 'input event',
+    // OS / platform layer
+    'operating system', 'os layout', 'os keyboard', 'macos', 'windows',
+    'eurkey', 'keyboard driver', 'layout translation',
+    // Browser / electron layer
+    'browser event', 'electron', 'nativekeymap', 'chromium',
+    'web api', 'dom event', 'platform api',
+    // Network / external service
+    'external api', 'third-party api', 'upstream service',
+    'network response', 'server response',
+];
+
+/** Fields required in a valid LAYER_BOUNDARY result */
+const LAYER_BOUNDARY_REQUIRED_FIELDS = ['verdict', 'confidence', 'rootCauseLayer', 'reason', 'suggestedFixLayer'];
+
+/**
+ * Validate a candidate LAYER_BOUNDARY result against required fields and types.
+ * Returns true if valid, false if schema is violated.
+ */
+function _validateLayerBoundaryShape(obj) {
+    for (const field of LAYER_BOUNDARY_REQUIRED_FIELDS) {
+        if (obj[field] === undefined || obj[field] === null || obj[field] === '') {
+            console.warn(`[Solvability] LAYER_BOUNDARY shape invalid: missing field "${field}"`);
+            return false;
+        }
+    }
+    if (typeof obj.confidence !== 'number' || obj.confidence < 0 || obj.confidence > 1) {
+        console.warn(`[Solvability] LAYER_BOUNDARY shape invalid: confidence must be 0-1 number`);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Check if the analysis result represents a bug that cannot be fixed
+ * from within the provided codebase.
+ *
+ * @param {Object} result           - Parsed LLM result
+ * @param {Object} verification     - Output of verifyClaims()
+ * @param {Array}  codeFiles        - Files provided by user
+ * @param {string} symptom          - Original bug description
+ * @returns {{isLayerBoundary, confidence, rootCauseLayer, reason, suggestedFixLayer}}
+ */
+function checkSolvability(result, verification, codeFiles, symptom) {
+    const NOT_BOUNDARY = { isLayerBoundary: false };
+
+    const report = result.report || result;
+    const rootCause = report.rootCause || '';
+    if (!rootCause) return NOT_BOUNDARY;
+
+    // ── Primary gate (deterministic): did rootCause cite any provided file? ──
+    //
+    // verifyClaims already walks all file references in rootCause.
+    // We use its failures to determine if it found ANY provided file cited.
+    // Specifically: if rootCauseRejected === true, that's hallucination (not a boundary).
+    // If rootCauseRejected === false AND no rootCause failures exist → rootCause cited
+    // provided files successfully → fixable here → NOT a boundary.
+    //
+    // The deterministic signal we want: rootCause has zero file citations from provided inputs.
+    // We detect this by: (a) no rootCause-related failures in verification.failures that
+    // indicate a provided file was found, AND (b) re-scan rootCause for file patterns.
+
+    // Do not fire if rootCause was rejected (that means hallucination, not layer boundary)
+    if (verification.rootCauseRejected) return NOT_BOUNDARY;
+
+    // Re-scan rootCause for references to any provided file
+    const fileRefPattern = /\b([\w\-./]+\.(js|jsx|ts|tsx|py|java|cs|cpp|c|go|rb|rs|swift))\b/gi;
+    const rootCauseFileRefs = [...rootCause.matchAll(fileRefPattern)].map(m => m[1].toLowerCase());
+    const providedFileNames = new Set(
+        codeFiles.map(f => f.name.split(/[\\/]/).pop().toLowerCase())
+    );
+    // If rootCause mentions at least one provided file → fixable in this codebase
+    const rootCauseMentionsProvidedFile = rootCauseFileRefs.some(ref =>
+        providedFileNames.has(ref) ||
+        [...providedFileNames].some(n => n.includes(ref) || ref.includes(n))
+    );
+    if (rootCauseMentionsProvidedFile) return NOT_BOUNDARY;
+
+    // Also check: do verification failures show that rootCause DID reference provided files
+    // (even if those references had issues like wrong line numbers)?
+    const rootCauseFailuresWithProvidedFile = (verification.failures || []).some(f =>
+        typeof f.claim === 'string' &&
+        f.claim.toLowerCase().startsWith('rootcause') &&
+        // The failure reason says "line exceeds" (file was found but line was wrong) —
+        // that means a provided file WAS referenced, just with a bad line number.
+        // This is still "in this codebase" — do NOT classify as layer boundary.
+        f.reason && f.reason.includes('line exceeds')
+    );
+    if (rootCauseFailuresWithProvidedFile) return NOT_BOUNDARY;
+
+    // ── Secondary gate (heuristic): upstream layer keywords in evidence+symptom ──
+    const evidenceText = (Array.isArray(report.evidence) ? report.evidence.join(' ') : '').toLowerCase();
+    const symptomText = (symptom || '').toLowerCase();
+    const fullText = `${rootCause.toLowerCase()} ${evidenceText} ${symptomText}`;
+    const matchedKeywords = UPSTREAM_LAYER_KEYWORDS.filter(kw => fullText.includes(kw));
+
+    // Require at least one keyword to avoid false positives on cross-file bugs
+    // that simply don't name files in rootCause.
+    if (matchedKeywords.length === 0) return NOT_BOUNDARY;
+
+    // ── Classify the upstream layer ──
+    const layerClassification = (() => {
+        if (matchedKeywords.some(k => ['keycode', 'keyboard', 'keybinding', 'keyboard layout',
+            'key event', 'eurkey', 'keyboard driver', 'keyboard mapping', 'layout translation',
+            'nativekeymap', 'scancode'].includes(k))) {
+            return {
+                rootCauseLayer: 'OS / keyboard layout layer',
+                suggestedFixLayer: 'OS keyboard layout, browser nativeKeymap layer, or Electron keyboard API',
+            };
+        }
+        if (matchedKeywords.some(k => ['browser event', 'dom event', 'native event', 'web api',
+            'chromium', 'electron', 'platform api'].includes(k))) {
+            return {
+                rootCauseLayer: 'Browser / Electron native event layer',
+                suggestedFixLayer: 'Browser API or Electron nativeKeymap',
+            };
+        }
+        if (matchedKeywords.some(k => ['external api', 'third-party api', 'upstream service',
+            'network response', 'server response'].includes(k))) {
+            return {
+                rootCauseLayer: 'Upstream external service / API',
+                suggestedFixLayer: 'The external service or API provider',
+            };
+        }
+        if (matchedKeywords.some(k => ['operating system', 'os layout', 'macos',
+            'windows', 'os event'].includes(k))) {
+            return {
+                rootCauseLayer: 'Operating system layer',
+                suggestedFixLayer: 'OS-level configuration or a platform abstraction layer',
+            };
+        }
+        return {
+            rootCauseLayer: 'Upstream system layer (outside provided codebase)',
+            suggestedFixLayer: 'The upstream layer responsible for producing this input',
+        };
+    })();
+
+    // Confidence: base 0.70, +0.05 per matched keyword (cap 0.95)
+    // Boosted by +0.10 if verification found zero evidence of provided files in rootCause
+    const citationBoost = rootCauseFileRefs.length === 0 ? 0.10 : 0;
+    const confidence = Math.min(0.95, 0.70 + matchedKeywords.length * 0.05 + citationBoost);
+
+    const solvabilityResult = {
+        isLayerBoundary: true,
+        confidence,
+        rootCauseLayer: layerClassification.rootCauseLayer,
+        suggestedFixLayer: layerClassification.suggestedFixLayer,
+        reason:
+            'The buggy input is indistinguishable from valid input at the entry point of the ' +
+            'provided code. The root cause originates in ' + layerClassification.rootCauseLayer +
+            ' — by the time this code receives the event/data, the distinguishing information ' +
+            'has already been lost. No safe fix is possible from within this codebase alone.',
+        message: 'This bug is upstream of the provided files; Unravel cannot safely generate a fix.',
+    };
+
+    // ── Schema validation before returning ──
+    // If the shape is somehow invalid, fall back to needsMoreInfo rather than
+    // returning a malformed result that breaks the UI.
+    const candidateShape = {
+        verdict: LAYER_BOUNDARY_VERDICT,
+        confidence: solvabilityResult.confidence,
+        rootCauseLayer: solvabilityResult.rootCauseLayer,
+        reason: solvabilityResult.reason,
+        suggestedFixLayer: solvabilityResult.suggestedFixLayer,
+    };
+    if (!_validateLayerBoundaryShape(candidateShape)) {
+        console.warn('[Solvability] Schema validation failed — falling back to needsMoreInfo');
+        return NOT_BOUNDARY;
+    }
+
+    return solvabilityResult;
 }
 
 // ═══════════════════════════════════════════════════
@@ -509,6 +750,74 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
         return [...new Set(refs)];
     }
 
+    /**
+     * Extract file:line pairs by scanning text left-to-right.
+     * Associates each line number with the most recently seen filename before it.
+     * Handles formats like:
+     *   "sessionStore.js L8 & L12, useSessionData.js L9-10 & L32"
+     *   "bug9/sessionStore.js line 8 and useSessionData.js line 32"
+     *   "The mutation at sessionStore.js:8 and the read at useSessionData.js:32"
+     *
+     * @param {string} text
+     * @returns {Array<{file: string, line: number}>}
+     */
+    function extractFileLinePairs(text) {
+        if (!text) return [];
+
+        // Build a combined token stream of files and line numbers in order of appearance.
+        // Strategy: find all matches for both patterns, sort by index, then walk left-to-right
+        // assigning each line number to the last file seen before it.
+        const tokens = [];
+
+        // File pattern — capture position and short name
+        const fileRe = /[\w\-./\\]+\.(js|jsx|ts|tsx|json|html|css|py|vue|svelte)\b/gi;
+        let m;
+        while ((m = fileRe.exec(text)) !== null) {
+            tokens.push({ type: 'file', index: m.index, value: m[0].split(/[\\/]/).pop() });
+        }
+
+        // Line number pattern — all common formats
+        const lineRe = /(?:^|[\s,;&—–-])(?:line\s*[:.]?\s*|[Ll])(\d{1,5})\b/g;
+        while ((m = lineRe.exec(text)) !== null) {
+            const num = parseInt(m[1], 10);
+            if (num > 0 && num < 100000) {
+                tokens.push({ type: 'line', index: m.index, value: num });
+            }
+        }
+
+        // Also catch bare :N patterns (e.g. "sessionStore.js:8")
+        const colonRe = /:(\d{1,5})\b/g;
+        while ((m = colonRe.exec(text)) !== null) {
+            const num = parseInt(m[1], 10);
+            if (num > 0 && num < 100000) {
+                tokens.push({ type: 'line', index: m.index, value: num });
+            }
+        }
+
+        // Sort all tokens by their position in the string
+        tokens.sort((a, b) => a.index - b.index);
+
+        // Walk tokens: track current file, emit pair when we see a line number
+        const pairs = [];
+        let currentFile = null;
+        for (const tok of tokens) {
+            if (tok.type === 'file') {
+                currentFile = tok.value;
+            } else if (tok.type === 'line' && currentFile) {
+                pairs.push({ file: currentFile, line: tok.value });
+            }
+        }
+
+        // Deduplicate identical pairs
+        const seen = new Set();
+        return pairs.filter(p => {
+            const key = `${p.file}:${p.line}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
     // Skip verification for explain mode (no claims about bugs)
     // NOTE: Vague evidence strings without file/line references (e.g. "duration mutated
     // inside pause() — confirmed by AST") pass the verifier silently. This is intentional:
@@ -516,87 +825,111 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
     if (mode === 'explain') return { failures, rootCauseRejected, confidencePenalty };
 
     // === Check 1: Evidence array (debug mode) ===
+    // Only checks file references — NOT line numbers.
+    // Evidence strings are narrative ("mutation at line 8 of sessionStore.js") and
+    // models miscount lines in free text constantly. Checking line numbers here
+    // produces false failures on correct analyses. The structured fields (Check 2 codeLocation,
+    // Check 3 rootCause) are where line validation belongs.
     const report = result.report || result; // report may be nested or flat
     const evidenceList = report.evidence || result.evidence;
     if (Array.isArray(evidenceList)) {
         for (const e of evidenceList) {
             if (typeof e !== 'string') continue;
-            const lineRefs = extractLineRefs(e);
             const fileRefs = extractFileRefs(e);
             for (const fileName of fileRefs) {
                 const fileData = findFile(fileName);
                 if (!fileData) {
                     failures.push({ claim: e, reason: `references file "${fileName}" not in provided inputs` });
                     confidencePenalty += 0.2;
-                    continue;
                 }
-                for (const lineNum of lineRefs) {
-                    if (lineNum > fileData.lines.length) {
-                        failures.push({ claim: e, reason: `line ${lineNum} exceeds file length (${fileData.lines.length} lines)` });
-                        confidencePenalty += 0.2;
-                    }
-                }
+                // Line number check intentionally removed — narrative evidence strings
+                // have unreliable line citations. Only codeLocation and rootCause are checked.
             }
         }
     }
 
     // === Check 2: codeLocation ===
+    // Checks file existence AND line numbers, but only pairs each line with its own file.
+    // Uses extractFileLinePairs() to avoid the cross-contamination bug where line 32 from
+    // "useSessionData.js L32" was being checked against sessionStore.js (20 lines).
     const codeLocation = report.codeLocation || result.codeLocation;
     if (codeLocation && typeof codeLocation === 'string') {
+        // File existence check (unpaired)
         const locFileRefs = extractFileRefs(codeLocation);
-        const locLineRefs = extractLineRefs(codeLocation);
         for (const fileName of locFileRefs) {
-            const fileData = findFile(fileName);
-            if (!fileData) {
+            if (!findFile(fileName)) {
                 failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `file "${fileName}" not in inputs` });
                 confidencePenalty += 0.3;
-            } else {
-                for (const lineNum of locLineRefs) {
-                    if (lineNum > fileData.lines.length) {
-                        failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `line ${lineNum} exceeds ${fileData.lines.length}` });
-                        confidencePenalty += 0.3;
-                    }
-                }
+            }
+        }
+        // Line validation — only check each line against its paired file
+        const locPairs = extractFileLinePairs(codeLocation);
+        for (const { file, line } of locPairs) {
+            const fileData = findFile(file);
+            if (!fileData) continue; // Already caught above
+            if (line > fileData.lines.length + 6) {
+                failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `line ${line} in ${file} exceeds file length (${fileData.lines.length})` });
+                confidencePenalty += 0.3;
             }
         }
     }
 
-    // === Check 3: rootCause — hard reject if fabricated ===
+    // === Check 3: rootCause — hard reject if file is fabricated, soft penalty if line is fabricated ===
+    // Uses extractFileLinePairs() so line numbers are only checked against their own file.
+    // Example: "sessionStore.js L8, useSessionData.js L32"
+    //   → pair (sessionStore.js, 8)   checked against sessionStore.js  (20 lines) → OK
+    //   → pair (useSessionData.js, 32) checked against useSessionData.js (20 lines) → fails +10 slack
+    // Without pairing, both 8 and 32 would be checked against sessionStore.js → false failure.
     const rootCause = report.rootCause || result.rootCause;
     if (rootCause && typeof rootCause === 'string') {
         const rcFileRefs = extractFileRefs(rootCause);
-        const rcLineRefs = extractLineRefs(rootCause);
         for (const fileName of rcFileRefs) {
             const fileData = findFile(fileName);
             if (!fileData) {
+                // Hard reject: file doesn't exist at all — clear hallucination
                 failures.push({ claim: `rootCause: ${rootCause.slice(0, 100)}`, reason: `references nonexistent file "${fileName}"` });
                 rootCauseRejected = true;
-            } else {
-                for (const lineNum of rcLineRefs) {
-                    if (lineNum > fileData.lines.length + 2) {
-                        // Allow small slack (+2) since models sometimes miscount by 1-2 lines
-                        failures.push({ claim: `rootCause line ${lineNum}`, reason: `line exceeds file length (${fileData.lines.length})` });
-                        rootCauseRejected = true;
-                    }
-                }
+            }
+        }
+        // Line validation — soft penalty only, each line checked against its own file only
+        const rcPairs = extractFileLinePairs(rootCause);
+        for (const { file, line } of rcPairs) {
+            const fileData = findFile(file);
+            if (!fileData) continue; // Already caught above
+            if (line > fileData.lines.length + 10) {
+                // Soft failure — line is clearly wrong but file exists.
+                // NOT rootCauseRejected: diagnosis may still be correct, model just miscounted.
+                failures.push({ claim: `rootCause: ${file} line ${line}`, reason: `line ${line} exceeds file length (${fileData.lines.length}) by more than 10` });
+                confidencePenalty += 0.15;
             }
         }
     }
 
     // === Check 4: variableStateEdges — cross-check with AST ===
+    // Uses fuzzy matching: LLM often returns 'task' when AST key is 'task.status'.
+    // A match fires if the claimed name equals, starts, or ends with a known AST var.
+    // This is a WARNING only — no confidencePenalty, no rootCauseRejected.
     const varEdges = report.variableStateEdges || result.variableStateEdges;
     if (Array.isArray(varEdges) && astRaw?.mutations) {
         const knownVars = new Set();
         for (const key of Object.keys(astRaw.mutations)) {
-            // Keys are like "varName [filename]" — extract the variable name
+            // Keys are like "varName [filename]" or "obj.prop [filename]"
             const varName = key.split(/\s*\[/)[0].trim();
             knownVars.add(varName);
+            // Also add the root name (before first dot) for fuzzy matching
+            const rootName = varName.split('.')[0];
+            if (rootName !== varName) knownVars.add(rootName);
         }
         for (const vEdge of varEdges) {
-            if (vEdge.variable && !knownVars.has(vEdge.variable)) {
-                // Variable claimed in edges but not found in AST
-                // This could be a non-JS variable, so don't hard reject — just flag
-                failures.push({ claim: `variableStateEdge: ${vEdge.variable}`, reason: 'variable not found in AST mutation chains' });
+            if (!vEdge.variable) continue;
+            const claimed = vEdge.variable.trim();
+            // Fuzzy: exact match OR claimed is a prefix of a known var OR known var is a prefix of claimed
+            const matched = knownVars.has(claimed) ||
+                [...knownVars].some(k => k.startsWith(claimed + '.') || claimed.startsWith(k + '.'));
+            if (!matched) {
+                // Soft warning only — non-JS variables (CSS props, Python attrs) legitimately
+                // won't appear in JS AST mutations. Don't penalize confidence.
+                failures.push({ claim: `variableStateEdge: ${claimed}`, reason: 'variable not found in AST mutation chains (may be non-JS)' });
             }
         }
     }
@@ -616,12 +949,20 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
         }
     }
     // === Check 6: Fix Completeness (Cross-File Call Graph) ===
+    // Flags when a fix modifies a function but omits a co-dependent caller that
+    // would also need updating. Example: changing a shared store function's signature
+    // without updating all callers.
+    //
+    // INTENTIONALLY does NOT fire when the caller is a leaf UI component (*.jsx, *.tsx
+    // with React component naming convention — PascalCase). Fixing a custom hook or
+    // utility correctly does not require mentioning every consumer component in the fix.
+    // That would be a false positive — encapsulation is working as intended.
     const callGraph = crossFileRaw?.callGraph;
     const minimalFix = report.minimalFix || result.minimalFix;
     if (callGraph?.length > 0 && minimalFix && typeof minimalFix === 'string') {
         const fixText = minimalFix.toLowerCase();
-        
-        // A function is "modified" if the fix explicitly mentions the function AND its defining file
+
+        // A function is "modified" if the fix explicitly mentions both the function AND its file
         const modifiedFunctions = new Set();
         for (const edge of callGraph) {
             if (!edge.function || !edge.callee) continue;
@@ -631,23 +972,34 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
             }
         }
 
-        // Now check if any dependent files are missing from the fix
         for (const edge of callGraph) {
-            if (modifiedFunctions.has(edge.function)) {
-                const callerBase = edge.caller.split(/[\\/]/).pop().toLowerCase();
-                if (!fixText.includes(callerBase)) {
-                    failures.push({
-                        claim: `Fix Completeness: ${edge.function}`,
-                        reason: `Fix modifies ${edge.function} in ${edge.callee} but misses updates to caller ${edge.caller}`
-                    });
-                    confidencePenalty += 0.15;
-                    
-                    // Add an explicit warning to the uncertainties block
-                    const uncerts = report.uncertainties || result.uncertainties;
-                    if (Array.isArray(uncerts)) {
-                        uncerts.push(`AST Guard: Fix modifies '${edge.function}' but misses updates to downstream caller '${callerBase}'`);
-                    }
-                }
+            if (!modifiedFunctions.has(edge.function)) continue;
+
+            const callerBase = edge.caller.split(/[\\/]/).pop().toLowerCase();
+            if (fixText.includes(callerBase)) continue; // caller is already mentioned — fine
+
+            // Skip if caller is a React component file (PascalCase filename or .jsx/.tsx extension).
+            // These are leaf consumers — they don't need to be modified when a hook/utility is fixed.
+            const callerFileName = edge.caller.split(/[\\/]/).pop();
+            const isReactComponentFile =
+                /\.(jsx|tsx)$/i.test(callerFileName) ||          // JSX/TSX files are almost always components
+                /^[A-Z]/.test(callerFileName.replace(/\.[^.]+$/, '')); // PascalCase filename
+
+            if (isReactComponentFile) continue;
+
+            // Also skip if the caller is the file being fixed (self-referential call graph edge)
+            const calleeBase = edge.callee.split(/[\\/]/).pop().toLowerCase();
+            if (callerBase === calleeBase) continue;
+
+            failures.push({
+                claim: `Fix Completeness: ${edge.function}`,
+                reason: `Fix modifies ${edge.function} in ${edge.callee} but misses updates to caller ${edge.caller}`
+            });
+            confidencePenalty += 0.15;
+
+            const uncerts = report.uncertainties || result.uncertainties;
+            if (Array.isArray(uncerts)) {
+                uncerts.push(`AST Guard: Fix modifies '${edge.function}' but misses updates to downstream caller '${callerBase}'`);
             }
         }
     }

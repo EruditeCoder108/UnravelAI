@@ -891,8 +891,43 @@ export function buildDynamicSchemaInstruction(sections) {
 }
 
 // ═══════════════════════════════════════════════════
-// PHASE 4A: Runtime Estimation
+// LAYER_BOUNDARY — Solvability verdict schema
+// Returned by orchestrate when the root cause is
+// upstream of all provided files and the bug cannot
+// be fixed from within this codebase.
 // ═══════════════════════════════════════════════════
+
+export const LAYER_BOUNDARY_VERDICT = 'LAYER_BOUNDARY';
+
+/**
+ * Shape returned by orchestrate() when checkSolvability() fires.
+ * App.jsx checks: if (result.verdict === LAYER_BOUNDARY_VERDICT)
+ *
+ * schemaVersion lets consumers gracefully handle future field additions.
+ * Bump the minor version when adding optional fields.
+ * Bump the major version when removing or renaming required fields.
+ *
+ * @typedef {Object} LayerBoundaryResult
+ * @property {'LAYER_BOUNDARY'} verdict
+ * @property {'1.0'} schemaVersion
+ * @property {number}  confidence        - 0–1
+ * @property {string}  rootCauseLayer    - human-readable layer name
+ * @property {string}  reason            - why it cannot be fixed here
+ * @property {string}  suggestedFixLayer - where the fix should actually go
+ * @property {string}  message           - short user-facing summary
+ * @property {string}  [symptom]         - echoed from original result if available
+ * @property {string}  [_mode]           - echoed from orchestrate options
+ * @property {Object}  [_provenance]     - echoed from orchestrate provenance
+ */
+export const LAYER_BOUNDARY_SCHEMA = {
+    schemaVersion:    '1.0',
+    verdict:          LAYER_BOUNDARY_VERDICT,
+    confidence:       0,
+    rootCauseLayer:   '',
+    reason:           '',
+    suggestedFixLayer:'',
+    message:          '',
+};
 
 export function estimateRuntime(fileCount, totalLines, provider, preset) {
     let base = 15; // base seconds

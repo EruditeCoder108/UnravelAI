@@ -186,7 +186,22 @@ async function analyzeCurrentFile(forcedMode) {
         outputChannel.show();
 
         // ── Handle result by mode ──
-        if (mode === 'explain') {
+        if (result?.verdict === 'LAYER_BOUNDARY') {
+            // Solvability check fired — bug is upstream of this codebase
+            outputChannel.appendLine(`\n⚠️ LAYER_BOUNDARY: ${result.rootCauseLayer}`);
+            outputChannel.appendLine(`Reason: ${result.reason}`);
+            outputChannel.appendLine(`Fix location: ${result.suggestedFixLayer}`);
+            outputChannel.appendLine(`Confidence: ${Math.round((result.confidence || 0) * 100)}%`);
+
+            vscode.window.showWarningMessage(
+                `Unravel: Bug is upstream of this codebase — ${result.rootCauseLayer}. Fix must go to: ${result.suggestedFixLayer}`
+            );
+
+            // Show in sidebar — the web app renders a special card for this verdict
+            result._mode = mode;
+            showReportPanel(result, fileName);
+
+        } else if (mode === 'explain') {
             if (result?.summary) {
                 vscode.window.showInformationMessage(`Unravel Explain: Analysis complete. View the report panel.`);
                 showReportPanel(result, fileName);
@@ -227,7 +242,7 @@ async function analyzeCurrentFile(forcedMode) {
                 // Apply VS Code editor overlays (debug mode only)
                 applyDiagnostics(document, report);
                 applyDecorations(editor, report);
-                setReportForHover(report);
+                setReportForHover(report, fileName);
                 showReportPanel(result, fileName);
 
             } else if (result?.needsMoreInfo) {

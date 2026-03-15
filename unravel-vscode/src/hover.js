@@ -12,32 +12,48 @@ let bugLineMap = new Map(); // line (0-indexed) → info
 
 /**
  * Update the stored report data for hover lookups.
+ * @param {object} report
+ * @param {string} [activeFilePath] - The currently active file path (used to filter cross-file evidence)
  */
-function setReportForHover(report) {
+function setReportForHover(report, activeFilePath) {
     currentReport = report;
     bugLineMap.clear();
 
     if (!report) return;
 
-    // Map root cause line
+    const activeFileName = activeFilePath
+        ? activeFilePath.split(/[\\/]/).pop().toLowerCase()
+        : null;
+
+    // Map root cause line — only if codeLocation references the active file (or no file ref at all)
     if (report.codeLocation) {
-        const line = extractLineNumber(report.codeLocation);
-        if (line !== null) {
-            bugLineMap.set(line, {
-                type: 'root',
-                bugType: report.bugType,
-                rootCause: report.rootCause,
-                confidence: report.confidence,
-                fix: report.minimalFix,
-                whyFixWorks: report.whyFixWorks,
-                evidence: report.evidence,
-            });
+        const locLower = (report.codeLocation || '').toLowerCase();
+        const hasFileRef = /[\w\-]+\.(js|jsx|ts|tsx)\b/i.test(report.codeLocation);
+        const belongsToActiveFile = !activeFileName || !hasFileRef || locLower.includes(activeFileName);
+
+        if (belongsToActiveFile) {
+            const line = extractLineNumber(report.codeLocation);
+            if (line !== null) {
+                bugLineMap.set(line, {
+                    type: 'root',
+                    bugType: report.bugType,
+                    rootCause: report.rootCause,
+                    confidence: report.confidence,
+                    fix: report.minimalFix,
+                    whyFixWorks: report.whyFixWorks,
+                    evidence: report.evidence,
+                });
+            }
         }
     }
 
-    // Map evidence lines
+    // Map evidence lines — only evidence that belongs to the active file
     if (Array.isArray(report.evidence)) {
         for (const ev of report.evidence) {
+            const evLower = ev.toLowerCase();
+            const hasFileRef = /[\w\-]+\.(js|jsx|ts|tsx)\b/i.test(ev);
+            if (activeFileName && hasFileRef && !evLower.includes(activeFileName)) continue;
+
             const line = extractLineNumber(ev);
             if (line !== null && !bugLineMap.has(line)) {
                 bugLineMap.set(line, {

@@ -67,10 +67,17 @@ function applyDecorations(editor, report) {
         }
     }
 
-    // Evidence decorations
+    // Evidence decorations — only apply evidence that references the active file
+    // (evidence strings may reference other files; decorating the wrong file is misleading)
+    const activeFileName = document.fileName.split(/[\\/]/).pop().toLowerCase();
     if (Array.isArray(report.evidence)) {
         const seen = new Set();
         for (const ev of report.evidence) {
+            // Skip evidence that explicitly references a different file
+            const evLower = ev.toLowerCase();
+            const hasFileRef = /[\w\-]+\.(js|jsx|ts|tsx)\b/i.test(ev);
+            if (hasFileRef && !evLower.includes(activeFileName)) continue;
+
             const line = extractLineNumber(ev);
             if (line !== null && !seen.has(line)) {
                 seen.add(line);
