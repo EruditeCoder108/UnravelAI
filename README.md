@@ -5,9 +5,9 @@
 <br/>
 
 <div align="center">
-  <video src="https://raw.githubusercontent.com/EruditeCoder108/UnravelAI/main/assets/demo.mp4" width="900" controls muted loop>
-    Your browser does not support the video tag.
-  </video>
+  <a href="https://github.com/EruditeCoder108/UnravelAI/blob/main/assets/demo.mp4?raw=true">
+    <img src="assets/thumbnail.png" alt="Watch the Unravel Demo" width="900" style="border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);"/>
+  </a>
 </div>
 
 <br/>
