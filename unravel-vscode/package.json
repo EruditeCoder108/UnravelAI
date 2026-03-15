@@ -1,9 +1,10 @@
 {
     "name": "unravel-vscode",
-    "displayName": "Unravel — Live Bug Lens",
-    "description": "Deterministic AI debugging with inline bug overlays. Right-click → Debug, Explain, or Security Scan any file.",
+    "displayName": "Unravel — Causal AI Debugger",
+    "description": "Stop letting AI guess. Deterministic AST analysis for exact root causes and zero-hallucination fixes.",
     "version": "0.3.0",
     "publisher": "unravel",
+    "icon": "icon.png",
     "license": "BUSL-1.1",
     "repository": {
         "type": "git",

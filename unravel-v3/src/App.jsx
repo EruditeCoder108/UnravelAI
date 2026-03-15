@@ -1817,7 +1817,7 @@ export default function App() {
                                                         <span style={{ fontSize: 11, color: 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '2px 8px', borderRadius: 'var(--radius-sm)' }}>{ep.type}</span>
                                                     </div>
                                                     <p style={{ color: 'var(--text-primary)', fontSize: 15, lineHeight: 1.7, marginBottom: 8, margin: 0 }}>{ep.description}</p>
-                                                    {ep.file && <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 8 }}>📍 {ep.file}{ep.line ? `:${ep.line}` : ''}</div>}
+                                                    {ep.file && <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}><Search size={14} /> {ep.file}{ep.line ? `:${ep.line}` : ''}</div>}
                                                 </div>
                                             ))}
                                         </SectionBlock>
@@ -1916,7 +1916,10 @@ export default function App() {
                                             <p style={{ color: '#aaa', fontSize: 12, marginBottom: 10, textTransform: 'uppercase', fontFamily: "'JetBrains Mono',monospace" }}>Things that would surprise a developer reading this for the first time</p>
                                             <ul style={{ listStyleType: 'none', padding: 0 }}>
                                                 {report.nonObviousInsights.map((insight, i) => (
-                                                    <li key={i} style={{ color: '#e0e0e0', fontSize: 15, lineHeight: 1.8, padding: '10px 0', borderBottom: '1px solid #222' }}>💡 {insight}</li>
+                                                    <li key={i} style={{ color: '#e0e0e0', fontSize: 15, lineHeight: 1.8, padding: '10px 0', borderBottom: '1px solid #222', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                                                        <Lightbulb size={18} style={{ color: 'var(--accent-yellow)', marginTop: 4, flexShrink: 0 }} />
+                                                        <span>{insight}</span>
+                                                    </li>
                                                 ))}
                                             </ul>
                                         </SectionBlock>
@@ -1927,9 +1930,9 @@ export default function App() {
                                             <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 16 }}>Hidden landmines — things that break when changed</p>
                                             {report.gotchas.map((g, i) => (
                                                 <div key={i} style={{ background: 'var(--surface-base)', borderLeft: '3px solid var(--accent-red)', borderRadius: 'var(--radius-md)', padding: 16, marginBottom: 12, border: '1px solid var(--border-light)' }}>
-                                                    <div style={{ fontSize: 14, color: 'var(--accent-red)', fontWeight: 700, marginBottom: 8 }}>⚠️ {g.title}</div>
+                                                    <div style={{ fontSize: 14, color: 'var(--accent-red)', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}><AlertTriangle size={16} /> {g.title}</div>
                                                     <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.7, marginBottom: 8, margin: 0 }}>{g.description}</p>
-                                                    {g.location && <code style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8, display: 'block' }}>📍 {g.location}</code>}
+                                                    {g.location && <code style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}><Search size={12} /> {g.location}</code>}
                                                 </div>
                                             ))}
                                         </SectionBlock>
@@ -1940,7 +1943,7 @@ export default function App() {
                                             <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 16 }}>Exactly where to go for the most common tasks</p>
                                             {report.onboarding.map((item, i) => (
                                                 <div key={i} style={{ background: 'var(--surface-base)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: 18, marginBottom: 12 }}>
-                                                    <div style={{ fontSize: 15, color: 'var(--accent-cyan)', fontWeight: 700, marginBottom: 10 }}>🎯 {item.task}</div>
+                                                    <div style={{ fontSize: 15, color: 'var(--accent-cyan)', fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}><Zap size={16} /> {item.task}</div>
                                                     <div style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 6 }}><strong style={{ color: 'var(--text-tertiary)' }}>Where:</strong> <code style={{ color: 'var(--text-primary)', background: 'var(--surface-hover)', padding: '2px 6px', borderRadius: '4px' }}>{item.whereToLook}</code></div>
                                                     <div style={{ color: 'var(--text-secondary)', fontSize: 14 }}><strong style={{ color: 'var(--text-tertiary)' }}>Model after:</strong> {item.patternToFollow}</div>
                                                 </div>
@@ -1995,8 +1998,8 @@ export default function App() {
                                                         }}>{v.severity}</span>
                                                     </div>
                                                     <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.6, marginBottom: 8, margin: 0 }}>{v.description}</p>
-                                                    {v.location && <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 8, margin: 0 }}>📍 {v.location}</p>}
-                                                    {v.remediation && <p style={{ color: 'var(--accent-green)', fontSize: 13, marginTop: 10, margin: 0, fontWeight: 600 }}>✅ Fix: {v.remediation}</p>}
+                                                    {v.location && <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 8, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}><Search size={14} /> {v.location}</p>}
+                                                    {v.remediation && <p style={{ color: 'var(--accent-green)', fontSize: 13, marginTop: 10, margin: 0, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><CheckSquare size={14} /> Fix: {v.remediation}</p>}
                                                 </div>
                                             ))}
                                         </SectionBlock>
@@ -2148,7 +2151,7 @@ export default function App() {
                                     {report.timelineEdges?.length > 0 && (
                                         <MermaidChart
                                             chart={buildTimelineMermaid(report.timelineEdges)}
-                                            caption="Execution sequence — 🐛 marks where the bug manifests"
+                                            caption="Execution sequence — highlight marks where the bug manifests"
                                         />
                                     )}
 
