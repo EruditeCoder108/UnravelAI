@@ -4,7 +4,11 @@
 
 <br/>
 
-<video src="assets/demo.mp4" controls="controls" width="900" autoplay loop muted></video>
+<div align="center">
+  <video src="https://github.com/EruditeCoder108/UnravelAI/blob/main/assets/demo.mp4?raw=true" width="900" controls muted loop>
+    Your browser does not support the video tag.
+  </video>
+</div>
 
 <br/>
 
