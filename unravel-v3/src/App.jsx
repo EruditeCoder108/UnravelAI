@@ -10,7 +10,7 @@ import {
 import html2pdf from 'html2pdf.js';
 import {
     PROVIDERS, BUG_TAXONOMY, LEVELS, LANGUAGES,
-    buildRouterPrompt, SECTION_REGISTRY, PRESETS, estimateRuntime,
+    buildRouterPrompt, buildSecondPassRouterPrompt, SECTION_REGISTRY, PRESETS, estimateRuntime,
     callProvider, orchestrate, parseAIJson,
     LAYER_BOUNDARY_VERDICT,
 } from './core/index.js';
@@ -654,11 +654,19 @@ export default function App() {
     // ── Theming System ──
     const [theme, setTheme] = useState('dark');
 
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const [historyList, setHistoryList] = useState([]);
+
     const dirInputRef = useRef(null);
     const githubRepoContext = useRef(null); // Stores { owner, repo, branch, tree } for missing-files callback
+    const abortControllerRef = useRef(null);
 
-    // ── localStorage Persistence ──
+    // ── localStorage & sessionStorage Persistence ──
+    const initStorageOnce = useRef(false);
     useEffect(() => {
+        if (initStorageOnce.current) return;
+        initStorageOnce.current = true;
+
         try {
             const saved = JSON.parse(localStorage.getItem('unravel_prefs') || '{}');
             if (saved.analysisMode) setAnalysisMode(saved.analysisMode);
@@ -667,13 +675,61 @@ export default function App() {
             if (saved.level) setLevel(saved.level);
             if (saved.language) setLanguage(saved.language);
             if (saved.theme) setTheme(saved.theme);
-        } catch { /* ignore corrupt localStorage */ }
+
+            const hist = JSON.parse(localStorage.getItem('unravel_history') || '[]');
+            setHistoryList(Array.isArray(hist) ? hist : []);
+
+            const sess = sessionStorage.getItem('unravel_session');
+            if (sess) {
+                const parsed = JSON.parse(sess);
+                if (parsed.step === 3) {
+                    setStep(2);
+                    setAnalysisError('Analysis was interrupted by a page reload. Please re-run.');
+                } else if (parsed.step > 3) {
+                    if (parsed.report) setReport(parsed.report);
+                    if (parsed.layerBoundary) setLayerBoundary(parsed.layerBoundary);
+                    if (parsed.analysisMode) setAnalysisMode(parsed.analysisMode);
+                    if (parsed.preset) setPreset(parsed.preset);
+                    if (parsed.viewMode) setViewMode(parsed.viewMode);
+                    setStep(parsed.step);
+                }
+            }
+        } catch { /* ignore corrupt storage */ }
         
         // Initial splash screen with dissolve effect
         const exitTimer = setTimeout(() => setIsSplashExiting(true), 4800);
         const finishTimer = setTimeout(() => setIsInitialLoading(false), 5600); // 4.8s + 0.8s dissolve
         return () => { clearTimeout(exitTimer); clearTimeout(finishTimer); };
     }, []);
+
+    // Session save
+    useEffect(() => {
+        if (step > 1 && step !== 3) {
+            sessionStorage.setItem('unravel_session', JSON.stringify({
+                step, report, layerBoundary, analysisMode, preset, viewMode
+            }));
+        } else if (step === 3) {
+            sessionStorage.setItem('unravel_session', JSON.stringify({ step }));
+        } else {
+            sessionStorage.removeItem('unravel_session');
+        }
+    }, [step, report, layerBoundary, analysisMode, preset, viewMode]);
+
+    const saveToHistory = (newReport, boundary, mode, pset) => {
+        setHistoryList(prev => {
+            const entry = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                report: newReport,
+                layerBoundary: boundary,
+                analysisMode: mode,
+                preset: pset
+            };
+            const updated = [entry, ...prev].slice(0, 3);
+            localStorage.setItem('unravel_history', JSON.stringify(updated));
+            return updated;
+        });
+    };
     
     // Apply theme to document root
     useEffect(() => {
@@ -744,16 +800,19 @@ export default function App() {
     };
 
     // ── GitHub: fetch repo tree, Router-select relevant files, download content ──
-    // This is called from executeAnalysis (not from a separate button)
-    // so the symptom (userError) is always available for the Router Agent.
+    // Two-pass approach:
+    //   Pass 1: Show model the directory tree + issue → it selects initial files
+    //   Pass 2: Show model content summaries of fetched files → it requests any
+    //           missing dependencies (e.g. the concrete implementation of an injected service)
+    // This matches the ideal flow: model sees full structure, reasons about what it needs,
+    // fetches only those. The self-heal loop handles further gaps during analysis.
     const fetchGitHubFiles = async (symptom, onProgress) => {
-        // Parse GitHub URL → owner/repo (also detect issue URLs)
         const urlObj = new URL(githubUrl.trim());
         const parts = urlObj.pathname.replace(/^\//, '').replace(/\/$/, '').split('/');
         if (parts.length < 2) throw new Error('URL must be github.com/owner/repo or github.com/owner/repo/issues/123');
         const [owner, repo] = parts;
 
-        // ── Detect GitHub Issue URL: github.com/owner/repo/issues/123 ──
+        // ── Detect GitHub Issue URL ──
         let effectiveSymptom = symptom;
         if (parts.length >= 4 && parts[2] === 'issues' && /^\d+$/.test(parts[3])) {
             const issueNumber = parts[3];
@@ -763,24 +822,19 @@ export default function App() {
                 if (issueRes.ok) {
                     const issueData = await issueRes.json();
                     const issueTitle = issueData.title || '';
-                    const issueBody = (issueData.body || '').slice(0, 3000); // cap to avoid token overflow
+                    const issueBody = (issueData.body || '').slice(0, 3000);
                     effectiveSymptom = `[GitHub Issue #${issueNumber}] ${issueTitle}\n\n${issueBody}`;
-                    // Auto-fill the symptom field in the UI
                     setUserError(effectiveSymptom);
                     console.log(`[ISSUE] Fetched issue #${issueNumber}: ${issueTitle}`);
-                } else {
-                    console.warn(`[ISSUE] Could not fetch issue #${issueNumber}: ${issueRes.status}`);
                 }
             } catch (issueErr) {
                 console.warn('[ISSUE] Failed to fetch issue:', issueErr.message);
             }
         }
 
-        const branch = (parts[2] === 'tree' && parts[3]) ? parts[3] : 'main'; // /tree/branch support
+        const branch = (parts[2] === 'tree' && parts[3]) ? parts[3] : 'main';
 
         onProgress?.('GITHUB: Fetching repository tree...');
-
-        // Fetch the repo tree
         const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
         if (!treeRes.ok) {
             if (treeRes.status === 404) throw new Error('Repo not found. Is it public?');
@@ -788,7 +842,6 @@ export default function App() {
         }
         const treeData = await treeRes.json();
 
-        // Full file tree (minus blacklist) — stored for missing-files lookup
         const blacklist = ['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '__pycache__', 'package-lock.json', 'yarn.lock'];
         const allRepoFiles = (treeData.tree || []).filter(f =>
             f.type === 'blob'
@@ -796,7 +849,6 @@ export default function App() {
             && !blacklist.some(d => f.path.includes(`${d}/`) || f.path === d)
         );
 
-        // Filter to valid source files for the Router Agent
         const validExts = ['.js', '.jsx', '.ts', '.tsx', '.html', '.css', '.json', '.py', '.md', '.vue', '.svelte'];
         const allCandidates = allRepoFiles.filter(f =>
             validExts.some(ext => f.path.endsWith(ext))
@@ -804,23 +856,26 @@ export default function App() {
 
         if (allCandidates.length === 0) throw new Error('No valid source files found in repo.');
 
-        // Store context for onMissingFiles callback
         githubRepoContext.current = { owner, repo, branch, tree: allRepoFiles };
 
-        // ── Router Agent: pick relevant files using the symptom ──
+        // ── Pass 1: Model sees tree structure → selects initial files ──
         let candidates = allCandidates;
+        const allPaths = allCandidates.map(f => `${repo}/${f.path}`);
+
         if (allCandidates.length > 10 && apiKey && provider && model) {
             try {
-                onProgress?.(`ROUTER AGENT: Selecting from ${allCandidates.length} files...`);
-                const allPaths = allCandidates.map(f => `${repo}/${f.path}`);
+                onProgress?.(`ROUTER AGENT: Analyzing ${allCandidates.length} files in repo structure...`);
                 const routerPrompt = buildRouterPrompt(allPaths, effectiveSymptom, analysisMode);
                 const routerRaw = await callProvider({
                     provider, apiKey, model,
-                    systemPrompt: 'You are a file routing agent. Return JSON only.',
+                    systemPrompt: 'You are a file routing agent for a code analysis tool. Return JSON only.',
                     userPrompt: routerPrompt,
                     useSchema: false,
                 });
                 const routerData = parseAIJson(routerRaw);
+                if (routerData?.reasoning) {
+                    console.log(`[ROUTER] Reasoning: ${routerData.reasoning}`);
+                }
                 const selectedPaths = routerData?.filesToRead || [];
                 if (selectedPaths.length > 0) {
                     const selectedSet = new Set(selectedPaths.map(p =>
@@ -833,35 +888,111 @@ export default function App() {
                     }
                 }
             } catch (routerErr) {
-                console.warn('[ROUTER] Failed, falling back to all candidates:', routerErr.message);
+                console.warn('[ROUTER] Pass 1 failed, falling back to all candidates:', routerErr.message);
             }
         }
 
-        // Cap at 50 files max
-        candidates = candidates.slice(0, 50);
-        onProgress?.(`GITHUB: Downloading ${candidates.length} files...`);
+        // Cap pass 1 at 20 files — pass 2 can add more
+        candidates = candidates.slice(0, 20);
+        onProgress?.(`GITHUB: Downloading ${candidates.length} files (pass 1)...`);
 
-        // Fetch file contents in parallel (batches of 10)
-        const fetched = [];
-        for (let i = 0; i < candidates.length; i += 10) {
-            const batch = candidates.slice(i, i + 10);
-            const results = await Promise.all(batch.map(async (f) => {
-                try {
-                    const rawRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${f.path}`);
-                    if (!rawRes.ok) return null;
-                    const content = await rawRes.text();
-                    return { name: `${repo}/${f.path}`, content, webkitRelativePath: `${repo}/${f.path}` };
-                } catch { return null; }
-            }));
-            fetched.push(...results.filter(Boolean));
+        // ── Helper: download a batch of file entries ──
+        const downloadFiles = async (entries) => {
+            const results = [];
+            for (let i = 0; i < entries.length; i += 10) {
+                const batch = entries.slice(i, i + 10);
+                const batchResults = await Promise.all(batch.map(async (f) => {
+                    try {
+                        const rawRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${f.path}`);
+                        if (!rawRes.ok) return null;
+                        const content = await rawRes.text();
+                        return { name: `${repo}/${f.path}`, content, path: f.path };
+                    } catch { return null; }
+                }));
+                results.push(...batchResults.filter(Boolean));
+            }
+            return results;
+        };
+
+        const fetched = await downloadFiles(candidates);
+        if (fetched.length === 0) throw new Error('All file downloads failed.');
+
+        // ── Pass 2: Show content summaries → model requests missing deps ──
+        // Only run if we have an API key and the repo is large enough to warrant it
+        // (small repos don't need two passes)
+        if (allCandidates.length > 50 && apiKey && provider && model && fetched.length > 0) {
+            try {
+                onProgress?.('ROUTER AGENT: Checking for missing dependencies...');
+
+                // Build content summaries: filename + first 8 lines
+                const summaries = fetched.map(f => {
+                    const lines = f.content.split('\n').slice(0, 8).join('\n');
+                    return `=== ${f.name} ===\n${lines}`;
+                });
+
+                // Remaining paths not yet fetched
+                const fetchedPaths = new Set(fetched.map(f => f.path));
+                const remainingPaths = allCandidates
+                    .filter(f => !fetchedPaths.has(f.path))
+                    .map(f => `${repo}/${f.path}`);
+
+                const secondPassPrompt = buildSecondPassRouterPrompt(
+                    summaries,
+                    remainingPaths,
+                    effectiveSymptom
+                );
+
+                const pass2Raw = await callProvider({
+                    provider, apiKey, model,
+                    systemPrompt: 'You are a dependency resolver for a code analysis tool. Return JSON only.',
+                    userPrompt: secondPassPrompt,
+                    useSchema: false,
+                });
+
+                const pass2Data = parseAIJson(pass2Raw);
+                const additionalPaths = pass2Data?.additionalFiles || [];
+
+                if (additionalPaths.length > 0) {
+                    if (pass2Data?.reasoning) {
+                        console.log(`[ROUTER] Pass 2 reasoning: ${pass2Data.reasoning}`);
+                    }
+
+                    // Resolve additional paths to tree entries
+                    const additionalEntries = [];
+                    for (const reqPath of additionalPaths.slice(0, 8)) {
+                        const cleanPath = reqPath.startsWith(`${repo}/`)
+                            ? reqPath.slice(repo.length + 1)
+                            : reqPath;
+                        const entry = allCandidates.find(f =>
+                            f.path === cleanPath ||
+                            f.path.endsWith('/' + cleanPath.split('/').pop()) ||
+                            f.path === cleanPath.split('/').pop()
+                        );
+                        if (entry && !fetchedPaths.has(entry.path)) {
+                            additionalEntries.push(entry);
+                        }
+                    }
+
+                    if (additionalEntries.length > 0) {
+                        onProgress?.(`ROUTER AGENT: Fetching ${additionalEntries.length} additional dependency files...`);
+                        const additionalFetched = await downloadFiles(additionalEntries);
+                        fetched.push(...additionalFetched);
+                        console.log(`[ROUTER] Pass 2 added ${additionalFetched.length} files. Total: ${fetched.length}`);
+                    }
+                } else {
+                    console.log('[ROUTER] Pass 2: no additional files needed');
+                }
+            } catch (pass2Err) {
+                console.warn('[ROUTER] Pass 2 failed, proceeding with pass 1 files:', pass2Err.message);
+            }
         }
 
-        if (fetched.length === 0) throw new Error('All file downloads failed.');
+        onProgress?.(`GITHUB: ${fetched.length} files ready for analysis.`);
 
         // Convert to File-like objects and update state for UI display
         const fileObjects = fetched.map(f => ({
             name: f.name,
-            webkitRelativePath: f.webkitRelativePath,
+            webkitRelativePath: f.name,
             size: f.content.length,
             _content: f.content,
             text: () => Promise.resolve(f.content),
@@ -894,6 +1025,9 @@ export default function App() {
         setStep(3);
         setProgressStages([]);
         if (!resumeWithExtra) { setViewMode(null); setMissingFileRequest(null); }
+
+        abortControllerRef.current = new AbortController();
+        const signal = abortControllerRef.current.signal;
 
         try {
             let codeFiles = [];
@@ -964,6 +1098,8 @@ export default function App() {
                 mode: analysisMode,
                 preset,
                 outputSections,
+                sourceMode: inputType,   // 'github' | 'upload' | 'paste'
+                signal,
                 onProgress: (msg) => {
                     // Handle both string and structured progress
                     if (typeof msg === 'string') {
@@ -1034,10 +1170,15 @@ export default function App() {
                             console.log(`[SELF-HEAL] Fetched ${additional.length}/${filesNeeded.length} additional files`);
                             return additional; // Orchestrator will recursively re-run
                         }
-                        // If no files could be fetched, fall through to manual UI
+
+                        // File not found in repo tree — it genuinely doesn't exist here.
+                        // Return null so orchestrate Phase 6 can render the partial analysis
+                        // with a _missingImplementation warning. Never show paste UI in GitHub mode.
+                        console.log('[SELF-HEAL] File not found in GitHub repo tree — falling back to partial analysis');
+                        return null;
                     }
 
-                    // Non-GitHub / fallback: show manual paste UI
+                    // Upload/paste mode only: show manual paste UI
                     setMissingFileRequest(request);
                     setAdditionalFiles(filesNeeded.map(f => ({ name: f, content: '' })));
                     setStep(3.5);
@@ -1046,39 +1187,58 @@ export default function App() {
             });
 
             // If orchestrate returned with a report, show it
-            // Handle debug report shape (nested or flat)
             if (result?.verdict === LAYER_BOUNDARY_VERDICT) {
-                // Solvability check fired — root cause is upstream of this codebase.
-                // Defensive: if a report also exists (shouldn't happen but guard anyway),
-                // prefer the report and log the discrepancy.
                 if (result?.report || result?.bugType || result?.rootCause) {
                     console.warn('[App] LAYER_BOUNDARY verdict present alongside report data — preferring report');
-                    setReport(result.report || result);
+                    const finalizeReport = result.report || result;
+                    setReport(finalizeReport);
+                    saveToHistory(finalizeReport, null, analysisMode, preset);
                     setViewMode('all');
                     setStep(5);
                 } else {
                     setLayerBoundary(result);
+                    saveToHistory(null, result, analysisMode, preset);
                     setStep(5);
                 }
             } else if (analysisMode === 'explain' || analysisMode === 'security') {
-                // Explain/Security results are directly the output
                 setReport(result);
+                saveToHistory(result, null, analysisMode, preset);
                 setViewMode('all');
                 setStep(5);
             } else if (result?.report) {
                 setReport(result.report);
+                saveToHistory(result.report, null, analysisMode, preset);
                 setViewMode('all');
                 setStep(5);
             } else if (result?.bugType || result?.rootCause) {
-                // Model returned report fields at top level instead of nested
                 setReport(result);
+                saveToHistory(result, null, analysisMode, preset);
                 setViewMode('all');
+                setStep(5);
+            } else if (result?._missingImplementation) {
+                // GitHub mode: model returned needsMoreInfo:true with no report
+                // and the implementation file wasn't found in the repo tree.
+                // Reuse the layer boundary card to communicate this clearly.
+                setLayerBoundary({
+                    verdict: LAYER_BOUNDARY_VERDICT,
+                    reason: result._missingImplementation.reason,
+                    rootCauseLayer: `Missing: ${result._missingImplementation.filesNeeded?.join(', ') || 'implementation file'}`,
+                    suggestedFixLayer: 'Locate the implementation file — it may be in a private or external repository',
+                    confidence: 0,
+                    _isMissingImpl: true,
+                });
                 setStep(5);
             } else if (!result?.needsMoreInfo) {
                 throw new Error('Unexpected engine response format. The model returned data we could not display.');
             }
 
         } catch (err) {
+            if (err.name === 'AbortError') {
+                console.log('Analysis was terminated by user.');
+                setAnalysisError('Analysis terminated.');
+                setStep(2);
+                return;
+            }
             console.error('Engine Error:', err);
             setAnalysisError(err.message);
             setStep(2);
@@ -1088,8 +1248,19 @@ export default function App() {
     };
 
     const reset = () => {
+        sessionStorage.removeItem('unravel_session');
         setStep(1); setReport(null); setLayerBoundary(null); setMissingFileRequest(null);
         setAdditionalFiles([]); setAnalysisError(''); setViewMode(null);
+    };
+
+    const loadHistoryEntry = (entry) => {
+        setReport(entry.report);
+        setLayerBoundary(entry.layerBoundary);
+        setAnalysisMode(entry.analysisMode);
+        setPreset(entry.preset);
+        setViewMode('all');
+        setStep(5);
+        setHistoryOpen(false);
     };
 
     const canExecute = apiKey.trim() && (
@@ -1166,6 +1337,11 @@ export default function App() {
                     </div>
                     
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        {/* History Button */}
+                        <button onClick={() => setHistoryOpen(true)} className="matte-button" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'transparent', border: '1px solid var(--border-light)' }}>
+                            <Clock size={14} /> <span className="hide-on-mobile" style={{ fontSize: 13, fontWeight: 500 }}>History</span>
+                        </button>
+
                         {/* Theme Toggle */}
                         <div style={{ display: 'flex', background: 'var(--surface-solid)', padding: 4, borderRadius: 'var(--radius-full)', border: '1px solid var(--border-light)' }}>
                             <button onClick={() => setTheme('light')} style={{ padding: 6, borderRadius: 'var(--radius-full)', background: theme === 'light' ? 'var(--surface-hover)' : 'transparent', color: theme === 'light' ? 'var(--text-primary)' : 'var(--text-tertiary)', border: 'none' }}>
@@ -1179,10 +1355,63 @@ export default function App() {
                             </button>
                         </div>
 
-                        {step > 1 && <button className="matte-button" onClick={reset}>← Reset</button>}
+                        {step > 1 && <button className="matte-button primary" onClick={reset}>← Reset</button>}
                     </div>
                 </div>
             </header>
+
+            {/* History Drawer Overlay */}
+            {historyOpen && (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end' }} onClick={() => setHistoryOpen(false)}>
+                    <div style={{ width: 400, maxWidth: '90vw', background: 'var(--surface-base)', borderLeft: '1px solid var(--border-light)', height: '100%', display: 'flex', flexDirection: 'column', animation: 'slideInRight 0.3s ease-out' }} onClick={e => e.stopPropagation()} className="animate-in">
+                        <div style={{ padding: 24, borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)', fontWeight: 600, fontSize: 18 }}>
+                                <Clock size={20} className="text-blue" />
+                                Analysis History
+                            </div>
+                            <button onClick={() => setHistoryOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}><X size={20} /></button>
+                        </div>
+                        <div style={{ padding: 24, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {historyList.length === 0 ? (
+                                <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', marginTop: 40 }}>
+                                    <Clock size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
+                                    <div>No recent analyzes found.</div>
+                                    <div style={{ fontSize: 13, marginTop: 4 }}>Completed analyses will appear here.</div>
+                                </div>
+                            ) : (
+                                historyList.map(entry => (
+                                    <div key={entry.id} className="glass-panel hover-card" style={{ padding: 16, cursor: 'pointer', transition: 'all 0.2s' }} onClick={() => loadHistoryEntry(entry)}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                                            <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 15 }}>
+                                                {entry.analysisMode === 'debug' ? 'Debug Analysis' : entry.analysisMode === 'explain' ? 'Code Explanation' : 'Security Audit'}
+                                            </div>
+                                            <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                                                {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                        </div>
+                                        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                            {entry.report?.bugType ? `${entry.report.bugType}: ${entry.report.rootCause || 'Completed issue analysis'}` : entry.layerBoundary ? `Layer Boundary: ${entry.layerBoundary.reason}` : `Completed ${entry.preset} scan`}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: 'var(--surface-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)' }}>
+                                                Preset: {entry.preset}
+                                            </span>
+                                            {entry.report?.confidence && (
+                                                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-blue)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                                                    {displayConfidence(entry.report.confidence)}% Confidence
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <div style={{ padding: 16, borderTop: '1px solid var(--border-light)', fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                            Stores your last 3 analysis results locally.
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <main style={{ ...S.wrap, paddingTop: 48, paddingBottom: 40, position: 'relative', zIndex: 10 }}>
 
@@ -1241,6 +1470,7 @@ export default function App() {
                                         <Shield size={14} />
                                         Stored locally in browser localStorage. Never transmitted elsewhere.
                                     </div>
+
                                 </div>
                             </div>
                         </div>
@@ -1446,6 +1676,34 @@ export default function App() {
                                                 </button>
                                             ))}
                                         </div>
+
+                                        {/* Preset description callout — Option 3 */}
+                                        {PRESETS[preset] && (
+                                            <div className="animate-fade-in" style={{
+                                                marginTop: 12,
+                                                padding: '12px 16px',
+                                                borderLeft: '3px solid var(--accent-green)',
+                                                background: 'var(--accent-green)0D',
+                                                borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 12,
+                                            }}>
+                                                <div>
+                                                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-green)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
+                                                        {PRESETS[preset].label} Selected
+                                                    </div>
+                                                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                                        {PRESETS[preset].description}
+                                                        {preset !== 'custom' && (
+                                                            <span style={{ marginLeft: 8, color: 'var(--text-tertiary)' }}>
+                                                                · {PRESETS[preset].sections.length} output sections
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -1508,7 +1766,7 @@ export default function App() {
                             {(() => {
                                 const fileCount = inputType === 'upload' ? directoryFiles.length : inputType === 'paste' ? pastedFiles.filter(f => f.content.trim()).length : 1;
                                 const totalLines = inputType === 'paste' ? pastedFiles.reduce((sum, f) => sum + (f.content.match(/\n/g) || []).length, 0) : fileCount * 80;
-                                const est = estimateRuntime(fileCount, totalLines, provider, preset);
+                                const est = estimateRuntime(fileCount, totalLines, provider, preset, inputType, analysisMode);
                                 return (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 16 }}>
                                         <button className="matte-button primary" style={{ padding: '20px 48px', fontSize: 18, borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: 400, display: 'flex', gap: 12 }}
@@ -1517,7 +1775,7 @@ export default function App() {
                                             <Zap size={22} />
                                         </button>
                                         <div style={{ display: 'flex', justifyContent: 'center', gap: 16, color: 'var(--text-tertiary)', fontSize: 13, marginTop: 16 }}>
-                                            {canExecute && <span>Est. pipeline runtime: {est.min}-{est.max}s</span>}
+                                            {canExecute && <span>Est. runtime: <strong style={{ color: 'var(--text-secondary)' }}>{est}</strong></span>}
                                             <span style={{ opacity: 0.5 }}>•</span>
                                             <span>{analysisMode.toUpperCase()} | {prov?.models[Object.keys(prov.models).find(k => prov.models[k].id === model)]?.label || model}</span>
                                         </div>
@@ -1539,34 +1797,110 @@ export default function App() {
                             {analysisMode.toUpperCase()} mode • {PRESETS[preset]?.label || preset}
                         </p>
 
-                        {/* Structured Progress Bar */}
-                        <div className="glass-panel" style={{ width: '100%', maxWidth: 540, padding: 24, textAlign: 'left' }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 16, letterSpacing: 1 }}>Pipeline Progress</div>
-                            <div style={{ borderTop: '1px solid var(--border-light)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                {['input', 'ast', 'engine', 'parse', 'complete'].map(stageId => {
-                                    const stg = progressStages.find(s => s.stage === stageId);
-                                    const labels = { input: 'Input Validation', ast: 'AST Pre-Analysis', engine: 'AI Engine', parse: 'Parse Response', complete: 'Complete' };
-                                    const isActive = stg && !stg.complete;
-                                    const isDone = stg && stg.complete;
-                                    return (
-                                        <div key={stageId} style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 14 }}>
-                                            <span style={{ width: 24, display: 'flex', justifyContent: 'center' }}>
-                                                {isDone ? <CheckSquare size={16} color="var(--accent-green)" /> : isActive ? <Loader2 size={16} className="animate-spin" style={{ color: 'var(--accent-cyan)' }} /> : <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--border-heavy)' }} />}
-                                            </span>
-                                            <span style={{ flex: 1, color: isDone ? 'var(--text-tertiary)' : isActive ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: isActive ? 600 : 400 }}>
-                                                {labels[stageId] || stageId}
-                                            </span>
-                                            {stg && <span style={{ color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 500 }}>{stg.elapsed}s</span>}
+                        {/* Horizontal Progress Bar */}
+                        <div className="glass-panel" style={{ width: '100%', maxWidth: 640, padding: 32, textAlign: 'left', position: 'relative', overflow: 'hidden' }}>
+                            {/* Animated glowing background */}
+                            <div style={{ position: 'absolute', inset: 0, opacity: 0.05, background: 'linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-purple), transparent)', backgroundSize: '200% 100%', animation: 'shimmer 3s linear infinite' }} />
+                            
+                            {(() => {
+                                const orderedStages = ['input', 'ast', 'engine', 'parse', 'complete'];
+                                const stageLabels = { input: 'Syntax Analysis', ast: 'AST Construction', engine: 'AI Inference', parse: 'Structuring', complete: 'Finalize' };
+                                
+                                // Determine progress percentage based on completed stages
+                                let currentStageIdx = 0;
+                                for (let i = orderedStages.length - 1; i >= 0; i--) {
+                                    const stg = progressStages.find(s => s.stage === orderedStages[i]);
+                                    if (stg && (stg.complete || i === 0)) {
+                                        currentStageIdx = i;
+                                        break;
+                                    }
+                                }
+                                
+                                // Interpolate progress 0-100%
+                                // Each completed stage gives a chunk. The active stage adds a partial chunk to make it feel alive.
+                                const chunk = 100 / (orderedStages.length - 1);
+                                const progressPct = Math.min(100, (currentStageIdx * chunk) + (chunk * 0.4));
+                                
+                                // Dynamic bar color based on progress (purple -> cyan -> green)
+                                const activeColor = currentStageIdx >= 3 ? 'var(--accent-green)' : currentStageIdx >= 1 ? 'var(--accent-cyan)' : 'var(--accent-purple)';
+
+                                return (
+                                    <>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, position: 'relative' }}>
+                                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <Loader2 size={16} className="animate-spin" style={{ color: activeColor }} />
+                                                {loadingStage || 'Initializing analysis pipeline...'}
+                                            </div>
+                                            <div style={{ fontSize: 12, fontWeight: 600, color: activeColor }}>
+                                                {Math.round(progressPct)}%
+                                            </div>
                                         </div>
-                                    );
-                                })}
+
+                                        {/* The Progress Bar Container */}
+                                        <div style={{ height: 8, background: 'var(--surface-hover)', borderRadius: 4, overflow: 'hidden', position: 'relative', marginBottom: 24 }}>
+                                            {/* Fill line */}
+                                            <div style={{ 
+                                                position: 'absolute', top: 0, left: 0, bottom: 0, 
+                                                width: `${progressPct}%`, 
+                                                background: activeColor,
+                                                transition: 'width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 1s ease',
+                                                boxShadow: `0 0 12px ${activeColor}88`
+                                            }} />
+                                        </div>
+
+                                        {/* Stage Checkpoints (Dots & Labels) */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative' }}>
+                                            {orderedStages.map((stageId, i) => {
+                                                const isActive = currentStageIdx === i;
+                                                const isDone = currentStageIdx > i;
+                                                const color = isDone ? 'var(--accent-green)' : isActive ? activeColor : 'var(--text-tertiary)';
+                                                
+                                                return (
+                                                    <div key={stageId} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 80 }}>
+                                                        <div style={{ 
+                                                            width: 12, height: 12, borderRadius: '50%', 
+                                                            background: isDone ? color : 'var(--surface-base)',
+                                                            border: `2px solid ${color}`,
+                                                            marginBottom: 8,
+                                                            transition: 'all 0.5s ease',
+                                                            boxShadow: isActive ? `0 0 8px ${color}` : 'none'
+                                                        }}>
+                                                            {isDone && <Check size={8} color="var(--surface-base)" style={{ margin: '0 auto', display: 'block', marginTop: 0 }} />}
+                                                        </div>
+                                                        <div style={{ 
+                                                            fontSize: 10, 
+                                                            fontWeight: isActive ? 700 : 500,
+                                                            color: isActive ? 'var(--text-primary)' : isDone ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+                                                            textTransform: 'uppercase',
+                                                            letterSpacing: 0.5,
+                                                            textAlign: 'center',
+                                                            transition: 'color 0.5s ease'
+                                                        }}>
+                                                            {stageLabels[stageId]}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </div>
+
+                        {/* Terminate Analysis Button */}
+                        <div style={{ marginTop: 24, width: '100%', maxWidth: 640, padding: '16px 24px', background: 'rgba(239, 68, 68, 0.05)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 14 }}>Analysis running...</div>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: 13, marginTop: 2 }}>Terminate if you want to abort and change settings.</div>
                             </div>
-                            {/* Current text status */}
-                            <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 16, paddingTop: 16 }}>
-                                <p style={{ color: 'var(--accent-cyan)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontWeight: 500 }}>
-                                    <Loader2 size={14} className="animate-spin" /> {loadingStage || 'Initializing...'}
-                                </p>
-                            </div>
+                            <button 
+                                onClick={() => abortControllerRef.current?.abort()}
+                                style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '8px 18px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontWeight: 600, fontSize: 14, transition: 'all 0.2s', whiteSpace: 'nowrap' }}
+                                onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
+                                onMouseOut={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+                            >
+                                Terminate Analysis
+                            </button>
                         </div>
                     </div>
                 )}
@@ -1613,14 +1947,16 @@ export default function App() {
                             <div>
                                 <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: 11, background: 'var(--accent-orange)22', color: 'var(--accent-orange)', border: '1px solid var(--accent-orange)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>
-                                        UPSTREAM ISSUE
+                                        {layerBoundary._isMissingImpl ? 'IMPLEMENTATION NOT FOUND' : 'UPSTREAM ISSUE'}
                                     </span>
-                                    <span style={{ fontSize: 11, background: 'var(--surface-base)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
-                                        CFD: {Math.round((layerBoundary.confidence || 0) * 100)}%
-                                    </span>
+                                    {!layerBoundary._isMissingImpl && (
+                                        <span style={{ fontSize: 11, background: 'var(--surface-base)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
+                                            CFD: {Math.round((layerBoundary.confidence || 0) * 100)}%
+                                        </span>
+                                    )}
                                 </div>
                                 <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
-                                    Fix Impossible Here
+                                    {layerBoundary._isMissingImpl ? 'No Executable Code Found' : 'Fix Impossible Here'}
                                 </h2>
                             </div>
                             <button className="matte-button" onClick={reset}>← New Analysis</button>
@@ -1631,7 +1967,7 @@ export default function App() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                                 <AlertTriangle size={24} color="var(--accent-orange)" />
                                 <span style={{ fontSize: 13, color: 'var(--accent-orange)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>
-                                    Layer Boundary Detected
+                                    {layerBoundary._isMissingImpl ? 'Implementation Not Found in Repository' : 'Layer Boundary Detected'}
                                 </span>
                             </div>
                             <p style={{ color: 'var(--text-secondary)', fontSize: 16, lineHeight: 1.8, margin: 0 }}>
@@ -1651,27 +1987,43 @@ export default function App() {
                             </div>
                         </div>
 
-                        {/* Visual layer stack */}
-                        <div className="glass-panel" style={{ padding: 32, marginBottom: 24 }}>
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 24, letterSpacing: 1 }}>Call Stack — Where Information Was Lost</div>
-                            {[
-                                { label: layerBoundary.rootCauseLayer, isBug: true },
-                                { label: 'Browser / Runtime Event System', isBug: false },
-                                { label: 'Your Codebase (provided files)', isBug: false, isHere: true },
-                            ].map((layer, i) => (
-                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: i < 2 ? 0 : 0 }}>
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                        <div style={{ width: 14, height: 14, borderRadius: '50%', background: layer.isBug ? 'var(--accent-red)' : layer.isHere ? 'var(--accent-green)' : 'var(--text-tertiary)', border: `2px solid ${layer.isBug ? 'var(--accent-red)55' : layer.isHere ? 'var(--accent-green)55' : 'transparent'}` }} />
-                                        {i < 2 && <div style={{ width: 2, height: 32, background: 'var(--border-heavy)', margin: '4px 0' }} />}
+                        {/* Visual layer stack — or router checklist for missing-impl */}
+                        {layerBoundary._isMissingImpl ? (
+                            <div className="glass-panel" style={{ padding: 32, marginBottom: 24 }}>
+                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 24, letterSpacing: 1 }}>What the Router Found</div>
+                                {[
+                                    { label: 'Repository tree fetched and searched', ok: true },
+                                    { label: 'Pass 1 + Pass 2 router ran — candidate files selected', ok: true },
+                                    { label: 'Implementation file not present in repository', ok: false },
+                                ].map((item, i) => (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+                                        <div style={{ width: 14, height: 14, borderRadius: '50%', flexShrink: 0, background: item.ok ? 'var(--accent-green)' : 'var(--accent-red)', border: `2px solid ${item.ok ? 'var(--accent-green)55' : 'var(--accent-red)55'}` }} />
+                                        <div style={{ fontSize: 14, color: item.ok ? 'var(--text-secondary)' : 'var(--accent-red)', fontWeight: item.ok ? 400 : 600 }}>{item.label}</div>
                                     </div>
-                                    <div style={{ fontSize: 14, fontWeight: 500, color: layer.isBug ? 'var(--accent-red)' : layer.isHere ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
-                                        {layer.label}
-                                        {layer.isBug && <span style={{ marginLeft: 12, fontSize: 10, fontWeight: 700, background: 'var(--accent-red)22', color: 'var(--accent-red)', borderRadius: 'var(--radius-sm)', padding: '4px 8px' }}>BUG ORIGIN</span>}
-                                        {layer.isHere && <span style={{ marginLeft: 12, fontSize: 10, fontWeight: 700, background: 'var(--accent-green)22', color: 'var(--accent-green)', borderRadius: 'var(--radius-sm)', padding: '4px 8px' }}>ANALYSIS SCOPE</span>}
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="glass-panel" style={{ padding: 32, marginBottom: 24 }}>
+                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 24, letterSpacing: 1 }}>Call Stack — Where Information Was Lost</div>
+                                {[
+                                    { label: layerBoundary.rootCauseLayer, isBug: true },
+                                    { label: 'Browser / Runtime Event System', isBug: false },
+                                    { label: 'Your Codebase (provided files)', isBug: false, isHere: true },
+                                ].map((layer, i) => (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: i < 2 ? 0 : 0 }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                            <div style={{ width: 14, height: 14, borderRadius: '50%', background: layer.isBug ? 'var(--accent-red)' : layer.isHere ? 'var(--accent-green)' : 'var(--text-tertiary)', border: `2px solid ${layer.isBug ? 'var(--accent-red)55' : layer.isHere ? 'var(--accent-green)55' : 'transparent'}` }} />
+                                            {i < 2 && <div style={{ width: 2, height: 32, background: 'var(--border-heavy)', margin: '4px 0' }} />}
+                                        </div>
+                                        <div style={{ fontSize: 14, fontWeight: 500, color: layer.isBug ? 'var(--accent-red)' : layer.isHere ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
+                                            {layer.label}
+                                            {layer.isBug && <span style={{ marginLeft: 12, fontSize: 10, fontWeight: 700, background: 'var(--accent-red)22', color: 'var(--accent-red)', borderRadius: 'var(--radius-sm)', padding: '4px 8px' }}>BUG ORIGIN</span>}
+                                            {layer.isHere && <span style={{ marginLeft: 12, fontSize: 10, fontWeight: 700, background: 'var(--accent-green)22', color: 'var(--accent-green)', borderRadius: 'var(--radius-sm)', padding: '4px 8px' }}>ANALYSIS SCOPE</span>}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
 
                         {/* What Unravel found (symptom) */}
                         {layerBoundary.symptom && (
@@ -1697,7 +2049,18 @@ export default function App() {
                             <button
                                 className="matte-button" style={{ border: '1px solid var(--accent-orange)', color: 'var(--accent-orange)' }}
                                 onClick={() => {
-                                    const issueBody = [
+                                    const issueBody = layerBoundary._isMissingImpl ? [
+                                        `## Missing Implementation — Cannot Analyze`,
+                                        ``,
+                                        `**Reason:** ${layerBoundary.reason}`,
+                                        `**Missing file(s):** ${layerBoundary.rootCauseLayer?.replace('Missing: ', '')}`,
+                                        ``,
+                                        `### What was searched`,
+                                        `Repository tree was fetched and both router passes ran. The implementation file was not found in the public repository.`,
+                                        ``,
+                                        `### Suggestion`,
+                                        layerBoundary.suggestedFixLayer,
+                                    ].join('\n') : [
                                         `## Upstream Bug Report`,
                                         ``,
                                         `**Root Cause Layer:** ${layerBoundary.rootCauseLayer}`,
@@ -1724,7 +2087,7 @@ export default function App() {
                                     });
                                 }}
                             >
-                                <Copy size={16} /> Copy Upstream Issue Template
+                                <Copy size={16} /> {layerBoundary._isMissingImpl ? 'Copy Analysis Summary' : 'Copy Upstream Issue Template'}
                             </button>
                         </div>
                     </div>
@@ -1742,7 +2105,9 @@ export default function App() {
                                             {analysisMode === 'debug' ? (bugMeta?.label || report.bugType || 'DEBUG') : analysisMode === 'explain' ? 'EXPLAIN' : 'SECURITY AUDIT'}
                                         </span>
                                         {report.confidence != null && (
-                                            <span style={{ fontSize: 11, background: 'var(--surface-base)', color: 'var(--accent-green)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>CFD: {displayConfidence(report.confidence)}%</span>
+                                            <span style={{ fontSize: 11, background: 'var(--surface-base)', color: report._missingImplementation ? 'var(--text-tertiary)' : 'var(--accent-green)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
+                                                CFD: {report._missingImplementation ? '—' : `${displayConfidence(report.confidence)}%`}
+                                            </span>
                                         )}
                                     </div>
                                     <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
@@ -2225,6 +2590,36 @@ export default function App() {
                                             </pre>
                                         </div>
                                     )}
+
+                                    {/* Missing Implementation Warning — shown when GitHub self-heal couldn't find the file */}
+                                    {report._missingImplementation && (
+                                        <div className="glass-panel no-print" style={{
+                                            borderLeft: '4px solid var(--accent-orange)',
+                                            padding: 24,
+                                            marginBottom: 24,
+                                            display: 'flex',
+                                            alignItems: 'flex-start',
+                                            gap: 16,
+                                        }}>
+                                            <AlertTriangle size={20} color="var(--accent-orange)" style={{ flexShrink: 0, marginTop: 2 }} />
+                                            <div>
+                                                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--accent-orange)', marginBottom: 6 }}>
+                                                    Implementation Not Found in Repository
+                                                </div>
+                                                <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.6, margin: '0 0 8px 0' }}>
+                                                    {report._missingImplementation.reason}
+                                                </p>
+                                                {report._missingImplementation.filesNeeded?.length > 0 && (
+                                                    <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+                                                        Missing: {report._missingImplementation.filesNeeded.map(f => (
+                                                            <code key={f} style={{ background: 'var(--surface-hover)', padding: '2px 6px', borderRadius: 4, marginRight: 6 }}>{f}</code>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* --- CODE VIEW --- */}
                                     {report.minimalFix && (
                                         <>

@@ -448,42 +448,105 @@ export function buildSystemPrompt(level, language, provider) {
 // --- Router Agent Prompt (mode-aware) ---
 export function buildRouterPrompt(filePaths, userIntent, mode = 'debug') {
     const modeInstructions = {
-        debug: `Select 5-8 files maximum. Be aggressive about excluding irrelevant files.
-The bug is in a specific place. Select the files closest to the reported symptom and their direct imports.
-More files hurt focus. Prioritize files mentioned in the error, then their direct import chain.
-Skip: test files, config files (unless bug is config-related), documentation, assets.`,
+        debug: `Select 5-10 files maximum. You are looking for the bug's root cause.
+Prioritize files that directly implement the feature mentioned in the symptom.
+Then include their direct dependencies (files they import).
+Skip: test files, config files (unless bug is config-related), documentation, assets.
+For dependency injection codebases (like VS Code): the concrete implementation file
+matters more than the interface file. Look for files named *Impl.ts, *Service.ts, *ServiceImpl.ts.`,
 
-        explain: `This is Explain Mode — understanding requires breadth, not focus.
-FIRST PRIORITY: Always include README.md, docs/, CONTRIBUTING.md, ARCHITECTURE.md, or any documentation files if present. These reveal intent before implementation.
-THEN: Select 15-25 files covering all major areas. Include entry points, core modules, config files, and representative files from each major folder.
-Include package.json — it reveals dependencies and the overall shape of the project.
-Do NOT try to find a bug. Try to understand the whole system. More files = better understanding.`,
+        explain: `Select 15-25 files covering all major areas.
+Always include README.md, docs/, or any documentation files first.
+Include entry points, core modules, and representative files from each major folder.
+Include package.json. Do NOT try to find a bug — understand the whole system.`,
 
         security: `Select 8-12 files focused on attack surface.
-Prioritize: entry points, auth middleware, input handlers, API route definitions, database query files, files that touch user-supplied data, environment config.
-Include package.json — reveals dependency versions with known CVEs.
-Skip: pure UI components, test files, utility functions with no I/O.`
+Prioritize: entry points, auth middleware, input handlers, API routes, database query files,
+files touching user-supplied data, environment config. Include package.json.`
     };
+
+    // Group file paths by directory for easier model reasoning
+    const grouped = {};
+    for (const p of filePaths) {
+        const parts = p.split('/');
+        const dir = parts.slice(0, -1).join('/') || '(root)';
+        if (!grouped[dir]) grouped[dir] = [];
+        grouped[dir].push(parts[parts.length - 1]);
+    }
+
+    // Build a tree-style string: show directories and their files
+    // Cap to 400 lines to avoid token overflow on massive repos
+    const treeLines = [];
+    let lineCount = 0;
+    for (const [dir, files] of Object.entries(grouped)) {
+        if (lineCount > 380) { treeLines.push('... (truncated)'); break; }
+        treeLines.push(`${dir}/`);
+        lineCount++;
+        for (const f of files) {
+            if (lineCount > 380) break;
+            treeLines.push(`  ${f}`);
+            lineCount++;
+        }
+    }
 
     return `You are the Router Agent for the Unravel analysis engine.
 
-Your job: Look at this project's file tree and the user's intent. Select the right files for this analysis.
+Your job: Analyze this repository's structure and the user's reported issue.
+Select the EXACT files needed to understand and diagnose the issue.
 
 MODE: ${mode.toUpperCase()}
 ${modeInstructions[mode] || modeInstructions.debug}
 
 Universal rules:
-- Skip node_modules, .git, dist, build, .next, coverage, .cache
-- Think about import chains — if file A imports B and the issue is in A, include B
-- Short filenames in output, matching exactly what appears in the file tree
+- Return FULL paths as they appear in the tree (e.g. "src/services/chatServiceImpl.ts")
+- Think about the dependency chain — if the bug is in A which calls B, include B
+- For large repos: the symptom description names the feature — find the implementation files for that feature
+- Prefer concrete implementation files over interfaces/types
 
-FILE TREE:
-${JSON.stringify(filePaths)}
+REPOSITORY FILE TREE:
+${treeLines.join('\n')}
 
-USER INTENT:
+USER'S REPORTED ISSUE:
 ${userIntent || 'No specific intent described.'}
 
-Return ONLY a JSON object: { "filesToRead": ["path/to/file1.js", ...] }`;
+Return ONLY a JSON object: { "filesToRead": ["path/to/file1.ts", "path/to/file2.ts", ...], "reasoning": "one sentence explaining your selection" }`;
+}
+
+/**
+ * Second-pass router prompt — shown after initial files are fetched.
+ * The model has seen file summaries and can request additional specific files.
+ *
+ * @param {string[]} fetchedFileSummaries - Array of "filename: first 3 lines" strings
+ * @param {string[]} allFilePaths         - Full repo tree paths
+ * @param {string}   userIntent           - Original issue/symptom
+ * @returns {string} prompt
+ */
+export function buildSecondPassRouterPrompt(fetchedFileSummaries, allFilePaths, userIntent) {
+    const summaryText = fetchedFileSummaries.join('\n\n');
+
+    // Build compact tree of remaining files (not already fetched)
+    const remaining = allFilePaths.slice(0, 300).join('\n');
+
+    return `You are the Router Agent for Unravel. You have already selected an initial set of files.
+After reviewing their content summaries below, decide if any ADDITIONAL files are needed.
+
+This is common when:
+- A service is called but its implementation file was not included
+- A dependency injection token is used but the concrete implementation is missing
+- A function is imported from a file not yet fetched
+
+INITIAL FILES FETCHED — CONTENT SUMMARIES:
+${summaryText}
+
+REMAINING FILES IN REPO (available to fetch):
+${remaining}
+
+USER'S REPORTED ISSUE:
+${userIntent}
+
+If no additional files are needed, return: { "additionalFiles": [] }
+If additional files are needed, return: { "additionalFiles": ["path/to/file.ts", ...], "reasoning": "why these are needed" }
+Return ONLY valid JSON.`;
 }
 
 // --- Engine Output Schema (for Gemini structured output) ---
@@ -929,15 +992,36 @@ export const LAYER_BOUNDARY_SCHEMA = {
     message:          '',
 };
 
-export function estimateRuntime(fileCount, totalLines, provider, preset) {
-    let base = 15; // base seconds
-    base += Math.min(fileCount * 3, 30);     // +3s per file, cap 30s
-    base += Math.min(totalLines / 200, 20);  // +1s per 200 lines, cap 20s
+export function estimateRuntime(fileCount, totalLines, provider, preset, inputType, mode) {
+    let base = 0; // base seconds
+
+    // Base cost for the entry path
+    if (inputType === 'github') {
+        base += 45; // Router passes + github API fetch + AST
+    } else {
+        base += 15; // Local AST processing
+    }
+
+    // File processing cost
+    base += Math.min(fileCount * 4, 45);     // +4s per file, cap 45s
+    base += Math.min(totalLines / 150, 30);  // +1s per 150 lines, cap 30s
 
     const presetMul = { quick: 0.6, developer: 0.85, full: 1.0, custom: 0.9 };
     const providerMul = { google: 0.7, anthropic: 1.0, openai: 1.1 };
+    const modeMul = { debug: 1.0, explain: 0.85, security: 1.15 };
 
-    base *= (presetMul[preset] || 1.0) * (providerMul[provider] || 1.0);
-    return { min: Math.round(base * 0.7), max: Math.round(base * 1.5) };
+    base *= (presetMul[preset] || 1.0) * (providerMul[provider] || 1.0) * (modeMul[mode] || 1.0);
+    
+    const minSec = Math.round(base * 0.75);
+    const maxSec = Math.round(base * 1.4);
+
+    if (maxSec < 60) {
+        return `~${minSec}–${maxSec} sec`;
+    } else {
+        const minMin = Math.floor(minSec / 60);
+        const maxMin = Math.ceil(maxSec / 60);
+        if (minMin === maxMin) return `~${minMin} min`;
+        return `~${minMin}–${maxMin} min`;
+    }
 }
 

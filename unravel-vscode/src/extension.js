@@ -160,6 +160,7 @@ async function analyzeCurrentFile(forcedMode) {
             language,
             mode,
             preset,
+            sourceMode: 'upload', // workspace files — self-heal via findFiles
             onProgress: (msg) => {
                 const label = typeof msg === 'object' ? msg.label : msg;
                 if (label) {
@@ -243,6 +244,18 @@ async function analyzeCurrentFile(forcedMode) {
                 applyDiagnostics(document, report);
                 applyDecorations(editor, report);
                 setReportForHover(report, fileName);
+                showReportPanel(result, fileName);
+
+            } else if (result?._missingImplementation) {
+                // Engine found the bug location but implementation file is absent from this repo
+                const mis = result._missingImplementation;
+                const files = (mis.filesNeeded || []).join(', ') || 'unknown';
+                outputChannel.appendLine(`\n⚠️ MISSING IMPLEMENTATION: ${files}`);
+                outputChannel.appendLine(`Reason: ${mis.reason}`);
+                vscode.window.showWarningMessage(
+                    `Unravel: Implementation not found in workspace (${files}). A partial analysis is shown.`
+                );
+                result._mode = mode;
                 showReportPanel(result, fileName);
 
             } else if (result?.needsMoreInfo) {

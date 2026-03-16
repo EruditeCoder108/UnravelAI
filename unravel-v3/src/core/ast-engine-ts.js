@@ -536,7 +536,13 @@ function getMemberExpressionName(node) {
 // ═══════════════════════════════════════════════════
 
 export function extractMutationChains(tree) {
-    const mutations = {};
+    // Object.create(null) gives a map with NO inherited properties.
+    // A plain {} inherits Object.prototype — so keys like 'constructor',
+    // 'toString', 'valueOf', 'hasOwnProperty' already exist and are functions,
+    // not undefined. On large TypeScript files (VS Code, chatServiceImpl.ts)
+    // constructor parameters or destructure bindings hit these names and
+    // mutations['constructor'].writes.push() throws "is not a function".
+    const mutations = Object.create(null);
     if (!tree) return mutations;
     const root = tree.rootNode;
 
@@ -710,7 +716,7 @@ export function extractMutationChains(tree) {
 // ═══════════════════════════════════════════════════
 
 export function trackClosureCaptures(tree) {
-    const captures = {};
+    const captures = Object.create(null); // null prototype — function names can collide with Object.prototype
     if (!tree) return captures;
 
     const scopeMap = buildScopeMap(tree);
@@ -845,7 +851,7 @@ export async function runFullAnalysis(code, filename = '') {
         };
     }
 
-    let mutations = {}, closures = {}, timing = [], reactPatterns = [], floatingPromises = [];
+    let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [];
 
     try { mutations = extractMutationChains(tree); }
     catch (e) { console.warn('[AST-TS] Mutation analysis failed:', e.message); }
@@ -875,8 +881,8 @@ export async function runFullAnalysis(code, filename = '') {
 export async function runMultiFileAnalysis(files) {
     await initParser();
 
-    const mergedMutations = {};
-    const mergedClosures = {};
+    const mergedMutations = Object.create(null); // null prototype — safe against variable name collisions
+    const mergedClosures = Object.create(null);
     const mergedTiming = [];
     const mergedReactPatterns = [];
     const mergedFloatingPromises = [];
@@ -944,7 +950,7 @@ export async function runMultiFileAnalysis(files) {
             console.warn(`[AST-TS] Partial analysis for ${shortName}: error ratio ${(errorRatio * 100).toFixed(1)}% — results flagged in output`);
         }
 
-        let mutations = {}, closures = {}, timing = [], reactPatterns = [], floatingPromises = [];
+        let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [];
         let anySucceeded = false;
 
         try { mutations = extractMutationChains(tree); anySucceeded = true; }
@@ -1293,7 +1299,7 @@ function buildCausalChains(timing, mutations, reactPatterns) {
     const chains = [];
 
     // Index: fn → writes [{name, line, type}]
-    const writesByFn = {};
+    const writesByFn = Object.create(null);
     for (const [key, data] of Object.entries(mutations)) {
         const varName = key.split(/\s*\[/)[0].trim();
         for (const w of data.writes) {
@@ -1303,7 +1309,7 @@ function buildCausalChains(timing, mutations, reactPatterns) {
     }
 
     // Index: fn → reads [{name, line}]  (for cancellation guard detection)
-    const readsByFn = {};
+    const readsByFn = Object.create(null);
     for (const [key, data] of Object.entries(mutations)) {
         const varName = key.split(/\s*\[/)[0].trim();
         for (const r of data.reads) {
@@ -1313,7 +1319,7 @@ function buildCausalChains(timing, mutations, reactPatterns) {
     }
 
     // Index: fn → writes (for detecting let cancelled = false; and cleanup return patterns)
-    const writeNamesByFn = {};
+    const writeNamesByFn = Object.create(null);
     for (const [key, data] of Object.entries(mutations)) {
         const varName = key.split(/\s*\[/)[0].trim();
         for (const w of data.writes) {

@@ -617,3 +617,15 @@ button:disabled, .matte-button:disabled {
   will-change: transform, opacity;
   transform: translateZ(0);
 }
+
+/* --- Progress Bar Shimmer --- */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* --- History Drawer Slide-in --- */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}

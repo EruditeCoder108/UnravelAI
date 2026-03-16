@@ -19,6 +19,21 @@ import { parseAIJson } from './parse-json.js';
 import { callProvider, callProviderStreaming } from './provider.js';
 
 /**
+ * Extract filename references from a text string.
+ * Module-level version — safe to call from Phase 5.6 outside verifyClaims.
+ */
+function extractFileRefsFromText(text) {
+    if (!text) return [];
+    const refs = [];
+    const filePattern = /[\w\-./\\]+\.(js|jsx|ts|tsx|json|html|css|py|vue|svelte)\b/gi;
+    let m;
+    while ((m = filePattern.exec(text)) !== null) {
+        refs.push(m[0].split(/[\\/]/).pop());
+    }
+    return [...new Set(refs)];
+}
+
+/**
  * Run the full Unravel analysis pipeline.
  *
  * @param {Array<{name: string, content: string}>} codeFiles - Files to analyze
@@ -53,6 +68,8 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         onMissingFiles,
         _depth = 0,
         _forceNoAST = false,
+        sourceMode = 'upload',   // 'github' | 'upload' | 'paste' — used by Phase 6 to decide self-heal behavior
+        signal = null,           // AbortSignal — set by App.jsx when user clicks Terminate
     } = options;
 
     // Resolve which sections to request for debug mode
@@ -233,6 +250,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
             userPrompt: enginePrompt,
             useSchema: true,
             responseSchema,
+            signal,
             onChunk: (textDelta) => {
                 streamBuffer += textDelta;
                 chunkCounter++;
@@ -283,6 +301,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
             userPrompt: enginePrompt,
             useSchema: true,
             responseSchema,
+            signal,
         });
     }
 
@@ -310,6 +329,7 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
             systemPrompt,
             userPrompt: enginePrompt + '\n\nCRITICAL: You MUST respond with valid JSON only. No markdown fences, no explanation text. Just the raw JSON object.',
             useSchema: false,
+            signal,
         });
 
         if (retryRaw && typeof retryRaw === 'object') {
@@ -390,6 +410,88 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         }
     }
 
+    // ── Phase 5.6: Missing Fix Target Detection ──
+    // Catches the case where the LLM diagnosed the bug correctly but the fix
+    // target is a file that was NOT provided — so the model generated a speculative
+    // fix with phrases like "modify X in the implementation (which is not provided)"
+    // rather than requesting the file via needsMoreInfo.
+    //
+    // Two signals, either triggers the override:
+    //   Signal A (text-based): minimalFix contains phrases explicitly indicating
+    //     the model knows the fix target is an unseen file.
+    //   Signal B (structural): codeLocation references a file not in codeFiles,
+    //     while rootCause references a file that IS in codeFiles (meaning: we found
+    //     the bug in a provided file but the fix lives in an unprovided dependency).
+    //
+    // When triggered: forces needsMoreInfo: true with missingFilesRequest so the
+    // self-heal loop (Phase 6) can auto-fetch the missing file from GitHub.
+    if (mode === 'debug' && !result.needsMoreInfo && _depth < 2) {
+        const report = result.report || result;
+        const minimalFix = report?.minimalFix || '';
+        const codeLocation = report?.codeLocation || '';
+
+        // Signal A: model narrating its own speculation about unseen files
+        const SPECULATIVE_FIX_PHRASES = [
+            'not provided in the files',
+            'not provided in the provided files',
+            'is not provided',
+            'injected dependency',
+            'implementation is not available',
+            'implementation is not included',
+            'not included in the',
+            'cannot see the implementation',
+            'which is not in the',
+            'file was not provided',
+            'files were not provided',
+        ];
+        const fixTextLower = minimalFix.toLowerCase();
+        const hasSpeculativePhrase = SPECULATIVE_FIX_PHRASES.some(p => fixTextLower.includes(p));
+
+        // Signal B: fix location is in an unprovided file
+        // (rootCause cites a provided file, but codeLocation or fix cites something else)
+        const providedFileNames = new Set(
+            codeFiles.map(f => f.name.split(/[\\/]/).pop().toLowerCase())
+        );
+        const fixFileRefs = extractFileRefsFromText(codeLocation);
+        const fixTargetInUnprovidedFile = fixFileRefs.length > 0 &&
+            fixFileRefs.every(ref => !providedFileNames.has(ref.toLowerCase()));
+
+        if (hasSpeculativePhrase || fixTargetInUnprovidedFile) {
+            // Try to identify what file the model was trying to fix
+            // Extract from the minimalFix text — look for identifiers ending in Service/Provider/Impl
+            const servicePattern = /\b(\w+(?:Service|Provider|Impl|Manager|Handler|Repository))\b/g;
+            const mentionedServices = [...new Set(
+                [...minimalFix.matchAll(servicePattern)].map(m => m[1])
+            )].filter(s => !providedFileNames.has(s.toLowerCase() + '.ts') &&
+                          !providedFileNames.has(s.toLowerCase() + '.js'));
+
+            // Also extract any explicit file references from the fix text
+            const fixFileRefsFromText = extractFileRefsFromText(minimalFix);
+            const missingFiles = [
+                ...fixFileRefs.filter(f => !providedFileNames.has(f.toLowerCase())),
+                ...fixFileRefsFromText.filter(f => !providedFileNames.has(f.toLowerCase())),
+                ...mentionedServices.map(s => s + '.ts'),
+            ];
+            const uniqueMissingFiles = [...new Set(missingFiles)].slice(0, 3);
+
+            if (uniqueMissingFiles.length > 0 || hasSpeculativePhrase) {
+                console.warn('[MissingFixTarget] Fix target is in unprovided file — triggering self-heal');
+                console.warn('[MissingFixTarget] Signal:', hasSpeculativePhrase ? 'speculative phrase' : 'fix location unprovided', '| Files:', uniqueMissingFiles);
+
+                result.needsMoreInfo = true;
+                result._missingFixTarget = true;
+                result.missingFilesRequest = {
+                    filesNeeded: uniqueMissingFiles.length > 0
+                        ? uniqueMissingFiles
+                        : ['implementation file for ' + (mentionedServices[0] || 'the service referenced in the fix')],
+                    reason: hasSpeculativePhrase
+                        ? `The fix requires modifying a file that was not provided. The model identified the root cause but cannot write a verified fix without the implementation file.`
+                        : `The fix location (${codeLocation}) references a file not in the provided inputs.`,
+                };
+            }
+        }
+    }
+
     // ── Phase 6: Handle missing files or return ──
     if (result.needsMoreInfo && result.missingFilesRequest && onMissingFiles && _depth < 2) {
         onProgress?.(`SELF-HEAL: Engine requesting additional files (attempt ${_depth + 1}/2)...`);
@@ -397,6 +499,30 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         if (additionalFiles && additionalFiles.length > 0) {
             // Recursive call with the additional files appended
             return orchestrate([...codeFiles, ...additionalFiles], symptom, { ...options, _depth: _depth + 1 });
+        }
+
+        // onMissingFiles returned null — files weren't available.
+        // In GitHub mode this means the implementation genuinely isn't in the repo.
+        // Rather than leaving needsMoreInfo:true (which causes App.jsx to get stuck),
+        // clear the flag and attach a _missingImplementation warning so the partial
+        // analysis renders with an explanatory banner instead of a paste UI.
+        if (sourceMode === 'github' && !result._verificationRejected) {
+            const missingImpl = {
+                filesNeeded: result.missingFilesRequest.filesNeeded,
+                reason: result.missingFilesRequest.reason,
+            };
+            result.needsMoreInfo = false;
+            result._missingImplementation = missingImpl;
+            // Propagate onto report so App.jsx can access it after setReport(result.report)
+            if (result.report) {
+                result.report._missingImplementation = missingImpl;
+            }
+            if (!result.contextWarnings) result.contextWarnings = [];
+            result.contextWarnings.push(
+                `Implementation not found in repository: ${result.missingFilesRequest.reason} ` +
+                `The analysis below is based on the diagnosed root cause but the fix cannot be verified without the missing file.`
+            );
+            console.warn('[Engine] GitHub mode: missing implementation not found in repo tree. Rendering partial analysis.');
         }
     } else if (result.needsMoreInfo && !result._verificationRejected && _depth >= 2) {
         console.warn('[Engine] Max self-heal depth (2) reached, proceeding with available files.');
@@ -409,9 +535,10 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         }
     }
 
-    // Attach context warnings and mode to result so UI can show a top-level banner
+    // Merge context warnings — use spread to avoid clobbering any warnings
+    // already pushed into result.contextWarnings by Phase 6 (e.g. _missingImplementation).
     if (contextWarnings.length > 0) {
-        result.contextWarnings = contextWarnings;
+        result.contextWarnings = [...(result.contextWarnings || []), ...contextWarnings];
     }
     result._mode = mode;
     result._sections = sections;

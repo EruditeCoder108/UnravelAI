@@ -23,6 +23,7 @@ async function fetchWithRetry(url, options, retries = 4) {
             }
             return await response.json();
         } catch (error) {
+            if (error.name === 'AbortError') throw error; // never retry a user abort
             if (i === retries - 1) throw error;
             await new Promise(r => setTimeout(r, delay));
             delay *= 2;
@@ -43,7 +44,7 @@ async function fetchWithRetry(url, options, retries = 4) {
  * @param {Object} [opts.responseSchema] - Dynamic schema object for Gemini structured output
  * @returns {Promise<string>}          - Raw text response from the model
  */
-export async function callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema = false, responseSchema = null }) {
+export async function callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema = false, responseSchema = null, signal = null }) {
     const prov = PROVIDERS[provider];
     if (!prov) throw new Error(`Invalid provider: ${provider}`);
 
@@ -57,14 +58,12 @@ export async function callProvider({ provider, apiKey, model, systemPrompt, user
             body.generationConfig.responseSchema = responseSchema;
         }
     } else if (provider === 'anthropic') {
-        // In browser: route through Netlify Function proxy to avoid CORS
-        // In Node.js (VS Code): call Anthropic directly
         const isBrowser = typeof window !== 'undefined';
         if (isBrowser) {
             url = '/api/anthropic';
             headers = { 'Content-Type': 'application/json' };
             body = prov.buildBody(model, systemPrompt, userPrompt);
-            body._apiKey = apiKey; // Proxy extracts this and forwards as x-api-key header
+            body._apiKey = apiKey;
         } else {
             url = prov.endpoint;
             headers = prov.headers(apiKey);
@@ -73,7 +72,6 @@ export async function callProvider({ provider, apiKey, model, systemPrompt, user
     } else if (provider === 'openai') {
         url = prov.endpoint;
         headers = prov.headers(apiKey);
-        // Schema instruction is already in userPrompt (appended by orchestrate.js)
         body = prov.buildBody(model, systemPrompt, userPrompt);
     }
 
@@ -81,6 +79,7 @@ export async function callProvider({ provider, apiKey, model, systemPrompt, user
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        ...(signal ? { signal } : {}),
     });
 
     return prov.parseResponse(data);
@@ -96,7 +95,7 @@ export async function callProvider({ provider, apiKey, model, systemPrompt, user
  * @param {function} opts.onChunk - Called with each text delta string
  * @returns {Promise<string>} - Full accumulated text response
  */
-export async function callProviderStreaming({ provider, apiKey, model, systemPrompt, userPrompt, useSchema = false, responseSchema = null, onChunk }) {
+export async function callProviderStreaming({ provider, apiKey, model, systemPrompt, userPrompt, useSchema = false, responseSchema = null, onChunk, signal = null }) {
     const prov = PROVIDERS[provider];
     if (!prov) throw new Error(`Invalid provider: ${provider}`);
 
@@ -104,7 +103,6 @@ export async function callProviderStreaming({ provider, apiKey, model, systemPro
         let url, headers, body;
 
         if (provider === 'google') {
-            // Google: streamGenerateContent?alt=sse
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
             headers = prov.headers();
             body = prov.buildBody(model, systemPrompt, userPrompt);
@@ -112,7 +110,6 @@ export async function callProviderStreaming({ provider, apiKey, model, systemPro
                 body.generationConfig.responseSchema = responseSchema;
             }
         } else if (provider === 'anthropic') {
-            // Anthropic: add stream: true
             const isBrowser = typeof window !== 'undefined';
             if (isBrowser) {
                 url = '/api/anthropic';
@@ -131,14 +128,14 @@ export async function callProviderStreaming({ provider, apiKey, model, systemPro
             body = prov.buildBody(model, systemPrompt, userPrompt);
             body.stream = true;
         } else {
-            // Unknown provider — fall back to non-streaming
-            return callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema, responseSchema });
+            return callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema, responseSchema, signal });
         }
 
         const response = await fetch(url, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),
+            ...(signal ? { signal } : {}),
         });
 
         if (!response.ok) {

@@ -487,6 +487,17 @@ function renderDebug(r) {
         </div>`;
     }
 
+    if (r._missingImplementation) {
+        const mis = r._missingImplementation;
+        const fileList = (mis.filesNeeded || []).map(f => `<code>${esc(f)}</code>`).join(', ');
+        html += `
+        <div style="background:rgba(255,153,0,0.08);border:1px solid rgba(255,153,0,0.3);border-left:4px solid #ff9900;padding:14px 16px;margin-bottom:12px;">
+            <div style="font-family:'Consolas',monospace;font-size:11px;color:#ff9900;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">⚠️ Implementation Not Found in Repository</div>
+            <p style="color:#ccc;margin:0 0 6px;font-size:13px;">${esc(mis.reason)}</p>
+            ${mis.filesNeeded?.length ? `<p style="color:#888;margin:0;font-size:12px;">Missing: ${fileList}</p>` : ''}
+        </div>`;
+    }
+
     if (r.minimalFix) {
         html += sectionBlock('🔧 Minimal Code Fix', '#ffaa00', `
             <div class="meta mono">File: ${esc(typeof r.codeLocation === 'object' ? JSON.stringify(r.codeLocation) : r.codeLocation)}</div>
@@ -537,7 +548,7 @@ function buildReportHTML(report, fileName, mode) {
     const modeColor = mode === 'explain' ? '#00ffff' : mode === 'security' ? '#ffaa00' : '#ff003c';
     const modeLabel = mode === 'explain' ? 'CODE EXPLANATION' : mode === 'security' ? 'SECURITY AUDIT' : 'DIAGNOSIS';
     const modeBadge = mode === 'explain' ? 'EXPLAIN' : mode === 'security' ? 'SECURITY' : (r.bugType || 'DEBUG');
-    const confidence = r.confidence != null ? Math.round(r.confidence <= 1 ? r.confidence * 100 : r.confidence) : null;
+    const confidence = (r.confidence != null && !r._missingImplementation) ? Math.round(r.confidence <= 1 ? r.confidence * 100 : r.confidence) : null;
 
     const contentHTML = mode === 'explain' ? renderExplain(r)
         : mode === 'security' ? renderSecurity(r)
@@ -668,7 +679,7 @@ function buildReportHTML(report, fileName, mode) {
 <div class="report-header">
     <div class="meta-bar">
         <span class="badge" style="background:${modeColor};color:${mode === 'explain' ? '#000' : '#fff'}">${esc(modeBadge)}</span>
-        ${confidence != null ? `<span class="badge" style="background:#1a1a1a;color:#ccff00;border:1px solid #ccff00">CFD: ${confidence}%</span>` : ''}
+        ${r._missingImplementation ? `<span class="badge" style="background:#1a1a1a;color:#aaa;border:1px solid #555">CFD: —</span>` : confidence != null ? `<span class="badge" style="background:#1a1a1a;color:#ccff00;border:1px solid #ccff00">CFD: ${confidence}%</span>` : ''}
     </div>
     <h1 style="color:#fff">${esc(modeLabel)}</h1>
     <p class="file-path">${esc(fileName)}</p>

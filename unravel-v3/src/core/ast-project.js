@@ -21,7 +21,7 @@ import { parseCode, initParser } from './ast-engine-ts.js';
  */
 export async function buildModuleMap(files) {
     await initParser(); // tree-sitter WASM: lazy init, no-op after first call
-    const moduleMap = {};
+    const moduleMap = Object.create(null); // null prototype — file/symbol names as keys
     const asts = new Map(); // filename → tree-sitter tree (reuse later)
 
     for (const file of files) {
@@ -138,7 +138,7 @@ export async function buildModuleMap(files) {
  * @returns {Object} symbolOrigins - { "varName": { file, line, importedBy: [{file, localName, line}] } }
  */
 export function resolveSymbolOrigins(moduleMap) {
-    const symbolOrigins = {};
+    const symbolOrigins = Object.create(null);
 
     for (const [fileName, mod] of Object.entries(moduleMap)) {
         for (const [localName, importInfo] of Object.entries(mod.imports)) {
@@ -183,7 +183,7 @@ export function resolveSymbolOrigins(moduleMap) {
  * @returns {Object} crossFileChains - { "varName [originFile]": { writes: [{fn, line, file}], reads: [{fn, line, file}] } }
  */
 export function expandMutationChains(perFileMutations, symbolOrigins, moduleMap) {
-    const crossFileChains = {};
+    const crossFileChains = Object.create(null);
 
     for (const [key, data] of Object.entries(perFileMutations)) {
         // Key format: "varName [fileName]"
@@ -425,13 +425,13 @@ export async function selectFilesByGraph(allFiles, symptom, crossFileData) {
         const result = await buildModuleMap(jsFiles);
         moduleMap = result.moduleMap;
         callGraph = buildCallGraph(moduleMap, result.asts);
-        crossFileChains = {};
+        crossFileChains = Object.create(null);
     }
 
     // ── Step 1: Find entry point ──
     // Score each file by: symptom keyword match + import count (most-imported = most central)
     const fileNames = Object.keys(moduleMap);
-    const scores = {};
+    const scores = Object.create(null);
     for (const name of fileNames) scores[name] = 0;
 
     // Symptom keyword matching
@@ -440,7 +440,7 @@ export async function selectFilesByGraph(allFiles, symptom, crossFileData) {
 
     for (const file of jsFiles) {
         const shortName = file.name.split(/[\\/]/).pop();
-        if (!scores.hasOwnProperty(shortName)) continue;
+        if (!Object.prototype.hasOwnProperty.call(scores, shortName)) continue;
 
         // Filename matches symptom
         const nameLower = shortName.toLowerCase().replace(/\.\w+$/, '');
@@ -458,7 +458,7 @@ export async function selectFilesByGraph(allFiles, symptom, crossFileData) {
     // Import centrality: files imported by many others are more central
     for (const [, mod] of Object.entries(moduleMap)) {
         for (const [, importInfo] of Object.entries(mod.imports)) {
-            if (scores.hasOwnProperty(importInfo.from)) {
+            if (Object.prototype.hasOwnProperty.call(scores, importInfo.from)) {
                 scores[importInfo.from] += 2;
             }
         }

@@ -14,6 +14,7 @@ export {
     buildExplainPrompt,
     buildSecurityPrompt,
     buildRouterPrompt,
+    buildSecondPassRouterPrompt,
     ENGINE_SCHEMA,
     ENGINE_SCHEMA_INSTRUCTION,
     EXPLAIN_SCHEMA,
