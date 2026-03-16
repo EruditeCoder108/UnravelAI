@@ -661,7 +661,7 @@ export default function App() {
     const githubRepoContext = useRef(null); // Stores { owner, repo, branch, tree } for missing-files callback
     const abortControllerRef = useRef(null);
 
-    // ── localStorage & sessionStorage Persistence ──
+    // ── One-time storage restore (guard prevents double-run in React StrictMode) ──
     const initStorageOnce = useRef(false);
     useEffect(() => {
         if (initStorageOnce.current) return;
@@ -695,10 +695,12 @@ export default function App() {
                 }
             }
         } catch { /* ignore corrupt storage */ }
-        
-        // Initial splash screen with dissolve effect
+    }, []);
+
+    // ── Splash screen timer — separate effect so StrictMode remount restarts it ──
+    useEffect(() => {
         const exitTimer = setTimeout(() => setIsSplashExiting(true), 4800);
-        const finishTimer = setTimeout(() => setIsInitialLoading(false), 5600); // 4.8s + 0.8s dissolve
+        const finishTimer = setTimeout(() => setIsInitialLoading(false), 5600);
         return () => { clearTimeout(exitTimer); clearTimeout(finishTimer); };
     }, []);
 
