@@ -196,8 +196,10 @@ export async function callProviderStreaming({ provider, apiKey, model, systemPro
 
         return accumulated;
     } catch (streamError) {
-        // Fallback: if streaming fails entirely, use non-streaming call
+        // Re-throw AbortError — user clicked Terminate, never fall back silently
+        if (streamError.name === 'AbortError') throw streamError;
+        // Fallback: if streaming fails for any other reason, use non-streaming call
         console.warn('[Provider] Streaming failed, falling back to non-streaming:', streamError.message);
-        return callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema, responseSchema });
+        return callProvider({ provider, apiKey, model, systemPrompt, userPrompt, useSchema, responseSchema, signal });
     }
 }
