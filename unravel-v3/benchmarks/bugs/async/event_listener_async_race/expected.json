@@ -1,5 +1,0 @@
-{
-  "root_cause_keywords": ["async after unmount", "isMounted check missing", "DOM mutation after unmount", "listener not removed"],
-  "files": ["component.js"],
-  "lines": [6]
-}

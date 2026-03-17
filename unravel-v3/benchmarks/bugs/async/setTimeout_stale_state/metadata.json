@@ -1,7 +1,0 @@
-{
-  "id": "setTimeout_stale_state",
-  "category": "async",
-  "difficulty": "medium",
-  "symptom": "Analytics always reports count=0 regardless of how many increments happened.",
-  "files": ["app.js"]
-}

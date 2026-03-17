@@ -1,9 +1,0 @@
-{
-  "id": "reference_equality_render",
-  "category": "react",
-  "difficulty": "hard",
-  "symptom": "Clicking \"Add Tag\" does nothing. The tag appears in console.log but never shows on screen.",
-  "files": [
-    "TagEditor.jsx"
-  ]
-}

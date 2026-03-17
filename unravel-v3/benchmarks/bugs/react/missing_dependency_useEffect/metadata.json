@@ -1,7 +1,0 @@
-{
-  "id": "missing_dependency_useEffect",
-  "category": "react",
-  "difficulty": "medium",
-  "symptom": "When userId prop changes (e.g. navigating between users), the profile does not update and still shows the first user's data.",
-  "files": ["UserProfile.jsx"]
-}

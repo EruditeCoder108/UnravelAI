@@ -175,9 +175,16 @@ export async function callProviderStreaming({ provider, apiKey, model, systemPro
                             ?.map(p => p.text)
                             .join('') || '';
                     } else if (provider === 'anthropic') {
-                        // Anthropic SSE: {type: "content_block_delta", delta: {text: "..."}}
-                        if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-                            textDelta = parsed.delta.text;
+                        // Anthropic SSE: {type: "content_block_delta", delta: {type: "text_delta"|"thinking_delta", ...}}
+                        // During extended thinking, delta.type === "thinking_delta" — no text content.
+                        // We fire onChunk('') as a heartbeat so the progress bar stays alive
+                        // instead of appearing frozen for the entire (potentially long) thinking phase.
+                        if (parsed.type === 'content_block_delta') {
+                            if (parsed.delta?.type === 'thinking_delta') {
+                                onChunk?.(''); // heartbeat — nothing to accumulate
+                            } else if (parsed.delta?.text) {
+                                textDelta = parsed.delta.text;
+                            }
                         }
                     } else if (provider === 'openai') {
                         // OpenAI SSE: {choices: [{delta: {content: "..."}}]}

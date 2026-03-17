@@ -1,7 +1,0 @@
-{
-  "id": "async_loop_order_bug",
-  "category": "async",
-  "difficulty": "medium",
-  "symptom": "processItems() always returns an empty array even when items are provided.",
-  "files": ["app.js"]
-}

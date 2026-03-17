@@ -1,7 +1,0 @@
-{
-  "id": "circular_import_state_bug",
-  "category": "cross_file",
-  "difficulty": "hard",
-  "symptom": "canDelete() always returns false for admin users even after setUser() is called.",
-  "files": ["userStore.js", "permissionsStore.js", "app.js"]
-}

@@ -1,7 +1,0 @@
-{
-  "id": "nested_function_shadowing",
-  "category": "closure",
-  "difficulty": "medium",
-  "symptom": "getResult() always returns 0 after calling calculate(), even with valid input values.",
-  "files": ["calculator.js"]
-}

@@ -1,7 +1,0 @@
-{
-  "id": "key_mismatch_render_bug",
-  "category": "react",
-  "difficulty": "hard",
-  "symptom": "After typing custom values into the inputs and clicking Remove First, the wrong input values get deleted — the first item disappears but its input value stays.",
-  "files": ["ItemList.jsx"]
-}

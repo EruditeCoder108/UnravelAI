@@ -1213,6 +1213,10 @@ const ASYNC_CALL_PATTERNS = new Set([
     'send', 'post', 'put', 'patch',
 ]);
 
+// Array iteration methods that do NOT handle Promise return values from callbacks.
+// Passing an async callback to any of these silently discards all Promises.
+const VOID_ITERATION_METHODS = new Set(['forEach', 'find', 'findIndex', 'some', 'every', 'filter', 'reduce']);
+
 /**
  * Check if a node is directly inside an await_expression.
  * @param {import('web-tree-sitter').Node} node
@@ -1263,7 +1267,30 @@ export function detectFloatingPromises(tree) {
             }
         }
 
-        if (!apiName) continue;
+        if (!apiName) {
+            // forEach(async) / find(async) etc — the async callback IS internally awaited
+            // but the iteration method ignores the returned Promise entirely, so all
+            // background work runs fire-and-forget with no way to await completion.
+            if (fnNode.type === 'member_expression') {
+                const prop = fnNode.childForFieldName('property');
+                if (prop && VOID_ITERATION_METHODS.has(prop.text)) {
+                    const argsNode = call.childForFieldName('arguments');
+                    const firstArg = argsNode?.namedChildren?.[0];
+                    if (
+                        firstArg &&
+                        (firstArg.type === 'arrow_function' ||
+                         firstArg.type === 'function_expression' ||
+                         firstArg.type === 'function') &&
+                        firstArg.text.trimStart().startsWith('async ')
+                    ) {
+                        const line = call.startPosition.row + 1;
+                        const enclosingFn = getEnclosingFunction(call);
+                        floating.push({ api: `${prop.text}(async)`, line, fn: enclosingFn, kind: 'forEach_async' });
+                    }
+                }
+            }
+            continue;
+        }
 
         // The isAwaited guard — skip calls that are properly awaited
         if (isAwaited(call)) continue;
@@ -1426,6 +1453,43 @@ function buildCausalChains(timing, mutations, reactPatterns) {
 }
 
 // ═══════════════════════════════════════════════════
+// MULTI-SOURCE RACE DETECTOR
+// Post-processes buildCausalChains() output.
+// If 2+ distinct async triggers both write to the same
+// state variable without guards, that is a write race.
+// No new AST traversal — pure grouping of existing data.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Detect multi-source write races from an existing chains array.
+ * @param {Array} chains — result of buildCausalChains()
+ * @returns {Array<{varName: string, sources: Array}>}
+ */
+function detectMultiSourceRace(chains) {
+    const byWriteVar = Object.create(null);
+    for (const c of chains) {
+        if (c.guardPresent) continue; // guarded writes are intentionally safe
+        // Write field format: "setResults() in doSearch [L22]" → varName = "setResults"
+        const varName = c.write.split('(')[0].trim();
+        if (!byWriteVar[varName]) byWriteVar[varName] = [];
+        byWriteVar[varName].push(c);
+    }
+
+    const races = [];
+    for (const [varName, writingChains] of Object.entries(byWriteVar)) {
+        if (writingChains.length < 2) continue;
+        // Only a race if the writes come from at least 2 independent async triggers
+        const uniqueTriggers = new Set(writingChains.map(c => c.trigger));
+        if (uniqueTriggers.size < 2) continue;
+        races.push({
+            varName,
+            sources: writingChains.map(c => ({ trigger: c.trigger, write: c.write, file: c.file })),
+        });
+    }
+    return races;
+}
+
+// ═══════════════════════════════════════════════════
 // FORMAT: Same output format as the old engine
 // ═══════════════════════════════════════════════════
 
@@ -1524,11 +1588,22 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
         lines.push('');
     }
 
-    // Floating promises
-    if (floatingPromises.length > 0) {
+    // Floating promises — split by kind for targeted output
+    const trueFloating    = floatingPromises.filter(p => p.kind !== 'forEach_async');
+    const forEachAsyncCalls = floatingPromises.filter(p => p.kind === 'forEach_async');
+
+    if (trueFloating.length > 0) {
         lines.push('Floating Promises (unawaited async calls):');
-        for (const p of floatingPromises) {
+        for (const p of trueFloating) {
             lines.push(`  ${p.api}()  in ${p.fn}  [L${p.line}]  ← not awaited`);
+        }
+        lines.push('');
+    }
+
+    if (forEachAsyncCalls.length > 0) {
+        lines.push('forEach(async) — Promises silently discarded by iteration method:');
+        for (const p of forEachAsyncCalls) {
+            lines.push(`  ${p.api}  in ${p.fn}  [L${p.line}]  ← use Promise.all(array.map(async ...)) instead`);
         }
         lines.push('');
     }
@@ -1553,6 +1628,21 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
             const fileTag = c.file ? ` [${c.file}]` : '';
             lines.push(`  ${c.trigger}${fileTag}  →  ${c.write}`);
             lines.push(`  ~ guard detected (low confidence — verify manually)`);
+            lines.push('');
+        }
+    }
+
+    // Multi-source write races — two unguarded async paths writing to the same state var
+    const multiSourceRaces = detectMultiSourceRace(chains);
+    if (multiSourceRaces.length > 0) {
+        lines.push('Multi-Source Write Races:');
+        for (const race of multiSourceRaces) {
+            lines.push(`  ${race.varName} — written by ${race.sources.length} independent async sources`);
+            for (const src of race.sources) {
+                const fileTag = src.file ? ` [${src.file}]` : '';
+                lines.push(`    ${src.trigger}${fileTag}  →  ${src.write}`);
+            }
+            lines.push(`  ⚠ unguarded — last to resolve silently overwrites all prior results`);
             lines.push('');
         }
     }

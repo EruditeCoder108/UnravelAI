@@ -1,7 +1,0 @@
-{
-  "id": "xss_via_innerhtml",
-  "category": "security",
-  "difficulty": "medium",
-  "symptom": "A user submitted a comment containing <script>document.cookie</script> and it executed in other users' browsers.",
-  "files": ["comments.js"]
-}

@@ -1,9 +1,0 @@
-{
-  "id": "timer_state_mutation",
-  "category": "react",
-  "difficulty": "medium",
-  "symptom": "Pomodoro timer becomes inaccurate after pause/resume. The total duration keeps shrinking.",
-  "files": [
-    "timer.js"
-  ]
-}

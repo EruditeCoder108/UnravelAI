@@ -1,7 +1,0 @@
-{
-  "id": "worker_thread_orphan",
-  "category": "lifecycle",
-  "difficulty": "hard",
-  "symptom": "Calling cancelTask() does not stop CPU usage. Worker threads continue running in the background consuming resources even after cancellation.",
-  "files": ["taskRunner.js"]
-}

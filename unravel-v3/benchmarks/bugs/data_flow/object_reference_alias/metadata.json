@@ -1,7 +1,0 @@
-{
-  "id": "object_reference_alias",
-  "category": "data_flow",
-  "difficulty": "medium",
-  "symptom": "discountedCart.items unexpectedly contains items added to userCart after applyPromotion was called.",
-  "files": ["cartService.js"]
-}

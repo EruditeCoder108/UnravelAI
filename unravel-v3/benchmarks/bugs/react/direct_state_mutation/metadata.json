@@ -1,7 +1,0 @@
-{
-  "id": "direct_state_mutation",
-  "category": "react",
-  "difficulty": "medium",
-  "symptom": "Clicking a todo item does not visually update it. The strikethrough style never appears.",
-  "files": ["TodoList.jsx"]
-}

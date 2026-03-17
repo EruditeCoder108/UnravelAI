@@ -1,7 +1,0 @@
-{
-  "id": "closure_memory_leak",
-  "category": "closure",
-  "difficulty": "hard",
-  "symptom": "Memory usage grows continuously as new processors are added. Calling clearProcessors() does not free memory.",
-  "files": ["dataProcessor.js"]
-}

@@ -1,7 +1,0 @@
-{
-  "id": "module_level_mutation",
-  "category": "cross_file",
-  "difficulty": "hard",
-  "symptom": "Production module reports betaFeatures=true even though it never enabled them. Importing experimentSetup.js as a side effect pollutes flags for all importers.",
-  "files": ["featureFlags.js", "experimentSetup.js", "productionModule.js"]
-}

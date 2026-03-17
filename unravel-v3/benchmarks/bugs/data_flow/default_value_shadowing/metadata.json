@@ -1,7 +1,0 @@
-{
-  "id": "default_value_shadowing",
-  "category": "data_flow",
-  "difficulty": "easy",
-  "symptom": "Passing timeout=0 and retries=0 still results in timeout=5000 and retries=3. Explicit zero values are ignored.",
-  "files": ["config.js"]
-}

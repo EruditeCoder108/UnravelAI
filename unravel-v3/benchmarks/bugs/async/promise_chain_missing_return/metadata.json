@@ -1,7 +1,0 @@
-{
-  "id": "promise_chain_missing_return",
-  "category": "async",
-  "difficulty": "medium",
-  "symptom": "saveOrder() receives undefined instead of the validated order object.",
-  "files": ["app.js"]
-}

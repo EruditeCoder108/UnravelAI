@@ -1,7 +1,0 @@
-{
-  "id": "quadratic_loop_bug",
-  "category": "performance",
-  "difficulty": "medium",
-  "symptom": "processEventBatch() takes 200ms for 1000 events, 20 seconds for 10000 events, and crashes the browser tab for 100000 events.",
-  "files": ["analytics.js"]
-}

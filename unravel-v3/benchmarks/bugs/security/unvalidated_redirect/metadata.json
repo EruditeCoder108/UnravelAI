@@ -1,7 +1,0 @@
-{
-  "id": "unvalidated_redirect",
-  "category": "security",
-  "difficulty": "medium",
-  "symptom": "Attackers send phishing links like /login?returnUrl=https://evil.com — after login users are redirected to the attacker's site.",
-  "files": ["auth.js"]
-}

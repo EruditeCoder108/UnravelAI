@@ -1,7 +1,0 @@
-{
-  "id": "db_connection_leak",
-  "category": "lifecycle",
-  "difficulty": "medium",
-  "symptom": "Application slows to a halt after running for a few hours. New requests hang indefinitely waiting for a database connection.",
-  "files": ["userRepository.js"]
-}

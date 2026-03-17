@@ -1,7 +1,0 @@
-{
-  "id": "debounce_timer_leak",
-  "category": "async",
-  "difficulty": "easy",
-  "symptom": "Typing 'hello' triggers 5 API calls instead of 1.",
-  "files": ["search.js"]
-}

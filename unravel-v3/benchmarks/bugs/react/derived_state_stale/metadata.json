@@ -1,7 +1,0 @@
-{
-  "id": "derived_state_stale",
-  "category": "react",
-  "difficulty": "medium",
-  "symptom": "When the parent passes updated items prop, the filtered list still shows the old items. Filtering works correctly but only on the original items snapshot.",
-  "files": ["FilteredList.jsx"]
-}

@@ -1,5 +1,0 @@
-{
-  "root_cause_keywords": ["singleton not reset", "logout incomplete", "preferences not cleared", "shared mutable state"],
-  "files": ["logout.js"],
-  "lines": [4]
-}

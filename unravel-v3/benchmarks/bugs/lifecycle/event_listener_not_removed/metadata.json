@@ -1,7 +1,0 @@
-{
-  "id": "event_listener_not_removed",
-  "category": "lifecycle",
-  "difficulty": "medium",
-  "symptom": "After opening and closing 50 modals, pressing Escape triggers 50 close handlers and window resize events cause visible lag.",
-  "files": ["modalManager.js"]
-}

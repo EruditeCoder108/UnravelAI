@@ -1,0 +1,518 @@
+## Full Language Architecture Plan
+
+### What the Refactor Is Actually Solving
+
+There are three distinct problems tangled together right now, and they need separate solutions:
+
+**Problem 1: Scattered constants with no single owner.** The regex `/\.(js|jsx|ts|tsx)$/i` appears in `orchestrate.js`, `ast-project.js`, and `App.jsx`. `TIMING_APIS` is defined once in `ast-engine-ts.js` but there's no mechanism to extend it. Node type strings like `'assignment_expression'` and `'call_expression'` are inlined directly into tree-sitter queries. If you add `queueMicrotask` to async detection today, you have to know to update `ast-engine-ts.js` line 17.
+
+**Problem 2: The engine functions are generic but don't know it.** `extractMutationChains`, `findTimingNodes`, and `buildCallGraph` do the same thing for any language — find nodes of a certain type, extract context, format output. The only JS-specific parts are the strings passed to `descendantsOfType()`. Right now those strings are hardcoded, which makes the functions look JS-specific when they're actually just parameterized wrong.
+
+**Problem 3: No clean seam between language concerns and analysis concerns.** React hook detection is in `ast-engine-ts.js` alongside the generic mutation extractor. Import resolution logic is embedded in `ast-project.js`. The system prompt in `config.js` teaches the LLM about JavaScript event loops regardless of what language the code is. These things belong to language configurations, not to the analysis engine.
+
+---
+
+### Target File Structure
+
+```
+src/core/
+├── index.js
+├── config.js
+├── ast-engine-ts.js      ← renamed to ast-engine-ts.js after refactor
+├── ast-project.js
+├── orchestrate.js
+├── parse-json.js         ← no changes
+├── provider.js           ← no changes
+└── lang/
+    ├── index.js          ← registry + getLangForFile + isAnalyzableFile + groupByLanguage
+    ├── javascript.js     ← everything currently hardcoded in the engine, named
+    └── python.js         ← added when Python ships, not before
+```
+
+---
+
+### Step 1 — Create `src/core/lang/javascript.js`
+
+This file is not introducing new abstractions. It is taking every hardcoded JS/TS constant that currently lives in `ast-engine-ts.js` and `ast-project.js` and putting them in one named place. Behavior is identical.
+
+```js
+// src/core/lang/javascript.js
+// ─── Scope map builder — JS-specific, lives here not in the engine ─────────
+function buildScopeMap_JS(tree) {
+    const scopeMap = new Map(); // nodeId → { name, scopeLevel, boundVars }
+    const scopeStack = [{ vars: new Set(), level: 0 }];
+
+    function walk(node) {
+        const isScope = SCOPE_CREATORS.some(t => node.type === t);
+        if (isScope) {
+            const newScope = { vars: new Set(), level: scopeStack.length };
+            scopeStack.push(newScope);
+            for (const child of node.namedChildren) walk(child);
+            scopeStack.pop();
+        } else {
+            if (node.type === 'identifier') {
+                const top = scopeStack[scopeStack.length - 1];
+                scopeMap.set(node.id, { name: node.text, scopeLevel: top.level });
+            }
+            for (const child of node.namedChildren) walk(child);
+        }
+    }
+
+    walk(tree.rootNode);
+    return scopeMap;
+}
+
+const SCOPE_CREATORS = [
+    'function_declaration', 'function', 'function_expression',
+    'arrow_function', 'method_definition', 'generator_function',
+    'generator_function_declaration',
+];
+
+// ─── React framework pattern detectors ──────────────────────────────────────
+function detectReactHooks(tree, filename, mutations) {
+    // Existing React-specific logic extracted from ast-engine-ts.js
+    // Returns array of { type, variable, line, detail } findings
+}
+
+function detectStaleClosuresInHooks(tree, filename, scopeMap) {
+    // Existing useEffect dep gap detection
+    // Returns array of findings
+}
+
+// ─── Import path resolver — JS relative paths ────────────────────────────────
+function resolveImportPath(importSource, currentFile, allFiles) {
+    // Exact logic from current resolveModuleName() in ast-project.js
+    // moved here so it's owned by the language descriptor
+}
+
+function isLikelyNodeModule(importSource, allFiles) {
+    // Exact logic from current isLikelyNodeModule() in ast-project.js
+}
+
+// ─── The descriptor ──────────────────────────────────────────────────────────
+export default {
+    id: 'javascript',
+    label: 'JavaScript / TypeScript',
+    extensions: ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'],
+
+    parser: {
+        wasm: {
+            js:  '/wasm/tree-sitter-javascript.wasm',
+            ts:  '/wasm/tree-sitter-typescript/typescript.wasm',
+            tsx: '/wasm/tree-sitter-typescript/tsx.wasm',
+        },
+        // TSX grammar handles JSX too — intentional, not an accident
+        selectGrammar: (filename) => {
+            const ext = filename.split('.').pop().toLowerCase();
+            if (ext === 'tsx' || ext === 'jsx') return 'tsx';
+            if (ext === 'ts') return 'ts';
+            return 'js';
+        },
+    },
+
+    nodeTypes: {
+        // Mutation detection
+        assignment:             'assignment_expression',
+        augmentedAssignment:    'augmented_assignment_expression',
+        updateExpression:       'update_expression',
+        memberExpression:       'member_expression',
+
+        // Call graph
+        callExpression:         'call_expression',
+
+        // Import/export graph
+        importStatement:        'import_statement',
+        exportStatement:        'export_statement',
+        // Python note: Python has 'import_from_statement' as a separate node.
+        // JS doesn't — named imports are children of import_statement.
+        // This asymmetry is why importStatement can't be a single string for all languages.
+        secondaryImportStatement: null,
+
+        // Scope / closure
+        scopeCreators:          SCOPE_CREATORS,
+
+        // Common
+        identifier:             'identifier',
+        string:                 'string',
+    },
+
+    asyncBoundaries: new Set([
+        'setTimeout', 'setInterval', 'clearInterval', 'clearTimeout',
+        'addEventListener', 'removeEventListener',
+        'requestAnimationFrame', 'cancelAnimationFrame',
+        'fetch', 'then', 'catch', 'finally',
+        'queueMicrotask', 'MutationObserver',
+    ]),
+
+    // Import path resolution — called by buildModuleMap in ast-project.js
+    resolveImportPath,
+    isLikelyNodeModule,
+
+    // Scope map builder — non-genericizable, language-specific
+    // Returns Map<nodeId, { name, scopeLevel }> used by trackClosureCaptures
+    buildScopeMap: buildScopeMap_JS,
+
+    // Framework pattern detectors — run after base analysis in runFullAnalysis()
+    // Each receives (tree, filename, baseAnalysisResults) and returns additional findings
+    frameworkPatterns: [
+        detectReactHooks,
+        detectStaleClosuresInHooks,
+    ],
+
+    // Injected into the system prompt so the LLM reasons correctly about this language
+    promptHints: {
+        asyncModel: 'JavaScript runs on a single-threaded event loop. Async ordering bugs come from Promise chains resolving in unexpected order, not from true concurrency. setTimeout(fn, 0) yields to the microtask queue, not the next frame.',
+        mutationRisk: 'React useState: mutating the object inside state without reassigning the reference bypasses re-render. Closures in async callbacks capture variable references, not values — stale closure is the most common async bug pattern.',
+        scopeGotchas: 'var is function-scoped, not block-scoped — it hoists to the enclosing function. let/const in loops create per-iteration bindings; var in loops shares one binding across all iterations. Closures capture the reference, so loop-var closures are a classic trap.',
+        importModel: 'ES modules use static relative paths. Circular imports are valid JavaScript but create initialization order hazards — if module A imports B and B imports A, one of them sees the other\'s exports as undefined at init time.',
+    },
+};
+```
+
+---
+
+### Step 2 — Create `src/core/lang/index.js`
+
+```js
+// src/core/lang/index.js
+import javascript from './javascript.js';
+
+// Registry is ordered — first match wins for extension conflicts
+export const LANGUAGE_REGISTRY = [javascript];
+
+/**
+ * Returns the language descriptor for a given filename, or null if unsupported.
+ */
+export function getLangForFile(filename) {
+    const ext = '.' + filename.split('.').pop().toLowerCase();
+    return LANGUAGE_REGISTRY.find(l => l.extensions.includes(ext)) ?? null;
+}
+
+/**
+ * True if the engine can run AST analysis on this file.
+ * Replaces all the scattered /\.(js|jsx|ts|tsx)$/i regexes.
+ */
+export function isAnalyzableFile(filename) {
+    return getLangForFile(filename) !== null;
+}
+
+/**
+ * Groups files by language descriptor.
+ * Used by orchestrate.js to run per-language analysis before merging.
+ * Returns Map<langId, { lang: LangDescriptor, files: FileArray }>
+ */
+export function groupFilesByLanguage(files) {
+    const groups = new Map();
+    for (const file of files) {
+        const lang = getLangForFile(file.name);
+        if (!lang) continue;
+        if (!groups.has(lang.id)) groups.set(lang.id, { lang, files: [] });
+        groups.get(lang.id).files.push(file);
+    }
+    return groups;
+}
+```
+
+---
+
+### Step 3 — Refactor `ast-engine-ts.js`
+
+The file becomes `ast-engine-ts.js`. The parser init and all extraction functions get a `langConfig` parameter. For backward compatibility during the transition, `langConfig` defaults to the JavaScript descriptor, so no call sites break until they're explicitly updated.
+
+**`initParser(langConfig = javascript)`** — currently loads all three JS grammars eagerly. After refactor, it loads only the grammars specified in `langConfig.parser.wasm`. The `_initPromise` guard extends to a per-language init map so calling `initParser(python)` doesn't re-initialize JS grammars.
+
+```js
+const _initPromiseByLang = new Map(); // langId → Promise
+
+export async function initParser(langConfig = javascript) {
+    if (_initPromiseByLang.has(langConfig.id)) {
+        return _initPromiseByLang.get(langConfig.id);
+    }
+    const p = (async () => {
+        // ... existing WASM module probing (shapes A-H) stays exactly as-is ...
+        // Grammar loading changes:
+        const grammars = {};
+        for (const [key, wasmPath] of Object.entries(langConfig.parser.wasm)) {
+            grammars[key] = await TreeSitter.Language.load(wasmPath);
+        }
+        // Store grammars keyed by lang id for parseCode() to retrieve
+        _grammarsByLang.set(langConfig.id, grammars);
+    })();
+    _initPromiseByLang.set(langConfig.id, p);
+    return p;
+}
+```
+
+**`parseCode(content, filename, langConfig = javascript)`** — grammar selection delegates to the descriptor:
+
+```js
+export function parseCode(content, filename, langConfig = javascript) {
+    const grammarKey = langConfig.parser.selectGrammar(filename);
+    const grammars = _grammarsByLang.get(langConfig.id);
+    if (!grammars?.[grammarKey]) return null;
+    parserInstance.setLanguage(grammars[grammarKey]);
+    return parserInstance.parse(content);
+}
+```
+
+**`extractMutationChains(tree, filename, langConfig = javascript)`**:
+```js
+// Before
+const assignments = root.descendantsOfType('assignment_expression');
+const augmented   = root.descendantsOfType('augmented_assignment_expression');
+const updates     = root.descendantsOfType('update_expression');
+const members     = root.descendantsOfType('member_expression');
+
+// After
+const n = langConfig.nodeTypes;
+const assignments = root.descendantsOfType(n.assignment);
+const augmented   = n.augmentedAssignment ? root.descendantsOfType(n.augmentedAssignment) : [];
+const updates     = n.updateExpression    ? root.descendantsOfType(n.updateExpression)    : [];
+const members     = n.memberExpression    ? root.descendantsOfType(n.memberExpression)    : [];
+```
+
+The `null` check matters — Python has no `++` operator, so `updateExpression` is null in the Python descriptor. The engine handles this cleanly by treating null node types as "not applicable" rather than crashing.
+
+**`findTimingNodes(tree, filename, langConfig = javascript)`**:
+```js
+// Before
+if (TIMING_APIS.has(calleeName)) { ... }
+
+// After
+if (langConfig.asyncBoundaries.has(calleeName)) { ... }
+```
+
+**`trackClosureCaptures(tree, filename, langConfig = javascript)`**:
+```js
+// Scope map building delegates to the language
+const scopeMap = langConfig.buildScopeMap(tree);
+// scopeCreators list comes from descriptor
+const scopeCreatorTypes = new Set(langConfig.nodeTypes.scopeCreators);
+```
+
+**`runFullAnalysis(file, langConfig = javascript)`** — runs base extractors then framework patterns:
+```js
+export async function runFullAnalysis(file, langConfig = javascript) {
+    const tree = parseCode(file.content, file.name, langConfig);
+    if (!tree) return null;
+
+    const mutations = extractMutationChains(tree, file.name, langConfig);
+    const closures  = langConfig.buildScopeMap
+        ? trackClosureCaptures(tree, file.name, langConfig)
+        : [];
+    const timing    = findTimingNodes(tree, file.name, langConfig);
+
+    // Framework patterns — JS runs React hook detection here, Python would run Django ORM detection
+    const frameworkFindings = [];
+    for (const detector of (langConfig.frameworkPatterns || [])) {
+        const findings = detector(tree, file.name, { mutations, closures, timing });
+        frameworkFindings.push(...findings);
+    }
+
+    return { mutations, closures, timing, frameworkFindings };
+}
+```
+
+**`runMultiFileAnalysis(files)`** — groups by language, runs per group:
+```js
+export async function runMultiFileAnalysis(files) {
+    const groups = groupFilesByLanguage(files);
+    const allResults = [];
+
+    for (const { lang, files: langFiles } of groups.values()) {
+        await initParser(lang);
+        for (const file of langFiles) {
+            const result = await runFullAnalysis(file, lang);
+            if (result) allResults.push({ file: file.name, lang: lang.id, ...result });
+        }
+    }
+
+    return formatMultiFileResults(allResults);
+}
+```
+
+---
+
+### Step 4 — Refactor `ast-project.js`
+
+The three changes here:
+
+**`buildModuleMap(files)`** — import path resolution delegates to the language descriptor:
+
+```js
+// Before
+const resolvedSource = resolveModuleName(source, files);
+if (isLikelyNodeModule(source, files)) continue;
+
+// After
+const lang = getLangForFile(file.name);
+if (!lang) continue;
+if (lang.isLikelyNodeModule(source, files)) continue;
+const resolvedSource = lang.resolveImportPath(source, file.name, files);
+```
+
+For Python, this same function handles `from .utils import helper` (relative) and `from mypackage.utils import helper` (absolute) because Python's `resolveImportPath` in the descriptor knows how to handle dotted module names.
+
+**`import_from_statement` handling** — Python has a second import node type that JS doesn't. The descriptor's `secondaryImportStatement` field handles this:
+
+```js
+const importNodes = root.descendantsOfType(lang.nodeTypes.importStatement);
+if (lang.nodeTypes.secondaryImportStatement) {
+    importNodes.push(...root.descendantsOfType(lang.nodeTypes.secondaryImportStatement));
+}
+```
+
+**File filters** — every regex replaced:
+```js
+// Before (appears multiple times)
+files.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name))
+
+// After
+import { isAnalyzableFile } from './lang/index.js';
+files.filter(f => isAnalyzableFile(f.name))
+```
+
+---
+
+### Step 5 — Update `orchestrate.js`
+
+The only changes are the file filter lines and the AST section:
+
+```js
+import { isAnalyzableFile, groupFilesByLanguage } from './lang/index.js';
+
+// Phase 0.5: Graph Router
+const analyzableFiles = codeFiles.filter(f => isAnalyzableFile(f.name));
+// Before: const jsFiles = codeFiles.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name))
+
+// Phase 1: AST
+const filesToAnalyze = codeFiles.filter(f => isAnalyzableFile(f.name));
+// Before: const jsFilesForAST = codeFiles.filter(...)
+```
+
+The orchestration logic, phases, claim verifier, solvability check — none of that changes. It's language-agnostic already.
+
+---
+
+### Step 6 — Update `config.js` Prompt Builders
+
+`buildDebugPrompt(level, language, provider, langConfig = null)` gets one new injection point:
+
+```js
+function buildLanguageContext(langConfig) {
+    if (!langConfig?.promptHints) return '';
+    const h = langConfig.promptHints;
+    return `
+LANGUAGE CONTEXT — ${langConfig.label}
+Async model: ${h.asyncModel}
+Mutation risks specific to this language: ${h.mutationRisk}
+Scope gotchas: ${h.scopeGotchas}
+Import model: ${h.importModel}
+`;
+}
+```
+
+This block gets injected into the system prompt right before the AST ground truth block. The LLM now has language-specific mental model primed before seeing the code.
+
+The existing JS-specific references in the prompt (React hooks mentions, closure explanation) get gated behind `if (langConfig?.id === 'javascript')` rather than being removed — they're correct for JS and shouldn't go away, just shouldn't fire for Python.
+
+---
+
+### How Adding Python Works After the Refactor
+
+This is the validation test of the architecture. If adding Python requires touching `ast-engine-ts.js` or `orchestrate.js`, the abstraction leaked somewhere.
+
+**What you write:**
+
+1. `src/core/lang/python.js` — the descriptor. This is the meaningful work.
+
+```js
+// Key differences from javascript.js:
+
+nodeTypes: {
+    assignment:             'assignment',           // not 'assignment_expression'
+    augmentedAssignment:    'augmented_assignment',
+    updateExpression:        null,                  // Python has no ++ / --
+    memberExpression:        'attribute',           // obj.prop is 'attribute' in Python's grammar
+    callExpression:          'call',                // not 'call_expression'
+    importStatement:         'import_statement',    // import foo
+    secondaryImportStatement:'import_from_statement', // from foo import bar
+    exportStatement:          null,                 // Python has no exports
+    scopeCreators: [
+        'function_definition',
+        'async_function_definition',
+        'class_definition',
+        'lambda',                                   // lambdas create scope in Python
+    ],
+    identifier: 'identifier',
+    string: 'string',
+},
+
+asyncBoundaries: new Set([
+    'asyncio.create_task', 'asyncio.gather', 'asyncio.sleep',
+    'asyncio.run', 'asyncio.wait_for', 'asyncio.shield',
+    'threading.Thread', 'multiprocessing.Process',
+    'concurrent.futures.ThreadPoolExecutor',
+    'aiohttp.ClientSession', 'httpx.AsyncClient',
+]),
+```
+
+2. `buildScopeMap_Python(tree)` — this is the hardest part of the Python addition and should be done as a second pass after basic mutation/timing detection ships. Python LEGB scoping means:
+   - A bare assignment `x = 1` inside a function creates a local binding
+   - `global x` re-binds `x` to module scope
+   - `nonlocal x` re-binds `x` to the nearest enclosing function scope
+   - Class bodies do not create an enclosing scope for methods (unlike JS)
+
+   Ship Python v1 without `buildScopeMap` (set it to `null` in the descriptor, the engine skips closure tracking if it's null). Mutation chains and timing detection work without scope resolution.
+
+3. `resolveImportPath` for Python — handles two cases:
+   - Relative: `from .utils import helper` → strip the leading dots, resolve against current file's directory
+   - Absolute: `from mypackage.utils import helper` → look for `mypackage/utils.py` in provided files
+
+4. Register in `lang/index.js` — one line.
+
+5. Drop `tree-sitter-python.wasm` into `public/wasm/`.
+
+**What you don't touch:**
+
+- `ast-engine-ts.js` — no changes
+- `ast-project.js` — no changes beyond what's already been parameterized
+- `orchestrate.js` — no changes
+- `config.js` — add `promptHints` injection for Python, the mechanism already exists
+- `parse-json.js`, `provider.js` — no changes
+
+This is the correctness proof for the architecture. If you can add Python by writing one descriptor file and dropping a WASM, the abstraction is right.
+
+---
+
+### What Adding Any Future Language Looks Like (The Pattern)
+
+```
+New language checklist:
+□ Check tree-sitter grammar availability and maturity
+□ Add WASM to public/wasm/
+□ Create src/core/lang/{language}.js
+  □ extensions[]
+  □ parser.wasm paths + selectGrammar()
+  □ nodeTypes — map each to tree-sitter grammar's actual node names
+      (use tree-sitter playground to verify: https://tree-sitter.github.io/tree-sitter/playground)
+  □ asyncBoundaries — what are this language's async/concurrent APIs?
+  □ resolveImportPath() — how does this language's module system work?
+  □ buildScopeMap() — null for v1, implement for v2
+  □ frameworkPatterns[] — empty for v1
+  □ promptHints — async model, mutation risks, scope gotchas, import model
+□ Register in lang/index.js
+□ Validate with 3 representative bugs (mutation, async, cross-file)
+```
+
+The tree-sitter playground point matters — node type names are not standardized across grammars. Python uses `call` where JS uses `call_expression`. Rust uses `call_expression` like JS but `assignment_expression` becomes `let_declaration` for binding. You verify these in the playground before writing the descriptor, not by reading docs.
+
+---
+
+### Timing and Risk
+
+**Do this refactor immediately before Python addition, not as a standalone exercise.** The reason I said this earlier still holds: without a second language to validate against, you can't know where the abstraction is wrong. The Python descriptor will expose any place where the parameterization is too shallow within days of starting it.
+
+**Regression risk is low** because the JavaScript descriptor is just naming what already exists. The JS behavior doesn't change — you're replacing `'assignment_expression'` the string literal with `langConfig.nodeTypes.assignment` which resolves to `'assignment_expression'`. Every existing test, every benchmark bug, every analysis result is identical.
+
+**The one sharp edge** is `initParser()`. The existing probe logic (shapes A-H for web-tree-sitter module shapes) is fragile and carefully tuned. Don't touch that logic during the refactor — just wrap it so it runs per-language instead of once for all of JS. The probe logic itself should be verbatim-copied until it needs to change.

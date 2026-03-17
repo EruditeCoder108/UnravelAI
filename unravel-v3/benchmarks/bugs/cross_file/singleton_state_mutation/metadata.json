@@ -1,7 +1,0 @@
-{
-  "id": "singleton_state_mutation",
-  "category": "cross_file",
-  "difficulty": "medium",
-  "symptom": "After logout, switching back to login sometimes retains the previous user's theme preference.",
-  "files": ["store.js", "login.js", "settings.js", "logout.js"]
-}

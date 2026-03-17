@@ -1,7 +1,0 @@
-{
-  "id": "stale_closure_state_update",
-  "category": "closure",
-  "difficulty": "medium",
-  "symptom": "Counter increments to 1 and then stops updating, stuck at 1 forever.",
-  "files": ["Counter.jsx"]
-}

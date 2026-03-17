@@ -1,5 +1,0 @@
-{
-  "root_cause_keywords": ["exported array mutated", "push on shared reference", "no deduplication", "singleton array grows"],
-  "files": ["pluginA.js", "pluginB.js"],
-  "lines": [4]
-}

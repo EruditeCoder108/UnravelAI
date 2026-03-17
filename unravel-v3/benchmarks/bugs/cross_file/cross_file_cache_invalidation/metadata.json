@@ -1,7 +1,0 @@
-{
-  "id": "cross_file_cache_invalidation",
-  "category": "cross_file",
-  "difficulty": "hard",
-  "symptom": "After updating a user profile, the profile view still shows old data until page refresh.",
-  "files": ["cache.js", "userService.js", "profileView.js"]
-}

@@ -1,9 +1,0 @@
-{
-  "id": "missing_await",
-  "category": "async",
-  "difficulty": "easy",
-  "symptom": "User profile page shows \"Loading...\" forever or displays undefined values. The data is fetched but never displayed.",
-  "files": [
-    "UserProfile.jsx"
-  ]
-}

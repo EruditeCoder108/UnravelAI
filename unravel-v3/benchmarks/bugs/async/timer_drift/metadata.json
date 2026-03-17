@@ -1,9 +1,0 @@
-{
-  "id": "timer_drift",
-  "category": "async",
-  "difficulty": "hard",
-  "symptom": "Timer drifts and becomes inaccurate over time. A 5-minute timer ends at 4:47 or 5:13 instead of exactly 5:00.",
-  "files": [
-    "timer.js"
-  ]
-}

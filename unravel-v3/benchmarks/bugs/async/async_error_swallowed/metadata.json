@@ -1,7 +1,0 @@
-{
-  "id": "async_error_swallowed",
-  "category": "async",
-  "difficulty": "medium",
-  "symptom": "createUser always returns success:true even when the database throws an error.",
-  "files": ["app.js"]
-}

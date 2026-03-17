@@ -1,7 +1,0 @@
-{
-  "id": "shared_config_mutation",
-  "category": "cross_file",
-  "difficulty": "hard",
-  "symptom": "After calling initAuth('staging'), all subsequent API calls go to the staging URL even in production modules that never requested staging.",
-  "files": ["config.js", "auth.js", "api.js"]
-}

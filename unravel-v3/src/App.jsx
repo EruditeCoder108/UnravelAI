@@ -30,13 +30,13 @@ const storeKey = (provider, key) => localStorage.setItem(`unravel_key_${provider
 
 // ─── Sub-Components ─────────────────────────────────────
 const Logo = ({ isAnalyzing }) => (
-    <svg width="48" height="32" viewBox="0 0 120 80" fill="none" xmlns="http://www.w3.org/2000/svg" className={isAnalyzing ? "animate-pulse" : ""} style={{ marginRight: 8 }}>
+    <svg width="42" height="42" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: 12 }}>
         <defs>
-            <linearGradient id="lineGrad" x1="60" y1="40" x2="110" y2="40" gradientUnits="userSpaceOnUse">
+            <linearGradient id="logoGrad" x1="0" y1="50" x2="100" y2="50" gradientUnits="userSpaceOnUse">
                 <stop offset="0%" stopColor="#a855f7" />
                 <stop offset="100%" stopColor="#06b6d4" />
             </linearGradient>
-            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+            <filter id="logoGlow" x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feMerge>
                     <feMergeNode in="blur" />
@@ -44,9 +44,30 @@ const Logo = ({ isAnalyzing }) => (
                 </feMerge>
             </filter>
         </defs>
-        <path d="M 30 20 L 50 15 L 60 30 L 40 45 L 20 30 Z M 20 30 L 10 50 L 30 70 L 50 50 L 40 45 M 50 50 L 70 60 L 60 30 M 30 20 L 40 10 L 60 10 L 70 20 L 60 30 M 70 20 L 80 40 L 60 40 L 50 15" stroke="var(--text-primary)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-        <line x1="60" y1="40" x2="110" y2="40" stroke="url(#lineGrad)" strokeWidth="5" strokeLinecap="round" />
-        <circle cx="110" cy="40" r="4" fill="#06b6d4" filter="url(#glow)" />
+        {/* Under-shadow path for depth */}
+        <path 
+            d="M 20 70 Q 40 10 50 50 T 80 30" 
+            stroke="rgba(0,0,0,0.3)" 
+            strokeWidth="10" 
+            strokeLinecap="round" 
+            transform="translate(2, 2)"
+        />
+        {/* Main Woven Path */}
+        <path 
+            d="M 20 70 Q 40 10 50 50 T 80 30" 
+            stroke="url(#logoGrad)" 
+            strokeWidth="7" 
+            strokeLinecap="round" 
+            className={isAnalyzing ? "animate-pulse" : ""}
+            style={{ filter: 'url(#logoGlow)' }}
+        />
+        {/* Terminal Glowing Node */}
+        <circle 
+            cx="80" cy="30" r="5" 
+            fill="#ffffff" 
+            style={{ filter: 'drop-shadow(0 0 8px #06b6d4)' }}
+            className={isAnalyzing ? "animate-pulse" : ""}
+        />
     </svg>
 );
 
@@ -728,7 +749,32 @@ export default function App() {
                 preset: pset
             };
             const updated = [entry, ...prev].slice(0, 3);
-            localStorage.setItem('unravel_history', JSON.stringify(updated));
+
+            // localStorage.setItem throws synchronously on quota exceeded — must guard.
+            // Large repos can produce 100–300KB reports; 3 entries can hit the 5MB limit.
+            try {
+                localStorage.setItem('unravel_history', JSON.stringify(updated));
+            } catch (e) {
+                if (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014) {
+                    // Strip the heaviest fields and retry
+                    try {
+                        const trimmed = updated.map(h => ({
+                            ...h,
+                            report: h.report ? {
+                                ...h.report,
+                                flowchartEdges: [],   // Mermaid edge data — largest field
+                                componentMap:   [],   // per-file component graph
+                                dataFlow:       [],   // data flow table rows
+                            } : h.report,
+                        }));
+                        localStorage.setItem('unravel_history', JSON.stringify(trimmed));
+                    } catch {
+                        // Still over quota — keep history in memory only, don't crash
+                        console.warn('[History] localStorage quota exceeded even after trimming. History will not persist across reloads.');
+                    }
+                }
+            }
+
             return updated;
         });
     };
@@ -1282,22 +1328,22 @@ export default function App() {
     // ═══ STYLES ═══════════════════════════════════════════
     const S = {
         wrap: { width: '100%', paddingLeft: 'min(5%, 40px)', paddingRight: 'min(5%, 40px)', margin: '0 auto' },
-        label: { fontFamily: 'inherit', textTransform: 'uppercase', fontSize: 12, fontWeight: 700, letterSpacing: 1, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, color: 'var(--text-secondary)' },
+        label: { fontFamily: 'inherit', textTransform: 'uppercase', fontSize: 13, fontWeight: 700, letterSpacing: 1.2, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, color: 'var(--text-secondary)' },
         optBtn: (active, accentColor = 'var(--accent-blue)') => ({
-            padding: '16px 20px', fontWeight: 600, 
-            border: '1px solid', borderColor: active ? accentColor : 'var(--border-light)', 
+            padding: '18px 24px', fontWeight: 600, 
+            border: active ? '2px solid' : '1px solid', 
+            borderColor: active ? accentColor : 'var(--border-light)', 
             background: active ? `var(--surface-active)` : 'var(--surface-base)', 
             color: active ? accentColor : 'var(--text-primary)', 
-            cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, 
+            cursor: 'pointer', fontFamily: 'inherit', fontSize: 16, 
             transition: 'all 0.2s', borderRadius: 'var(--radius-md)',
-            backdropFilter: 'var(--blur-sm)', WebkitBackdropFilter: 'var(--blur-sm)',
             transform: active ? 'translateY(-2px)' : 'none',
             boxShadow: active ? `0 8px 16px rgba(0,0,0,0.1)` : 'none'
         }),
         tabBtn: (active) => ({
-            flex: 1, padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, 
-            fontFamily: 'inherit', fontWeight: 600, fontSize: 14, cursor: 'pointer', border: 'none', 
-            borderBottom: active ? '2px solid var(--accent-blue)' : '2px solid transparent', 
+            flex: 1, padding: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, 
+            fontFamily: 'inherit', fontWeight: 600, fontSize: 16, cursor: 'pointer', border: 'none', 
+            borderBottom: active ? '3px solid var(--accent-blue)' : '3px solid var(--border-light)', 
             background: active ? 'var(--surface-hover)' : 'transparent', 
             color: active ? 'var(--text-primary)' : 'var(--text-secondary)', transition: 'all 0.2s',
         }),
@@ -1321,11 +1367,11 @@ export default function App() {
                 <header style={{ borderBottom: '1px solid var(--border-light)', background: 'var(--surface-base)', backdropFilter: 'var(--blur-md)', WebkitBackdropFilter: 'var(--blur-md)', position: 'sticky', top: 0, zIndex: 50, transition: 'all 0.3s' }}>
                 <div style={{ ...S.wrap, paddingTop: 16, paddingBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => setStep(1)}>
+                        <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} onClick={() => setStep(1)}>
                             <Logo isAnalyzing={isAnalyzing} />
                             <div>
-                                <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0, lineHeight: 1 }}>
-                                    Unravel<span style={{ color: 'transparent', backgroundClip: 'text', WebkitBackgroundClip: 'text', backgroundImage: 'linear-gradient(to right, #a855f7, #06b6d4)' }}>AI</span>
+                                <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '0.05em', color: 'var(--text-primary)', margin: 0, lineHeight: 1, fontFamily: "'Outfit', sans-serif", textTransform: 'uppercase' }}>
+                                    UNRAVEL
                                 </h1>
                             </div>
                         </div>
@@ -1338,10 +1384,10 @@ export default function App() {
                         </div>
                     </div>
                     
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                         {/* History Button */}
-                        <button onClick={() => setHistoryOpen(true)} className="matte-button" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'transparent', border: '1px solid var(--border-light)' }}>
-                            <Clock size={14} /> <span className="hide-on-mobile" style={{ fontSize: 13, fontWeight: 500 }}>History</span>
+                        <button onClick={() => setHistoryOpen(true)} className="matte-button" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', background: 'transparent', border: '1px solid var(--border-heavy)' }}>
+                            <Clock size={18} /> <span className="hide-on-mobile" style={{ fontSize: 16, fontWeight: 700 }}>History</span>
                         </button>
 
                         {/* Theme Toggle */}
@@ -1378,28 +1424,28 @@ export default function App() {
                                 <div style={{ textAlign: 'center', color: 'var(--text-tertiary)', marginTop: 40 }}>
                                     <Clock size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
                                     <div>No recent analyzes found.</div>
-                                    <div style={{ fontSize: 13, marginTop: 4 }}>Completed analyses will appear here.</div>
+                                    <div style={{ fontSize: 15, marginTop: 4 }}>Completed analyses will appear here.</div>
                                 </div>
                             ) : (
                                 historyList.map(entry => (
-                                    <div key={entry.id} className="glass-panel hover-card" style={{ padding: 16, cursor: 'pointer', transition: 'all 0.2s' }} onClick={() => loadHistoryEntry(entry)}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                                            <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 15 }}>
+                                    <div key={entry.id} className="glass-panel hover-card" style={{ padding: 18, cursor: 'pointer', transition: 'all 0.2s' }} onClick={() => loadHistoryEntry(entry)}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                                            <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 16 }}>
                                                 {entry.analysisMode === 'debug' ? 'Debug Analysis' : entry.analysisMode === 'explain' ? 'Code Explanation' : 'Security Audit'}
                                             </div>
-                                            <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                                            <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                                                 {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                             </div>
                                         </div>
-                                        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                        <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 12, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                             {entry.report?.bugType ? `${entry.report.bugType}: ${entry.report.rootCause || 'Completed issue analysis'}` : entry.layerBoundary ? `Layer Boundary: ${entry.layerBoundary.reason}` : `Completed ${entry.preset} scan`}
                                         </div>
                                         <div style={{ display: 'flex', gap: 8 }}>
-                                            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: 'var(--surface-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)' }}>
+                                            <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 12, background: 'var(--surface-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)' }}>
                                                 Preset: {entry.preset}
                                             </span>
                                             {entry.report?.confidence && (
-                                                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-blue)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                                                <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 12, background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-blue)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
                                                     {displayConfidence(entry.report.confidence)}% Confidence
                                                 </span>
                                             )}
@@ -1408,7 +1454,7 @@ export default function App() {
                                 ))
                             )}
                         </div>
-                        <div style={{ padding: 16, borderTop: '1px solid var(--border-light)', fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                        <div style={{ padding: 16, borderTop: '1px solid var(--border-light)', fontSize: 13, color: 'var(--text-tertiary)', textAlign: 'center' }}>
                             Stores your last 3 analysis results locally.
                         </div>
                     </div>
@@ -1420,16 +1466,16 @@ export default function App() {
                 {/* ═══ STEP 1: Profile + API Key ═══ */}
                 {step === 1 && (
                     <div className="animate-in" style={{ margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32 }}>
-                        
+
                         {/* Provider & Key Configuration */}
                         <div className="glass-panel" style={{ padding: 32 }}>
                             <div style={{ ...S.label, color: 'var(--accent-red)' }}>
                                 <Key size={16} /> Connection Configuration
                             </div>
-                            
+
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 32 }}>
                                 <div>
-                                    <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--text-secondary)' }}>Select your primary AI provider:</div>
+                                    <div style={{ marginBottom: 16, fontSize: 15, color: 'var(--text-secondary)' }}>Select your primary AI provider:</div>
                                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
                                         {Object.entries(PROVIDERS).map(([key, p]) => (
                                             <button key={key} style={S.optBtn(provider === key, 'var(--accent-red)')} onClick={() => setProvider(key)}>
@@ -1437,39 +1483,39 @@ export default function App() {
                                             </button>
                                         ))}
                                     </div>
-                                    
+
                                     {prov && (
                                         <>
-                                            <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--text-secondary)' }}>Choose a model tier:</div>
+                                            <div style={{ marginBottom: 16, fontSize: 15, color: 'var(--text-secondary)' }}>Choose a model tier:</div>
                                             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                                                 {Object.entries(prov.models).map(([key, m]) => (
                                                     <button key={key} style={S.optBtn(model === m.id, 'var(--accent-cyan)')} onClick={() => setModel(m.id)}>
                                                         <div style={{ fontWeight: 600 }}>{m.label}</div>
-                                                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>{m.tier} tier</div>
+                                                        <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4 }}>{m.tier} tier</div>
                                                     </button>
                                                 ))}
                                             </div>
                                         </>
                                     )}
                                 </div>
-                                
+
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                    <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--text-secondary)' }}>Authentication:</div>
+                                    <div style={{ marginBottom: 16, fontSize: 15, color: 'var(--text-secondary)' }}>Authentication:</div>
                                     <div style={{ position: 'relative' }}>
                                         <input
                                             type={showKey ? 'text' : 'password'}
                                             className="glass-input"
-                                            style={{ width: '100%', paddingRight: 80, fontSize: 14 }}
+                                            style={{ width: '100%', paddingRight: 80, fontSize: 16 }}
                                             placeholder={`Enter ${prov?.name || ''} API key`}
                                             value={apiKey}
                                             onChange={(e) => { setApiKey(e.target.value); storeKey(provider, e.target.value); }}
                                         />
-                                        <button onClick={() => setShowKey(!showKey)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'var(--surface-hover)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 600, padding: '4px 8px', cursor: 'pointer', transition: 'all 0.2s' }}>
+                                        <button onClick={() => setShowKey(!showKey)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'var(--surface-hover)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600, padding: '4px 8px', cursor: 'pointer', transition: 'all 0.2s' }}>
                                             {showKey ? 'HIDE' : 'SHOW'}
                                         </button>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, color: 'var(--text-tertiary)', fontSize: 12 }}>
-                                        <Shield size={14} />
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, color: 'var(--text-tertiary)', fontSize: 14 }}>
+                                        <Shield size={16} />
                                         Stored locally in browser localStorage. Never transmitted elsewhere.
                                     </div>
 
@@ -1486,8 +1532,8 @@ export default function App() {
                                         <button key={key} style={{ ...S.optBtn(level === key, 'var(--accent-green)'), display: 'flex', alignItems: 'center', gap: 16, textAlign: 'left' }} onClick={() => setLevel(key)}>
                                             <div style={{ color: level === key ? 'var(--accent-green)' : 'var(--text-tertiary)' }}>{ICON_MAP[v.icon]}</div>
                                             <div>
-                                                <div style={{ fontSize: 15, fontWeight: 600 }}>{v.label}</div>
-                                                <div style={{ fontSize: 12, color: level === key ? 'var(--text-primary)' : 'var(--text-secondary)', marginTop: 4, fontWeight: 400 }}>{v.desc}</div>
+                                                <div style={{ fontSize: 17, fontWeight: 600 }}>{v.label}</div>
+                                                <div style={{ fontSize: 14, color: level === key ? 'var(--text-primary)' : 'var(--text-secondary)', marginTop: 4, fontWeight: 400 }}>{v.desc}</div>
                                             </div>
                                         </button>
                                     ))}
@@ -1501,7 +1547,7 @@ export default function App() {
                                     {Object.entries(LANGUAGES).map(([key, v]) => (
                                         <button key={key} style={{ ...S.optBtn(language === key, 'var(--accent-purple)'), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '24px 16px' }} onClick={() => setLanguage(key)}>
                                             <div style={{ color: language === key ? 'var(--accent-purple)' : 'var(--text-tertiary)' }}>{ICON_MAP[v.icon]}</div>
-                                            <div style={{ fontSize: 14 }}>{v.label}</div>
+                                            <div style={{ fontSize: 16 }}>{v.label}</div>
                                         </button>
                                     ))}
                                 </div>
@@ -1521,9 +1567,9 @@ export default function App() {
                 {/* ═══ STEP 2: Code Input ═══ */}
                 {step === 2 && (
                     <div className="animate-in" style={{ margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 32 }}>
-                        
+
                         {/* Tabs */}
-                        <div style={{ display: 'flex', gap: 8, background: 'var(--surface-base)', padding: 6, borderRadius: 'var(--radius-lg)', backdropFilter: 'var(--blur-md)' }}>
+                        <div style={{ display: 'flex', gap: 8, background: 'var(--surface-base)', padding: 6, borderRadius: 'var(--radius-lg)' }}>
                             <button onClick={() => setInputType('upload')}
                                 className={inputType === 'upload' ? 'matte-button active' : 'matte-button'} style={{flex: 1, padding: '12px 16px', background: inputType === 'upload' ? 'var(--surface-hover)' : 'transparent', color: inputType === 'upload' ? 'var(--accent-blue)' : 'var(--text-secondary)', border: 'none'}}>
                                 <FolderTree size={16} /> Folder Upload
@@ -1541,7 +1587,7 @@ export default function App() {
                         <div className="glass-panel" style={{ padding: 32, display: 'flex', flexDirection: 'column', gap: 24 }}>
                             {inputType === 'upload' && (
                                 <div className="animate-fade-in">
-                                    <div style={{ background: 'var(--accent-cyan)22', borderLeft: '4px solid var(--accent-cyan)', padding: '16px 20px', borderRadius: '4px', fontSize: 13, marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <div style={{ background: 'var(--accent-cyan)22', borderLeft: '4px solid var(--accent-cyan)', padding: '16px 20px', borderRadius: '4px', fontSize: 14, marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
                                         <strong style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-cyan)' }}><Search size={16} /> SMART ROUTING ACTIVE</strong>
                                         <span style={{ color: 'var(--text-secondary)' }}>Upload entire folder. AI will selectively read relevant files only, saving tokens and time.</span>
                                     </div>
@@ -1549,18 +1595,18 @@ export default function App() {
                                         style={{ border: '2px dashed var(--border-heavy)', background: 'var(--surface-base)', borderRadius: 'var(--radius-lg)', padding: 64, textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
                                         onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-cyan)'; e.currentTarget.style.background = 'var(--surface-hover)'; }}
                                         onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-heavy)'; e.currentTarget.style.background = 'var(--surface-base)'; }}>
-                                        <UploadCloud size={48} color="var(--accent-cyan)" style={{ marginBottom: 16, opacity: 0.8 }} />
-                                        <p style={{ fontWeight: 600, fontSize: 16, color: 'var(--text-primary)' }}>
+                                        <UploadCloud size={64} color="var(--accent-cyan)" style={{ marginBottom: 16, opacity: 0.8 }} />
+                                        <p style={{ fontWeight: 600, fontSize: 18, color: 'var(--text-primary)' }}>
                                             {directoryFiles.length > 0 ? 'Add More Files' : 'Drop Project Folder Here'}
                                         </p>
-                                        <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginTop: 8 }}>or click to browse</p>
+                                        <p style={{ color: 'var(--text-tertiary)', fontSize: 15, marginTop: 8 }}>or click to browse</p>
                                         <input type="file" webkitdirectory="true" directory="true" multiple ref={dirInputRef} onChange={handleDirectoryUpload} style={{ display: 'none' }} />
                                     </div>
                                     {directoryFiles.length > 0 && (
                                         <div style={{ marginTop: 24, border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--border-light)', background: 'var(--surface-active)' }}>
-                                                <span style={{ fontSize: 12, color: 'var(--accent-green)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    <CheckSquare size={14} />
+                                                <span style={{ fontSize: 14, color: 'var(--accent-green)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <CheckSquare size={16} />
                                                     {directoryFiles.length} FILE{directoryFiles.length !== 1 ? 'S' : ''} READY
                                                 </span>
                                                 <button onClick={() => setDirectoryFiles([])} className="matte-button" style={{ fontSize: 11, padding: '4px 8px', borderRadius: '4px' }}>
@@ -1569,9 +1615,9 @@ export default function App() {
                                             </div>
                                             <div style={{ maxHeight: 240, overflowY: 'auto', background: 'var(--surface-base)' }}>
                                                 {directoryFiles.map((f, idx) => (
-                                                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', borderBottom: idx < directoryFiles.length - 1 ? '1px solid var(--border-light)' : 'none', fontSize: 13 }}>
+                                                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', borderBottom: idx < directoryFiles.length - 1 ? '1px solid var(--border-light)' : 'none', fontSize: 14 }}>
                                                         <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                            <FileCode size={14} color="var(--text-tertiary)" />
+                                                            <FileCode size={16} color="var(--text-tertiary)" />
                                                             {f.webkitRelativePath || f.name}
                                                         </span>
                                                         <button onClick={() => removeDirectoryFile(idx)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px', borderRadius: '4px', transition: 'all 0.2s' }}
@@ -1589,7 +1635,7 @@ export default function App() {
 
                             {inputType === 'github' && (
                                 <div className="animate-fade-in">
-                                    <div style={{ background: 'var(--accent-purple)22', borderLeft: '4px solid var(--accent-purple)', padding: '16px 20px', borderRadius: '4px', fontSize: 13, marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <div style={{ background: 'var(--accent-purple)22', borderLeft: '4px solid var(--accent-purple)', padding: '16px 20px', borderRadius: '4px', fontSize: 14, marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
                                         <strong style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-purple)' }}><Github size={16} /> PUBLIC REPOS & ISSUES</strong>
                                         <span style={{ color: 'var(--text-secondary)' }}>Paste a repo URL or an Issue URL. Unravel processes issues automatically.</span>
                                     </div>
@@ -1608,12 +1654,12 @@ export default function App() {
                                         {githubUrl.trim() && (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px' }}>
                                                 <CheckSquare size={16} color="var(--accent-green)" />
-                                                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Ready</span>
+                                                <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Ready</span>
                                             </div>
                                         )}
                                     </div>
                                     {githubError && (
-                                        <div style={{ background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.3)', padding: 12, borderRadius: 'var(--radius-sm)', color: 'var(--accent-red)', fontSize: 13, marginTop: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <div style={{ background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.3)', padding: 12, borderRadius: 'var(--radius-sm)', color: 'var(--accent-red)', fontSize: 15, marginTop: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                                             <AlertTriangle size={16} /> {githubError}
                                         </div>
                                     )}
@@ -1657,10 +1703,10 @@ export default function App() {
                                                 ...S.optBtn(analysisMode === m.key, m.color),
                                                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '24px 16px', position: 'relative'
                                             }}>
-                                            {m.beta && <span style={{ position: 'absolute', top: 8, right: 12, fontSize: 10, fontWeight: 700, color: m.color, background: `${m.color}22`, padding: '2px 6px', borderRadius: 4 }}>BETA</span>}
+                                            {m.beta && <span style={{ position: 'absolute', top: 8, right: 12, fontSize: 11, fontWeight: 700, color: m.color, background: `${m.color}22`, padding: '2px 6px', borderRadius: 4 }}>BETA</span>}
                                             <div style={{ color: analysisMode === m.key ? m.color : 'var(--text-tertiary)' }}>{m.icon}</div>
-                                            <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: '0.02em' }}>{m.label}</div>
-                                            <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 400, marginTop: -4 }}>{m.desc}</div>
+                                            <div style={{ fontWeight: 700, fontSize: 17, letterSpacing: '0.02em' }}>{m.label}</div>
+                                            <div style={{ fontSize: 14, opacity: 0.8, fontWeight: 400, marginTop: -4 }}>{m.desc}</div>
                                         </button>
                                     ))}
                                 </div>
@@ -1673,8 +1719,8 @@ export default function App() {
                                             {Object.entries(PRESETS).map(([key, p]) => (
                                                 <button key={key} onClick={() => { setPreset(key); if (key !== 'custom') setOutputSections(null); }}
                                                     style={{...S.optBtn(preset === key, 'var(--accent-green)'), padding: '16px', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                                    <div style={{ fontSize: 14, fontWeight: 600 }}>{p.label}</div>
-                                                    <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>{p.description}</div>
+                                                    <div style={{ fontSize: 16, fontWeight: 600 }}>{p.label}</div>
+                                                    <div style={{ fontSize: 13, fontWeight: 400, opacity: 0.8 }}>{p.description}</div>
                                                 </button>
                                             ))}
                                         </div>
@@ -1692,10 +1738,10 @@ export default function App() {
                                                 gap: 12,
                                             }}>
                                                 <div>
-                                                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-green)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
+                                                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-green)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
                                                         {PRESETS[preset].label} Selected
                                                     </div>
-                                                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                                    <div style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                                                         {PRESETS[preset].description}
                                                         {preset !== 'custom' && (
                                                             <span style={{ marginLeft: 8, color: 'var(--text-tertiary)' }}>
@@ -1727,10 +1773,10 @@ export default function App() {
                                                             border: '1px solid', borderColor: active ? 'var(--accent-blue)' : 'var(--border-light)',
                                                             background: active ? 'var(--accent-blue)22' : 'var(--surface-base)',
                                                             color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                                                            cursor: 'pointer', fontSize: 13, transition: 'all 0.15s',
+                                                            cursor: 'pointer', fontSize: 14, transition: 'all 0.15s',
                                                         }}>
                                                         <span>{sec.label}</span>
-                                                        <span style={{ fontSize: 10, color: costColor, fontWeight: 600 }}>{sec.tokenCost.toUpperCase()}</span>
+                                                        <span style={{ fontSize: 11, color: costColor, fontWeight: 600 }}>{sec.tokenCost.toUpperCase()}</span>
                                                     </button>
                                                 );
                                             })}
@@ -1751,14 +1797,14 @@ export default function App() {
                                             : analysisMode === 'explain'
                                                 ? "What do you want to understand about this code? Leave empty for full architecture overview."
                                                 : "Any specific security concerns? Leave empty to scan for common vulnerabilities."
-                                        } 
-                                        style={{ minHeight: 120 }}
+                                        }
+                                        style={{ minHeight: 120, fontSize: 16 }}
                                     />
                                 </div>
 
                                 {analysisError && (
                                     <div style={{ background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.3)', padding: 16, borderRadius: 'var(--radius-md)', color: 'var(--accent-red)', fontSize: 14, marginTop: 24, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                                        <AlertTriangle size={20} style={{ flexShrink: 0 }} /> 
+                                        <AlertTriangle size={20} style={{ flexShrink: 0 }} />
                                         <div style={{ lineHeight: 1.5 }}>{analysisError}</div>
                                     </div>
                                 )}
@@ -1776,7 +1822,7 @@ export default function App() {
                                             {analysisMode === 'debug' ? 'Execute Engine' : analysisMode === 'explain' ? 'Explain Code' : 'Run Security Audit'}
                                             <Zap size={22} />
                                         </button>
-                                        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, color: 'var(--text-tertiary)', fontSize: 13, marginTop: 16 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, color: 'var(--text-tertiary)', fontSize: 14, marginTop: 16 }}>
                                             {canExecute && <span>Est. runtime: <strong style={{ color: 'var(--text-secondary)' }}>{est}</strong></span>}
                                             <span style={{ opacity: 0.5 }}>•</span>
                                             <span>{analysisMode.toUpperCase()} | {prov?.models[Object.keys(prov.models).find(k => prov.models[k].id === model)]?.label || model}</span>
@@ -1792,10 +1838,10 @@ export default function App() {
                 {step === 3 && (
                     <div className="animate-in" style={{ paddingTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
                         <SvgLoader />
-                        <h2 style={{ fontSize: 32, fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-primary)', letterSpacing: 2, marginBottom: 8 }}>
+                        <h2 style={{ fontSize: 36, fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-primary)', letterSpacing: 2, marginBottom: 8 }}>
                             {analysisMode === 'debug' ? 'Engine Active' : analysisMode === 'explain' ? 'Explaining' : 'Auditing'}
                         </h2>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 32, fontWeight: 500 }}>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: 15, marginBottom: 32, fontWeight: 500 }}>
                             {analysisMode.toUpperCase()} mode • {PRESETS[preset]?.label || preset}
                         </p>
 
@@ -1829,11 +1875,11 @@ export default function App() {
                                 return (
                                     <>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, position: 'relative' }}>
-                                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <Loader2 size={16} className="animate-spin" style={{ color: activeColor }} />
+                                            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                <Loader2 size={18} className="animate-spin" style={{ color: activeColor }} />
                                                 {loadingStage || 'Initializing analysis pipeline...'}
                                             </div>
-                                            <div style={{ fontSize: 12, fontWeight: 600, color: activeColor }}>
+                                            <div style={{ fontSize: 14, fontWeight: 600, color: activeColor }}>
                                                 {Math.round(progressPct)}%
                                             </div>
                                         </div>
@@ -1870,7 +1916,7 @@ export default function App() {
                                                             {isDone && <Check size={8} color="var(--surface-base)" style={{ margin: '0 auto', display: 'block', marginTop: 0 }} />}
                                                         </div>
                                                         <div style={{ 
-                                                            fontSize: 10, 
+                                                            fontSize: 12, 
                                                             fontWeight: isActive ? 700 : 500,
                                                             color: isActive ? 'var(--text-primary)' : isDone ? 'var(--text-secondary)' : 'var(--text-tertiary)',
                                                             textTransform: 'uppercase',
@@ -1892,12 +1938,12 @@ export default function App() {
                         {/* Terminate Analysis Button */}
                         <div style={{ marginTop: 24, width: '100%', maxWidth: 640, padding: '16px 24px', background: 'rgba(239, 68, 68, 0.05)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                                <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 14 }}>Analysis running...</div>
-                                <div style={{ color: 'var(--text-tertiary)', fontSize: 13, marginTop: 2 }}>Terminate if you want to abort and change settings.</div>
+                                <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 16 }}>Analysis running...</div>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: 14, marginTop: 2 }}>Terminate if you want to abort and change settings.</div>
                             </div>
                             <button 
                                 onClick={() => abortControllerRef.current?.abort()}
-                                style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '8px 18px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontWeight: 600, fontSize: 14, transition: 'all 0.2s', whiteSpace: 'nowrap' }}
+                                style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '8px 18px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontWeight: 600, fontSize: 16, transition: 'all 0.2s', whiteSpace: 'nowrap' }}
                                 onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
                                 onMouseOut={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
                             >
@@ -1914,11 +1960,11 @@ export default function App() {
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid var(--border-light)' }}>
                                 <PauseCircle size={48} color="var(--accent-orange)" />
                                 <div>
-                                    <h2 style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px 0' }}>Analysis Paused</h2>
-                                    <p style={{ color: 'var(--text-secondary)', fontWeight: 500, margin: 0 }}>Engine needs more context to avoid hallucinating.</p>
+                                    <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px 0' }}>Analysis Paused</h2>
+                                    <p style={{ color: 'var(--text-secondary)', fontWeight: 500, margin: 0, fontSize: 16 }}>Engine needs more context to avoid hallucinating.</p>
                                 </div>
                             </div>
-                            <p style={{ fontSize: 15, marginBottom: 24, color: 'var(--text-primary)', lineHeight: 1.6 }}>
+                            <p style={{ fontSize: 17, marginBottom: 24, color: 'var(--text-primary)', lineHeight: 1.6 }}>
                                 <strong style={{ color: 'var(--accent-orange)' }}>Reason:</strong> {missingFileRequest.reason}
                             </p>
                             {additionalFiles.map((file, idx) => (
@@ -1948,16 +1994,16 @@ export default function App() {
                         <div className="glass-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--accent-orange)', paddingBottom: 16, marginBottom: 32, position: 'sticky', top: 72, zIndex: 15, paddingTop: 16, gap: 12, flexWrap: 'wrap' }}>
                             <div>
                                 <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: 11, background: 'var(--accent-orange)22', color: 'var(--accent-orange)', border: '1px solid var(--accent-orange)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>
+                                    <span style={{ fontSize: 12, background: 'var(--accent-orange)22', color: 'var(--accent-orange)', border: '1px solid var(--accent-orange)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>
                                         {layerBoundary._isMissingImpl ? 'IMPLEMENTATION NOT FOUND' : 'UPSTREAM ISSUE'}
                                     </span>
                                     {!layerBoundary._isMissingImpl && (
-                                        <span style={{ fontSize: 11, background: 'var(--surface-base)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
+                                        <span style={{ fontSize: 12, background: 'var(--surface-base)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
                                             CFD: {Math.round((layerBoundary.confidence || 0) * 100)}%
                                         </span>
                                     )}
                                 </div>
-                                <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
+                                <h2 style={{ fontSize: 36, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
                                     {layerBoundary._isMissingImpl ? 'No Executable Code Found' : 'Fix Impossible Here'}
                                 </h2>
                             </div>
@@ -1968,11 +2014,11 @@ export default function App() {
                         <div className="glass-panel" style={{ borderLeft: '4px solid var(--accent-orange)', padding: 32, marginBottom: 24 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                                 <AlertTriangle size={24} color="var(--accent-orange)" />
-                                <span style={{ fontSize: 13, color: 'var(--accent-orange)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>
+                                <span style={{ fontSize: 14, color: 'var(--accent-orange)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2 }}>
                                     {layerBoundary._isMissingImpl ? 'Implementation Not Found in Repository' : 'Layer Boundary Detected'}
                                 </span>
                             </div>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: 16, lineHeight: 1.8, margin: 0 }}>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: 17, lineHeight: 1.8, margin: 0 }}>
                                 {layerBoundary.reason}
                             </p>
                         </div>
@@ -1980,12 +2026,12 @@ export default function App() {
                         {/* Root cause layer */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 24 }}>
                             <div className="glass-panel" style={{ padding: 24 }}>
-                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 1 }}>Root Cause Layer</div>
-                                <div style={{ color: 'var(--accent-red)', fontSize: 16, fontWeight: 700 }}>{layerBoundary.rootCauseLayer}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 1 }}>Root Cause Layer</div>
+                                <div style={{ color: 'var(--accent-red)', fontSize: 17, fontWeight: 700 }}>{layerBoundary.rootCauseLayer}</div>
                             </div>
                             <div className="glass-panel" style={{ padding: 24 }}>
-                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 1 }}>Where the Fix Must Go</div>
-                                <div style={{ color: 'var(--accent-green)', fontSize: 16, fontWeight: 700 }}>{layerBoundary.suggestedFixLayer}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 1 }}>Where the Fix Must Go</div>
+                                <div style={{ color: 'var(--accent-green)', fontSize: 17, fontWeight: 700 }}>{layerBoundary.suggestedFixLayer}</div>
                             </div>
                         </div>
 
@@ -2030,14 +2076,14 @@ export default function App() {
                         {/* What Unravel found (symptom) */}
                         {layerBoundary.symptom && (
                             <div className="glass-panel" style={{ padding: 24, marginBottom: 24 }}>
-                                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 12, letterSpacing: 1 }}>Reported Symptom</div>
-                                <p style={{ color: 'var(--text-secondary)', fontSize: 15, lineHeight: 1.7, margin: 0 }}>{layerBoundary.symptom}</p>
+                                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 12, letterSpacing: 1 }}>Reported Symptom</div>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: 17, lineHeight: 1.7, margin: 0 }}>{layerBoundary.symptom}</p>
                             </div>
                         )}
 
                         {/* Provenance */}
                         {layerBoundary._provenance && (
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', borderTop: '1px solid var(--border-light)', paddingTop: 16, marginTop: 16, display: 'flex', gap: 16 }}>
+                            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', borderTop: '1px solid var(--border-light)', paddingTop: 16, marginTop: 16, display: 'flex', gap: 16 }}>
                                 <span>Engine v{layerBoundary._provenance.engineVersion}</span>
                                 <span>•</span>
                                 <span>{layerBoundary._provenance.model}</span>
@@ -2103,21 +2149,21 @@ export default function App() {
                             <div className="glass-header no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--border-light)', paddingBottom: 16, marginBottom: 32, position: 'sticky', top: 72, zIndex: 15, paddingTop: 16, gap: 12, flexWrap: 'wrap' }}>
                                 <div>
                                     <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                                        <span style={{ fontSize: 11, background: analysisMode === 'debug' ? `${bugMeta?.color || '#888'}22` : analysisMode === 'explain' ? 'var(--accent-cyan)22' : 'var(--accent-orange)22', color: analysisMode === 'debug' ? (bugMeta?.color || 'var(--text-secondary)') : analysisMode === 'explain' ? 'var(--accent-cyan)' : 'var(--accent-orange)', border: `1px solid ${analysisMode === 'debug' ? (bugMeta?.color || '#888') : analysisMode === 'explain' ? 'var(--accent-cyan)' : 'var(--accent-orange)'}`, padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>
+                                        <span style={{ fontSize: 12, background: analysisMode === 'debug' ? `${bugMeta?.color || '#888'}22` : analysisMode === 'explain' ? 'var(--accent-cyan)22' : 'var(--accent-orange)22', color: analysisMode === 'debug' ? (bugMeta?.color || 'var(--text-secondary)') : analysisMode === 'explain' ? 'var(--accent-cyan)' : 'var(--accent-orange)', border: `1px solid ${analysisMode === 'debug' ? (bugMeta?.color || '#888') : analysisMode === 'explain' ? 'var(--accent-cyan)' : 'var(--accent-orange)'}`, padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>
                                             {analysisMode === 'debug' ? (bugMeta?.label || report.bugType || 'DEBUG') : analysisMode === 'explain' ? 'EXPLAIN' : 'SECURITY AUDIT'}
                                         </span>
                                         {report.confidence != null && (
-                                            <span style={{ fontSize: 11, background: 'var(--surface-base)', color: report._missingImplementation ? 'var(--text-tertiary)' : 'var(--accent-green)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
+                                            <span style={{ fontSize: 12, background: 'var(--surface-base)', color: report._missingImplementation ? 'var(--text-tertiary)' : 'var(--accent-green)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
                                                 CFD: {report._missingImplementation ? '—' : `${displayConfidence(report.confidence)}%`}
                                             </span>
                                         )}
                                     </div>
-                                    <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
+                                    <h2 style={{ fontSize: 36, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
                                         {analysisMode === 'debug' ? 'Diagnosis' : analysisMode === 'explain' ? 'Code Explanation' : 'Security Report'}
                                     </h2>
                                 </div>
                                 <div style={{ display: 'flex', gap: 12 }}>
-                                    <button className="matte-button primary" onClick={() => {
+                                    <button className="matte-button primary" style={{ padding: '10px 18px', fontSize: 16, gap: 10 }} onClick={() => {
                                         const el = document.getElementById('unravel-report-container');
                                         if (!el) return;
                                         // Temporarily force light theme for printing
@@ -2137,9 +2183,25 @@ export default function App() {
                                             else document.documentElement.removeAttribute('data-theme');
                                         });
                                     }}>
-                                        <Download size={16} /> PDF Export
+                                        <Download size={16} /> <span style={{ fontSize: 16 }}>PDF Export</span>
                                     </button>
-                                    <button className="matte-button" onClick={reset}>← New Analysis</button>
+                                    <button className="matte-button" style={{ padding: '10px 18px', fontSize: 16, gap: 10, border: '1px solid var(--accent-cyan)', color: 'var(--accent-cyan)' }} onClick={() => {
+                                        const exportData = { ...report };
+                                        delete exportData._streaming;
+                                        const slug = (exportData.bugType || exportData._mode || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                                        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = `unravel-${slug}-${Date.now()}.json`;
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        document.body.removeChild(a);
+                                        URL.revokeObjectURL(url);
+                                    }}>
+                                        <Download size={16} /> <span style={{ fontSize: 16 }}>JSON Export</span>
+                                    </button>
+                                    <button className="matte-button" onClick={reset} style={{ padding: '10px 18px', fontSize: 16, gap: 10 }}>← <span style={{ fontSize: 16 }}>New Analysis</span></button>
                                 </div>
                             </div>
 
@@ -2178,13 +2240,13 @@ export default function App() {
                                     {report.entryPoints?.length > 0 && (
                                         <SectionBlock icon={<Zap size={14} />} title="Entry Points" color="var(--accent-purple)" copyId="expl-entry" copiedId={copiedSection} onCopy={handleCopy}>
                                             {report.entryPoints.map((ep, i) => (
-                                                <div key={i} style={{ background: 'var(--surface-base)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: 16, marginBottom: 12 }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                                        <h4 style={{ fontSize: 14, color: 'var(--accent-purple)', margin: 0, fontWeight: 600 }}>{ep.name}</h4>
-                                                        <span style={{ fontSize: 11, color: 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '2px 8px', borderRadius: 'var(--radius-sm)' }}>{ep.type}</span>
+                                                <div key={i} style={{ background: 'var(--surface-base)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: 18, marginBottom: 12 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                                        <h4 style={{ fontSize: 16, color: 'var(--accent-purple)', margin: 0, fontWeight: 700 }}>{ep.name}</h4>
+                                                        <span style={{ fontSize: 12, color: 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '2px 10px', borderRadius: 'var(--radius-sm)' }}>{ep.type}</span>
                                                     </div>
-                                                    <p style={{ color: 'var(--text-primary)', fontSize: 15, lineHeight: 1.7, marginBottom: 8, margin: 0 }}>{ep.description}</p>
-                                                    {ep.file && <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}><Search size={14} /> {ep.file}{ep.line ? `:${ep.line}` : ''}</div>}
+                                                    <p style={{ color: 'var(--text-primary)', fontSize: 16, lineHeight: 1.7, marginBottom: 8, margin: 0 }}>{ep.description}</p>
+                                                    {ep.file && <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 10, display: 'flex', alignItems: 'center', gap: 6 }}><Search size={16} /> {ep.file}{ep.line ? `:${ep.line}` : ''}</div>}
                                                 </div>
                                             ))}
                                         </SectionBlock>
@@ -2192,16 +2254,16 @@ export default function App() {
                                     {/* Architecture Layers */}
                                     {report.architectureLayers?.length > 0 && (
                                         <SectionBlock icon={<Layers size={14} />} title="Architecture Layers" color="var(--accent-indigo)" copyId="expl-layers" copiedId={copiedSection} onCopy={handleCopy}>
-                                            <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 16 }}>High-level semantic grouping of the system</p>
+                                            <p style={{ color: 'var(--text-tertiary)', fontSize: 15, marginBottom: 16 }}>High-level semantic grouping of the system</p>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
                                                 {report.architectureLayers.map((layer, i) => (
-                                                    <div key={i} className="glass-panel" style={{ borderTop: `4px solid ${['var(--accent-cyan)', 'var(--accent-orange)', 'var(--accent-purple)', 'var(--accent-green)', 'var(--accent-blue)'][i % 5]}`, padding: 20, display: 'flex', flexDirection: 'column' }}>
-                                                        <h4 style={{ fontSize: 16, color: 'var(--text-primary)', margin: '0 0 12px', fontWeight: 700 }}>Layer {i + 1} — {layer.name}</h4>
-                                                        <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.6, marginBottom: 16, flexGrow: 1 }}>{layer.description}</p>
+                                                    <div key={i} className="glass-panel" style={{ borderTop: `4px solid ${['var(--accent-cyan)', 'var(--accent-orange)', 'var(--accent-purple)', 'var(--accent-green)', 'var(--accent-blue)'][i % 5]}`, padding: 24, display: 'flex', flexDirection: 'column' }}>
+                                                        <h4 style={{ fontSize: 18, color: 'var(--text-primary)', margin: '0 0 12px', fontWeight: 800 }}>Layer {i + 1} — {layer.name}</h4>
+                                                        <p style={{ color: 'var(--text-secondary)', fontSize: 15, lineHeight: 1.6, marginBottom: 16, flexGrow: 1 }}>{layer.description}</p>
                                                         {layer.components?.length > 0 && (
                                                             <div style={{ background: 'var(--surface-base)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)' }}>
                                                                 {layer.components.map((comp, j) => (
-                                                                    <div key={j} style={{ color: 'var(--text-primary)', fontSize: 14, padding: '6px 0', borderBottom: j < layer.components.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                                                                    <div key={j} style={{ color: 'var(--text-primary)', fontSize: 15, padding: '6px 0', borderBottom: j < layer.components.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
                                                                         <span style={{ color: 'var(--text-tertiary)', marginRight: 12 }}>•</span>{comp}
                                                                     </div>
                                                                 ))}
@@ -2220,13 +2282,13 @@ export default function App() {
                                                 caption="How data moves through the system"
                                             />
                                             <div style={{ overflowX: 'auto', marginTop: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)' }}>
-                                                <table style={{ width: '100%', textAlign: 'left', fontSize: 14, borderCollapse: 'collapse', background: 'var(--surface-base)' }}>
+                                                <table style={{ width: '100%', textAlign: 'left', fontSize: 15, borderCollapse: 'collapse', background: 'var(--surface-base)' }}>
                                                     <thead>
                                                         <tr style={{ background: 'var(--surface-hover)', color: 'var(--accent-orange)', borderBottom: '2px solid var(--accent-orange)' }}>
-                                                            <th style={{ padding: '12px 16px', width: '25%', fontWeight: 600 }}>From</th>
-                                                            <th style={{ padding: '12px 16px', width: '45%', fontWeight: 600 }}>Mechanism</th>
-                                                            <th style={{ padding: '12px 16px', width: '25%', fontWeight: 600 }}>To</th>
-                                                            <th style={{ padding: '12px 16px', width: '5%', fontWeight: 600 }}>Line</th>
+                                                            <th style={{ padding: '12px 16px', width: '25%', fontWeight: 700 }}>From</th>
+                                                            <th style={{ padding: '12px 16px', width: '45%', fontWeight: 700 }}>Mechanism</th>
+                                                            <th style={{ padding: '12px 16px', width: '25%', fontWeight: 700 }}>To</th>
+                                                            <th style={{ padding: '12px 16px', width: '5%', fontWeight: 700 }}>Line</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -2251,18 +2313,18 @@ export default function App() {
                                                 caption="File-level import dependencies — explicit imports only"
                                             />
                                             {report.componentMap.map((comp, i) => (
-                                                <div key={i} style={{ background: 'var(--surface-base)', borderLeft: '3px solid var(--accent-green)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)', padding: 16, marginBottom: 12, marginTop: 12 }}>
-                                                    <h4 style={{ fontSize: 15, color: 'var(--accent-green)', margin: '0 0 10px', fontWeight: 600 }}>{comp.name}</h4>
+                                                <div key={i} style={{ background: 'var(--surface-base)', borderLeft: '4px solid var(--accent-green)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)', padding: 18, marginBottom: 12, marginTop: 12 }}>
+                                                    <h4 style={{ fontSize: 16, color: 'var(--accent-green)', margin: '0 0 10px', fontWeight: 700 }}>{comp.name}</h4>
                                                     {comp.children?.length > 0 && (
                                                         <div style={{ marginBottom: 8 }}>
-                                                            <span style={{ color: 'var(--text-tertiary)', fontSize: 12, textTransform: 'uppercase', marginRight: 12, fontWeight: 700 }}>Dependencies:</span>
-                                                            <span style={{ color: 'var(--text-primary)', fontSize: 14 }}>{comp.children.join(', ')}</span>
+                                                            <span style={{ color: 'var(--text-tertiary)', fontSize: 13, textTransform: 'uppercase', marginRight: 12, fontWeight: 800 }}>Dependencies:</span>
+                                                            <span style={{ color: 'var(--text-primary)', fontSize: 15 }}>{comp.children.join(', ')}</span>
                                                         </div>
                                                     )}
                                                     {comp.stateOwned?.length > 0 && (
                                                         <div>
-                                                            <span style={{ color: 'var(--text-tertiary)', fontSize: 12, textTransform: 'uppercase', marginRight: 12, fontWeight: 700 }}>State:</span>
-                                                            <span style={{ color: 'var(--accent-orange)', fontSize: 13 }}>{comp.stateOwned.join(', ')}</span>
+                                                            <span style={{ color: 'var(--text-tertiary)', fontSize: 13, textTransform: 'uppercase', marginRight: 12, fontWeight: 800 }}>State:</span>
+                                                            <span style={{ color: 'var(--accent-orange)', fontSize: 15 }}>{comp.stateOwned.join(', ')}</span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -2272,7 +2334,7 @@ export default function App() {
                                     {/* Key Patterns */}
                                     {report.keyPatterns?.length > 0 && (
                                         <SectionBlock icon={<Lightbulb size={14} />} title="Key Patterns" color="#22c55e" copyId="expl-pattern" copiedId={copiedSection} onCopy={handleCopy}>
-                                            <ul style={{ listStyleType: 'square', paddingLeft: 20, color: '#e0e0e0', fontSize: 15, lineHeight: 1.9 }}>
+                                            <ul style={{ listStyleType: 'square', paddingLeft: 20, color: '#e0e0e0', fontSize: 16, lineHeight: 1.9 }}>
                                                 {report.keyPatterns.map((p, i) => <li key={i}>{p}</li>)}
                                             </ul>
                                         </SectionBlock>
@@ -2280,11 +2342,11 @@ export default function App() {
                                     {/* Non-Obvious Insights */}
                                     {report.nonObviousInsights?.length > 0 && (
                                         <SectionBlock icon={<Eye size={14} />} title="Non-Obvious Insights" color="#ff00ff" copyId="expl-insights" copiedId={copiedSection} onCopy={handleCopy}>
-                                            <p style={{ color: '#aaa', fontSize: 12, marginBottom: 10, textTransform: 'uppercase', fontFamily: "'JetBrains Mono',monospace" }}>Things that would surprise a developer reading this for the first time</p>
+                                            <p style={{ color: '#aaa', fontSize: 14, marginBottom: 10, textTransform: 'uppercase', fontFamily: "'JetBrains Mono',monospace" }}>Things that would surprise a developer reading this for the first time</p>
                                             <ul style={{ listStyleType: 'none', padding: 0 }}>
                                                 {report.nonObviousInsights.map((insight, i) => (
-                                                    <li key={i} style={{ color: '#e0e0e0', fontSize: 15, lineHeight: 1.8, padding: '10px 0', borderBottom: '1px solid #222', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                                                        <Lightbulb size={18} style={{ color: 'var(--accent-yellow)', marginTop: 4, flexShrink: 0 }} />
+                                                    <li key={i} style={{ color: '#e0e0e0', fontSize: 16, lineHeight: 1.8, padding: '10px 0', borderBottom: '1px solid #222', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                                                        <Lightbulb size={20} style={{ color: 'var(--accent-yellow)', marginTop: 4, flexShrink: 0 }} />
                                                         <span>{insight}</span>
                                                     </li>
                                                 ))}
@@ -2294,12 +2356,12 @@ export default function App() {
                                     {/* Gotchas */}
                                     {report.gotchas?.length > 0 && (
                                         <SectionBlock icon={<AlertTriangle size={14} />} title="Gotchas" color="var(--accent-red)" copyId="expl-gotchas" copiedId={copiedSection} onCopy={handleCopy}>
-                                            <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 16 }}>Hidden landmines — things that break when changed</p>
+                                            <p style={{ color: 'var(--text-tertiary)', fontSize: 15, marginBottom: 16 }}>Hidden landmines — things that break when changed</p>
                                             {report.gotchas.map((g, i) => (
-                                                <div key={i} style={{ background: 'var(--surface-base)', borderLeft: '3px solid var(--accent-red)', borderRadius: 'var(--radius-md)', padding: 16, marginBottom: 12, border: '1px solid var(--border-light)' }}>
-                                                    <div style={{ fontSize: 14, color: 'var(--accent-red)', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}><AlertTriangle size={16} /> {g.title}</div>
-                                                    <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.7, marginBottom: 8, margin: 0 }}>{g.description}</p>
-                                                    {g.location && <code style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}><Search size={12} /> {g.location}</code>}
+                                                <div key={i} style={{ background: 'var(--surface-base)', borderLeft: '4px solid var(--accent-red)', borderRadius: 'var(--radius-md)', padding: 18, marginBottom: 12, border: '1px solid var(--border-light)' }}>
+                                                    <div style={{ fontSize: 16, color: 'var(--accent-red)', fontWeight: 800, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}><AlertTriangle size={18} /> {g.title}</div>
+                                                    <p style={{ color: 'var(--text-secondary)', fontSize: 15, lineHeight: 1.7, marginBottom: 8, margin: 0 }}>{g.description}</p>
+                                                    {g.location && <code style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}><Search size={16} /> {g.location}</code>}
                                                 </div>
                                             ))}
                                         </SectionBlock>
@@ -2307,12 +2369,12 @@ export default function App() {
                                     {/* Onboarding Guide */}
                                     {report.onboarding?.length > 0 && (
                                         <SectionBlock icon={<User size={14} />} title="Onboarding Guide" color="var(--accent-cyan)" copyId="expl-onboard" copiedId={copiedSection} onCopy={handleCopy}>
-                                            <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 16 }}>Exactly where to go for the most common tasks</p>
+                                            <p style={{ color: 'var(--text-tertiary)', fontSize: 15, marginBottom: 16 }}>Exactly where to go for the most common tasks</p>
                                             {report.onboarding.map((item, i) => (
-                                                <div key={i} style={{ background: 'var(--surface-base)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: 18, marginBottom: 12 }}>
-                                                    <div style={{ fontSize: 15, color: 'var(--accent-cyan)', fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}><Zap size={16} /> {item.task}</div>
-                                                    <div style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 6 }}><strong style={{ color: 'var(--text-tertiary)' }}>Where:</strong> <code style={{ color: 'var(--text-primary)', background: 'var(--surface-hover)', padding: '2px 6px', borderRadius: '4px' }}>{item.whereToLook}</code></div>
-                                                    <div style={{ color: 'var(--text-secondary)', fontSize: 14 }}><strong style={{ color: 'var(--text-tertiary)' }}>Model after:</strong> {item.patternToFollow}</div>
+                                                <div key={i} style={{ background: 'var(--surface-base)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', padding: 20, marginBottom: 12 }}>
+                                                    <div style={{ fontSize: 17, color: 'var(--accent-cyan)', fontWeight: 800, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}><Zap size={18} /> {item.task}</div>
+                                                    <div style={{ color: 'var(--text-secondary)', fontSize: 15, marginBottom: 6 }}><strong style={{ color: 'var(--text-tertiary)' }}>Where:</strong> <code style={{ color: 'var(--text-primary)', background: 'var(--surface-hover)', padding: '2px 8px', borderRadius: '4px' }}>{item.whereToLook}</code></div>
+                                                    <div style={{ color: 'var(--text-secondary)', fontSize: 15 }}><strong style={{ color: 'var(--text-tertiary)' }}>Model after:</strong> {item.patternToFollow}</div>
                                                 </div>
                                             ))}
                                         </SectionBlock>
@@ -2321,10 +2383,10 @@ export default function App() {
                                     {report.architectureDecisions?.length > 0 && (
                                         <SectionBlock icon={<Network size={14} />} title="Architecture Decisions" color="var(--accent-orange)" copyId="expl-arch" copiedId={copiedSection} onCopy={handleCopy}>
                                             {report.architectureDecisions.map((d, i) => (
-                                                <div key={i} style={{ background: 'var(--surface-base)', borderLeft: '3px solid var(--accent-orange)', borderRadius: 'var(--radius-md)', padding: 16, marginBottom: 12, border: '1px solid var(--border-light)' }}>
-                                                    <div style={{ fontSize: 15, color: 'var(--text-primary)', fontWeight: 700, marginBottom: 8 }}>{d.decision}</div>
-                                                    {d.visibleReason && <div style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 6 }}><strong style={{ color: 'var(--text-tertiary)' }}>Why (visible in code):</strong> {d.visibleReason}</div>}
-                                                    {d.tradeoff && <div style={{ color: 'var(--accent-orange)', fontSize: 14 }}><strong style={{ color: 'var(--text-tertiary)' }}>Tradeoff:</strong> {d.tradeoff}</div>}
+                                                <div key={i} style={{ background: 'var(--surface-base)', borderLeft: '4px solid var(--accent-orange)', borderRadius: 'var(--radius-md)', padding: 18, marginBottom: 12, border: '1px solid var(--border-light)' }}>
+                                                    <div style={{ fontSize: 17, color: 'var(--text-primary)', fontWeight: 800, marginBottom: 8 }}>{d.decision}</div>
+                                                    {d.visibleReason && <div style={{ color: 'var(--text-secondary)', fontSize: 15, marginBottom: 6 }}><strong style={{ color: 'var(--text-tertiary)' }}>Why (visible in code):</strong> {d.visibleReason}</div>}
+                                                    {d.tradeoff && <div style={{ color: 'var(--accent-orange)', fontSize: 15 }}><strong style={{ color: 'var(--text-tertiary)' }}>Tradeoff:</strong> {d.tradeoff}</div>}
                                                 </div>
                                             ))}
                                         </SectionBlock>
@@ -2338,10 +2400,10 @@ export default function App() {
                                     {report.overallRisk && (
                                         <div className="glass-panel" style={{ borderLeft: '4px solid var(--accent-orange)', padding: 24, marginBottom: 20 }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <h3 style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--accent-orange)', fontSize: 16, display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
-                                                    <ShieldAlert size={18} /> Overall Risk: {report.overallRisk}
+                                                <h3 style={{ fontWeight: 800, textTransform: 'uppercase', color: 'var(--accent-orange)', fontSize: 18, display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
+                                                    <ShieldAlert size={20} /> Overall Risk: {report.overallRisk}
                                                 </h3>
-                                                <span style={{ background: 'var(--accent-red)22', color: 'var(--accent-red)', fontSize: 11, padding: '4px 10px', fontWeight: 700, borderRadius: 'var(--radius-sm)' }}>
+                                                <span style={{ background: 'var(--accent-red)22', color: 'var(--accent-red)', fontSize: 12, padding: '4px 10px', fontWeight: 800, borderRadius: 'var(--radius-sm)' }}>
                                                     REQUIRES HUMAN VERIFICATION
                                                 </span>
                                             </div>
@@ -2349,24 +2411,24 @@ export default function App() {
                                     )}
                                     {report.summary && (
                                         <SectionBlock icon={<Shield size={14} />} title="Security Summary" color="#ffaa00" copyText={report.summary} copyId="sec-sum" copiedId={copiedSection} onCopy={handleCopy}>
-                                            <p style={{ fontSize: 15, color: '#e0e0e0', lineHeight: 1.7 }}>{report.summary}</p>
+                                            <p style={{ fontSize: 17, color: '#e0e0e0', lineHeight: 1.7 }}>{report.summary}</p>
                                         </SectionBlock>
                                     )}
                                     {report.vulnerabilities?.length > 0 && (
                                         <SectionBlock icon={<AlertTriangle size={14} />} title={`Vulnerabilities (${report.vulnerabilities.length})`} color="var(--accent-red)" copyId="sec-vuln" copiedId={copiedSection} onCopy={handleCopy}>
                                             {report.vulnerabilities.map((v, i) => (
-                                                <div key={i} style={{ background: 'var(--surface-base)', border: '1px solid var(--border-light)', borderLeftWidth: 4, borderLeftColor: v.severity === 'critical' ? 'var(--accent-red)' : v.severity === 'high' ? 'var(--accent-orange)' : 'var(--text-secondary)', borderRadius: 'var(--radius-md)', padding: 16, marginBottom: 12 }}>
+                                                <div key={i} style={{ background: 'var(--surface-base)', border: '1px solid var(--border-light)', borderLeftWidth: 4, borderLeftColor: v.severity === 'critical' ? 'var(--accent-red)' : v.severity === 'high' ? 'var(--accent-orange)' : 'var(--text-secondary)', borderRadius: 'var(--radius-md)', padding: 18, marginBottom: 12 }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                                                        <h4 style={{ fontSize: 15, color: 'var(--text-primary)', margin: 0, fontWeight: 700 }}>{v.type || v.title}</h4>
+                                                        <h4 style={{ fontSize: 17, color: 'var(--text-primary)', margin: 0, fontWeight: 800 }}>{v.type || v.title}</h4>
                                                         <span style={{
-                                                            fontSize: 11, padding: '4px 10px', fontWeight: 700, textTransform: 'uppercase', borderRadius: 'var(--radius-sm)',
+                                                            fontSize: 12, padding: '4px 10px', fontWeight: 800, textTransform: 'uppercase', borderRadius: 'var(--radius-sm)',
                                                             background: v.severity === 'critical' ? 'var(--accent-red)22' : v.severity === 'high' ? 'var(--accent-orange)22' : 'var(--surface-hover)',
                                                             color: v.severity === 'critical' ? 'var(--accent-red)' : v.severity === 'high' ? 'var(--accent-orange)' : 'var(--text-secondary)',
                                                         }}>{v.severity}</span>
                                                     </div>
-                                                    <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.6, marginBottom: 8, margin: 0 }}>{v.description}</p>
-                                                    {v.location && <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 8, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}><Search size={14} /> {v.location}</p>}
-                                                    {v.remediation && <p style={{ color: 'var(--accent-green)', fontSize: 13, marginTop: 10, margin: 0, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><CheckSquare size={14} /> Fix: {v.remediation}</p>}
+                                                    <p style={{ color: 'var(--text-secondary)', fontSize: 15, lineHeight: 1.6, marginBottom: 8, margin: 0 }}>{v.description}</p>
+                                                    {v.location && <p style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 8, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}><Search size={16} /> {v.location}</p>}
+                                                    {v.remediation && <p style={{ color: 'var(--accent-green)', fontSize: 14, marginTop: 10, margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><CheckSquare size={16} /> Fix: {v.remediation}</p>}
                                                 </div>
                                             ))}
                                         </SectionBlock>
@@ -2401,7 +2463,7 @@ export default function App() {
                                             {report.reproduction?.length > 0 && (
                                                 <div style={{ background: 'var(--surface-base)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)' }}>
                                                     <h4 style={{ fontSize: 13, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 12, fontWeight: 600 }}>Reproduction Path</h4>
-                                                    <ol style={{ listStylePosition: 'inside', color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.8, margin: 0 }}>
+                                                    <ol style={{ listStylePosition: 'inside', color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.8, margin: '8px 0 0 0' }}>
                                                         {report.reproduction.map((s, i) => <li key={i}>{s}</li>)}
                                                     </ol>
                                                 </div>
@@ -2414,15 +2476,15 @@ export default function App() {
                                         <SectionBlock icon={<CheckSquare size={14} />} title="Confidence Evidence" color="var(--accent-green)" copyId="evi" copiedId={copiedSection} onCopy={handleCopy}
                                             copyText={(report.evidence || []).join('\n')}>
                                             <div style={{ marginBottom: 16 }}>
-                                                <span style={{ fontSize: 13, color: 'var(--accent-green)', fontWeight: 700 }}>VERIFIED:</span>
-                                                <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.8, margin: '8px 0 0 0' }}>
+                                                <span style={{ fontSize: 14, color: 'var(--accent-green)', fontWeight: 800 }}>VERIFIED:</span>
+                                                <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: 'var(--text-secondary)', fontSize: 16, lineHeight: 1.8, margin: '8px 0 0 0' }}>
                                                     {report.evidence.map((e, i) => <li key={i}>{e}</li>)}
                                                 </ul>
                                             </div>
                                             {report.uncertainties?.length > 0 && (
                                                 <div>
-                                                    <span style={{ fontSize: 13, color: 'var(--accent-orange)', fontWeight: 700 }}>UNCERTAIN:</span>
-                                                    <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: 'var(--text-tertiary)', fontSize: 14, lineHeight: 1.8, margin: '8px 0 0 0' }}>
+                                                    <span style={{ fontSize: 14, color: 'var(--accent-orange)', fontWeight: 800 }}>UNCERTAIN:</span>
+                                                    <ul style={{ listStyleType: 'disc', paddingLeft: 20, color: 'var(--text-tertiary)', fontSize: 16, lineHeight: 1.8, margin: '8px 0 0 0' }}>
                                                         {report.uncertainties.map((u, i) => <li key={i}>{u}</li>)}
                                                     </ul>
                                                 </div>
@@ -2439,9 +2501,9 @@ export default function App() {
                                             </div>
                                             <h4 style={{ fontSize: 18, color: 'var(--text-primary)', fontWeight: 700, marginBottom: 10 }}>{report.conceptExtraction.concept}</h4>
                                             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>{report.conceptExtraction.whyItMatters}</p>
-                                            <div style={{ background: 'var(--accent-green)18', borderLeft: '3px solid var(--accent-green)', padding: 16, borderRadius: 'var(--radius-md)', marginBottom: 12 }}>
-                                                <span style={{ color: 'var(--accent-green)', fontWeight: 700, fontSize: 13 }}>PATTERN TO AVOID:</span>
-                                                <p style={{ color: 'var(--text-primary)', marginTop: 8, margin: 0 }}>{report.conceptExtraction.patternToAvoid}</p>
+                                            <div style={{ background: 'var(--accent-green)18', borderLeft: '4px solid var(--accent-green)', padding: 18, borderRadius: 'var(--radius-md)', marginBottom: 12 }}>
+                                                <span style={{ color: 'var(--accent-green)', fontWeight: 800, fontSize: 14 }}>PATTERN TO AVOID:</span>
+                                                <p style={{ color: 'var(--text-primary)', fontSize: 16, marginTop: 8, margin: 0 }}>{report.conceptExtraction.patternToAvoid}</p>
                                             </div>
 
                                         </SectionBlock>
@@ -2644,8 +2706,8 @@ export default function App() {
 
                             {/* ═══ ACTION CENTER ═══ */}
                             <div className="glass-panel no-print" style={{ borderTop: '4px solid var(--accent-green)', padding: 32, marginTop: 32, marginBottom: 24 }}>
-                                <h3 style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--accent-green)', fontSize: 14, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--border-light)', margin: '0 0 20px 0' }}>
-                                    <Zap size={18} /> Action Center
+                                <h3 style={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--accent-green)', fontSize: 16, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--border-light)', margin: '0 0 20px 0' }}>
+                                    <Zap size={20} /> Action Center
                                 </h3>
                                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                                     {/* Create GitHub Issue — only if source was GitHub */}
@@ -2662,8 +2724,8 @@ export default function App() {
                                         if (analysisMode === 'debug') {
                                             if (report.symptom) bodyParts.push(`## Symptom\n${report.symptom}`);
                                             if (report.rootCause) bodyParts.push(`## Root Cause\n${report.rootCause}`);
-                                            if (report.codeLocation) bodyParts.push(`**Location:** \`${typeof report.codeLocation === 'object' ? JSON.stringify(report.codeLocation) : report.codeLocation}\``);
-                                            if (report.minimalFix) bodyParts.push(`## Suggested Fix\n\`\`\`\n${report.minimalFix}\n\`\`\``);
+                                            if (report.codeLocation) bodyParts.push(`**Location:** \`${typeof report.codeLocation === 'object' ? JSON.stringify(report.codeLocation) : report.codeLocation}\` `);
+                                            if (report.minimalFix) bodyParts.push(`## Suggested Fix\n\`\`\`\n${report.minimalFix}\n\`\`\` `);
                                             if (report.whyFixWorks) bodyParts.push(`**Why this works:** ${report.whyFixWorks}`);
                                         } else if (analysisMode === 'security') {
                                             if (report.summary) bodyParts.push(`## Security Summary\n${report.summary}`);
@@ -2677,8 +2739,8 @@ export default function App() {
                                         return (
                                             <a href={issueUrl} target="_blank" rel="noopener noreferrer"
                                                 className="matte-button"
-                                                style={{ border: '1px solid var(--accent-green)', color: 'var(--accent-green)', textDecoration: 'none' }}>
-                                                <Github size={16} /> Create GitHub Issue
+                                                style={{ border: '1px solid var(--accent-green)', color: 'var(--accent-green)', textDecoration: 'none', padding: '10px 18px', fontSize: 16, gap: 10 }}>
+                                                <Github size={16} /> <span style={{ fontSize: 16 }}>Create GitHub Issue</span>
                                             </a>
                                         );
                                     })()}
@@ -2690,9 +2752,9 @@ export default function App() {
                                         return (
                                             <button onClick={() => handleCopy(cliCmd, 'cli-fix')}
                                                 className="matte-button"
-                                                style={{ border: `1px solid ${copiedSection === 'cli-fix' ? 'var(--accent-green)' : 'var(--accent-purple)'}`, color: copiedSection === 'cli-fix' ? 'var(--accent-green)' : 'var(--accent-purple)' }}>
+                                                style={{ border: `1px solid ${copiedSection === 'cli-fix' ? 'var(--accent-green)' : 'var(--accent-purple)'}`, color: copiedSection === 'cli-fix' ? 'var(--accent-green)' : 'var(--accent-purple)', padding: '10px 18px', fontSize: 16, gap: 10 }}>
                                                 {copiedSection === 'cli-fix' ? <Check size={16} /> : <Copy size={16} />}
-                                                {copiedSection === 'cli-fix' ? 'Copied!' : 'Copy Fix CLI'}
+                                                {copiedSection === 'cli-fix' ? <span style={{ fontSize: 16 }}>Copied!</span> : <span style={{ fontSize: 16 }}>Copy Fix CLI</span>}
                                             </button>
                                         );
                                     })()}
@@ -2703,9 +2765,9 @@ export default function App() {
                             </div>
 
                             {/* New Analysis Button */}
-                            <div className="no-print" style={{ textAlign: 'center', paddingTop: 32, borderTop: '1px solid var(--border-light)', marginTop: 32 }}>
-                                <button className="matte-button primary" style={{ width: '100%', maxWidth: 400, margin: '0 auto', padding: '16px', fontSize: 16 }} onClick={reset}>
-                                    <RefreshCw size={18} style={{ marginRight: 10 }} />
+                            <div className="no-print" style={{ textAlign: 'center', paddingTop: 40, borderTop: '1px solid var(--border-light)', marginTop: 40 }}>
+                                <button className="matte-button primary" style={{ width: '100%', maxWidth: 480, margin: '0 auto', padding: '22px 32px', fontSize: 18, fontWeight: 800, borderRadius: 'var(--radius-lg)', boxShadow: '0 10px 30px -10px var(--accent-green)44' }} onClick={reset}>
+                                    <RefreshCw size={22} style={{ marginRight: 15 }} />
                                     New Analysis
                                 </button>
                             </div>

@@ -1,5 +1,0 @@
-{
-  "root_cause_keywords": ["O(n squared)", "nested loop", "quadratic complexity", "find inside nested loop", "Set or Map should be used"],
-  "files": ["analytics.js"],
-  "lines": [4]
-}

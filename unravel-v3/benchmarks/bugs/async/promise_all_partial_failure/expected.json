@@ -1,5 +1,0 @@
-{
-  "root_cause_keywords": ["Promise.all rejects on any failure", "Promise.allSettled", "partial failure propagates"],
-  "files": ["app.js"],
-  "lines": [2]
-}

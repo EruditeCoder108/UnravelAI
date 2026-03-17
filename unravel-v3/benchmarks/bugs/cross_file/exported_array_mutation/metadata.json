@@ -1,7 +1,0 @@
-{
-  "id": "exported_array_mutation",
-  "category": "cross_file",
-  "difficulty": "medium",
-  "symptom": "Handlers array grows on every app initialization. After 3 startups, pluginA handler fires 3 times per event.",
-  "files": ["registry.js", "pluginA.js", "pluginB.js", "app.js"]
-}
