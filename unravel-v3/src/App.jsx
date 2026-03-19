@@ -12,7 +12,7 @@ import {
     PROVIDERS, BUG_TAXONOMY, LEVELS, LANGUAGES,
     buildRouterPrompt, buildSecondPassRouterPrompt, SECTION_REGISTRY, PRESETS, estimateRuntime,
     callProvider, orchestrate, parseAIJson,
-    LAYER_BOUNDARY_VERDICT,
+    LAYER_BOUNDARY_VERDICT, EXTERNAL_FIX_TARGET_VERDICT, classifyErrorType,
 } from './core/index.js';
 import { ReportErrorBoundary } from './ErrorBoundary.jsx';
 
@@ -869,11 +869,13 @@ export default function App() {
                 const issueRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`);
                 if (issueRes.ok) {
                     const issueData = await issueRes.json();
-                    const issueTitle = issueData.title || '';
-                    const issueBody = (issueData.body || '').slice(0, 3000);
-                    effectiveSymptom = `[GitHub Issue #${issueNumber}] ${issueTitle}\n\n${issueBody}`;
-                    setUserError(effectiveSymptom);
-                    console.log(`[ISSUE] Fetched issue #${issueNumber}: ${issueTitle}`);
+                    if (issueData.title) {
+                        const issueTitle = issueData.title || '';
+                        const issueBody = (issueData.body || '').slice(0, 3000);
+                        effectiveSymptom = `[GitHub Issue #${issueNumber}] ${issueTitle}\n\n${issueBody}`;
+                        setUserError(effectiveSymptom);
+                        console.log(`[ISSUE] Fetched issue #${issueNumber}: ${issueTitle}`);
+                    }
                 }
             } catch (issueErr) {
                 console.warn('[ISSUE] Failed to fetch issue:', issueErr.message);
@@ -905,6 +907,11 @@ export default function App() {
         if (allCandidates.length === 0) throw new Error('No valid source files found in repo.');
 
         githubRepoContext.current = { owner, repo, branch, tree: allRepoFiles };
+
+        // ── Classify error type (deterministic, no LLM cost) ──
+        // Used to inject error-type-specific discipline rules into Pass 2.
+        const errorType = classifyErrorType(effectiveSymptom);
+        console.log(`[ROUTER] Error type classified: ${errorType}`);
 
         // ── Pass 1: Model sees tree structure → selects initial files ──
         let candidates = allCandidates;
@@ -987,7 +994,8 @@ export default function App() {
                 const secondPassPrompt = buildSecondPassRouterPrompt(
                     summaries,
                     remainingPaths,
-                    effectiveSymptom
+                    effectiveSymptom,
+                    errorType, // inject error type for discipline rules
                 );
 
                 const pass2Raw = await callProvider({

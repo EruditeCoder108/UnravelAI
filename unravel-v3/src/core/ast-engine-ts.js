@@ -482,6 +482,28 @@ function getEnclosingFunction(node) {
     return '(module scope)';
 }
 
+/**
+ * Check if a node is inside a conditional branch (if/switch/ternary/try/catch).
+ * Walks up from the node to its enclosing function scope boundary.
+ * Returns true if ANY ancestor between node and scope is a branch-type body.
+ */
+const BRANCH_BODY_TYPES = new Set([
+    'if_statement', 'else_clause', 'switch_case', 'switch_default',
+    'ternary_expression', 'try_statement', 'catch_clause',
+    'conditional_expression',
+]);
+
+function isConditionalContext(node) {
+    let current = node.parent;
+    while (current) {
+        // Stop at function scope boundary
+        if (SCOPE_NODE_TYPES.has(current.type)) return false;
+        if (BRANCH_BODY_TYPES.has(current.type)) return true;
+        current = current.parent;
+    }
+    return false;
+}
+
 function _getFunctionName(fnNode) {
     // function foo() {}
     const nameField = fnNode.childForFieldName('name');
@@ -557,11 +579,12 @@ export function extractMutationChains(tree) {
         if (!left) continue;
         const fn = getEnclosingFunction(node);
         const line = node.startPosition.row + 1;
+        const conditional = isConditionalContext(node);
 
         if (left.type === 'identifier') {
             const name = left.text;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-            mutations[name].writes.push({ fn, line, type: 'reassigned' });
+            mutations[name].writes.push({ fn, line, type: 'reassigned', conditional });
         }
         if (left.type === 'array_pattern' || left.type === 'object_pattern') {
             // Use the recursive helper that handles nested patterns, aliases, rest elements.
@@ -573,7 +596,7 @@ export function extractMutationChains(tree) {
             const name = getMemberExpressionName(left);
             if (name) {
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written' });
+                mutations[name].writes.push({ fn, line, type: 'written', conditional });
             }
         }
         // subscript_expression: cache[key] = value → track as cache[]
@@ -582,7 +605,7 @@ export function extractMutationChains(tree) {
             if (obj?.type === 'identifier') {
                 const name = `${obj.text}[]`;
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written' });
+                mutations[name].writes.push({ fn, line, type: 'written', conditional });
             }
         }
     }
@@ -600,15 +623,16 @@ export function extractMutationChains(tree) {
         if (!left) continue;
         const fn = getEnclosingFunction(node);
         const line = node.startPosition.row + 1;
+        const conditional = isConditionalContext(node);
         if (left.type === 'identifier') {
             const name = left.text;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-            mutations[name].writes.push({ fn, line, type: 'reassigned' });
+            mutations[name].writes.push({ fn, line, type: 'reassigned', conditional });
         } else if (left.type === 'member_expression') {
             const name = getMemberExpressionName(left);
             if (name) {
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written' });
+                mutations[name].writes.push({ fn, line, type: 'written', conditional });
             }
         }
     }
@@ -621,19 +645,20 @@ export function extractMutationChains(tree) {
         const fn = getEnclosingFunction(node);
         const line = node.startPosition.row + 1;
         const col  = node.startPosition.column; // used in dedup key — multiple stmts can share a line
+        const conditionalB = isConditionalContext(node);
         if (left.type === 'identifier') {
             const name = left.text;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
             // Avoid double-counting if Strategy A already found it (match on line+col+fn)
             if (!mutations[name].writes.some(w => w.line === line && w.col === col && w.fn === fn)) {
-                mutations[name].writes.push({ fn, line, col, type: 'reassigned' });
+                mutations[name].writes.push({ fn, line, col, type: 'reassigned', conditional: conditionalB });
             }
         } else if (left.type === 'member_expression') {
             const name = getMemberExpressionName(left);
             if (name) {
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
                 if (!mutations[name].writes.some(w => w.line === line && w.col === col && w.fn === fn)) {
-                    mutations[name].writes.push({ fn, line, col, type: 'written' });
+                    mutations[name].writes.push({ fn, line, col, type: 'written', conditional: conditionalB });
                 }
             }
         }
@@ -646,16 +671,17 @@ export function extractMutationChains(tree) {
         if (!arg) continue;
         const fn = getEnclosingFunction(node);
         const line = node.startPosition.row + 1;
+        const conditional = isConditionalContext(node);
         if (arg.type === 'identifier') {
             const name = arg.text;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-            mutations[name].writes.push({ fn, line, type: 'reassigned' });
+            mutations[name].writes.push({ fn, line, type: 'reassigned', conditional });
         } else if (arg.type === 'member_expression') {
             // obj.count++  — property is mutated in-place → 'written'
             const name = getMemberExpressionName(arg);
             if (name) {
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written' });
+                mutations[name].writes.push({ fn, line, type: 'written', conditional });
             }
         } else if (arg.type === 'subscript_expression') {
             // obj[expr]++  — computed property mutation. We can't know which element
@@ -664,7 +690,7 @@ export function extractMutationChains(tree) {
             if (obj?.type === 'identifier') {
                 const name = `${obj.text}[]`;
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written', computed: true });
+                mutations[name].writes.push({ fn, line, type: 'written', computed: true, conditional });
             }
         }
     }
@@ -1536,13 +1562,13 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
                 const reassigned = data.writes.filter(w => w.type === 'reassigned' || (!w.type && !isPropertyMutation));
                 const written    = data.writes.filter(w => w.type === 'written'    || (!w.type && isPropertyMutation));
                 if (reassigned.length > 0) {
-                    lines.push(`    reassigned: ${reassigned.map(w => `${w.fn} L${w.line}`).join(', ')}`);
+                    lines.push(`    reassigned: ${reassigned.map(w => `${w.fn} L${w.line}${w.conditional ? ' [CONDITIONAL]' : ''}`).join(', ')}`);
                 }
                 if (written.length > 0) {
                     const annotation = name.includes('[]')
                         ? (written.some(w => w.computed) ? ' ← computed property write' : ' ← array element')
                         : ' ← property write';
-                    lines.push(`    written: ${written.map(w => `${w.fn} L${w.line}`).join(', ')}${annotation}`);
+                    lines.push(`    written: ${written.map(w => `${w.fn} L${w.line}${w.conditional ? ' [CONDITIONAL]' : ''}`).join(', ')}${annotation}`);
                 }
                 if (reassigned.length === 0 && written.length === 0) {
                     // Fallback — shouldn't occur after full migration but keeps output safe

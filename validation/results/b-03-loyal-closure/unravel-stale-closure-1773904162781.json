@@ -1,0 +1,229 @@
+{
+  "aiPrompt": "The `debouncedSearch` callback in `useSearchDebounce.ts` is suffering from a stale closure issue. It's defined with an empty dependency array (`[]`) in `useCallback`, meaning it only captures the `query` prop from the initial render. Consequently, when the `query` prop changes due to user input, the `debouncedSearch` function (and the `setTimeout` callback it creates) continues to use the old, initial `query` value. To fix this, update the `useCallback` dependency array to include all variables from its outer scope that it depends on and that can change over time, specifically `query` and `delayMs`, as well as the stable state setters `setResults`, `setIsLoading`, and `setError` for completeness.",
+  "bugType": "STALE_CLOSURE",
+  "codeLocation": "src/hooks/useSearchDebounce.ts L20",
+  "conceptExtraction": {
+    "bugCategory": "Data Flow",
+    "concept": "Stale Closures with `useCallback` in React Hooks",
+    "patternToAvoid": "Using `useCallback` with an empty dependency array (`[]`) when the callback relies on props, state, or other variables from the component's scope that are expected to change. This creates a closure that captures the initial values, leading to outdated behavior.",
+    "realWorldAnalogy": "Imagine you've given a chef a recipe (your `useCallback`) for a dish, and on that recipe, you've written 'Use 2 onions' (the `query` value). You tell the chef, 'Whenever I ask you to make this dish, follow this recipe.' Later, you decide you only want '1 onion' for the dish, so you update your mental note. However, because the chef's original recipe card (the `useCallback` instance) was never updated to reflect the '1 onion' change, they will always cook with '2 onions' when you request the dish, following the *original* instruction they captured.",
+    "whyItMatters": "Stale closures can lead to subtle and hard-to-debug issues where parts of your UI or asynchronous operations use outdated data, even if the parent component appears to have the correct, latest values. It violates the expectation that a function will always operate on the most current state of its dependencies, causing inconsistent behavior and incorrect results, especially in time-sensitive or interactive features like debounced search."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/hooks/useSearchDebounce.ts L20\n-  const debouncedSearch = useCallback(() => {\n+  const debouncedSearch = useCallback(() => {\n     if (timerRef.current) clearTimeout(timerRef.current);\n \n     if (!query.trim()) {\n       setResults([]);\n       setIsLoading(false);\n       return;\n     }\n \n     setIsLoading(true);\n     timerRef.current = setTimeout(async () => {\n       try {\n         const found = await searchDocuments(query);\n         setResults(found);\n         setError(null);\n       } catch (err) {\n         setError(err instanceof Error ? err.message : 'Search failed');\n         setResults([]);\n       } finally {\n         setIsLoading(false);\n       }\n     }, delayMs);\n-  }, []); // eslint-disable-line react-hooks/exhaustive-deps\n+  }, [query, delayMs, setResults, setIsLoading, setError]);",
+  "evidence": [
+    "src/hooks/useSearchDebounce.ts L20: The `debouncedSearch` callback is defined using `useCallback([])`, capturing `query` from its initial render.",
+    "src/hooks/useSearchDebounce.ts L28: The `searchDocuments(query)` call inside the `setTimeout` callback uses the `query` value from the stale closure.",
+    "src/services/searchService.ts L16: The `searchCallLog.push(query)` confirms that `searchDocuments` is indeed receiving the outdated `query` string."
+  ],
+  "hypotheses": [
+    "Stale closure in `debouncedSearch` callback causes it to use an outdated `query` value for API calls.",
+    "The `useEffect` dependency array in `useSearchDebounce` is missing `query` or `debouncedSearch`, preventing re-execution.",
+    "`inputValue` state in `SearchBar.tsx` is not updating correctly on user input."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "id": "H1",
+      "reason": "The `debouncedSearch` function is wrapped in `useCallback([])` (src/hooks/useSearchDebounce.ts L20), meaning it only captures the `query` value at its initial definition. When `query` changes, the `debouncedSearch` instance (and the `setTimeout` callback it schedules) continues to use this stale value, leading to `searchDocuments(query)` (src/hooks/useSearchDebounce.ts L28) being called with the old `query`. This directly matches the symptom and the `searchCallLog` evidence.",
+      "status": "survived",
+      "text": "Stale closure in `debouncedSearch`"
+    },
+    {
+      "eliminatedBy": "src/hooks/useSearchDebounce.ts L39: }, [query, debouncedSearch]);",
+      "id": "H2",
+      "reason": "The `useEffect` dependency array explicitly includes `query` and `debouncedSearch` (src/hooks/useSearchDebounce.ts L39), ensuring it re-runs when the `query` prop changes or if `debouncedSearch` itself were to change (which it doesn't due to the `useCallback` empty deps). Thus, this is not the cause.",
+      "status": "eliminated",
+      "text": "`useEffect` dependencies are incorrect"
+    },
+    {
+      "eliminatedBy": "User's `console.log` report",
+      "id": "H3",
+      "reason": "The user reported that `console.log(query)` within `SearchBar.tsx` shows the correct, current value of the input, indicating `inputValue` is updating as expected. This means the correct `query` is being passed into `useSearchDebounce`, ruling out an issue at the `SearchBar` level.",
+      "status": "eliminated",
+      "text": "`inputValue` in `SearchBar` is not updating"
+    }
+  ],
+  "invariants": [
+    "The `query` argument to `searchDocuments()` in `searchService.ts` must always correspond to the user's latest typed input, provided the debounce delay has elapsed without further input changes.",
+    "The `timerRef.current` value in `useSearchDebounce.ts` must always point to the most recent `setTimeout` ID, or `null` if no debounce is active.",
+    "The `debouncedSearch` callback must always form a closure over the most current `query` and `delayMs` values."
+  ],
+  "minimalFix": "To fix the stale closure, the `useCallback` for `debouncedSearch` must include all its dependencies that can change over time. Specifically, `query` and `delayMs` must be added to the dependency array. The React state setters (`setResults`, `setIsLoading`, `setError`) are stable and don't strictly need to be added in most React 18+ scenarios, but adding them for exhaustive dependency adherence is a safe practice.\n\n```typescript\n// src/hooks/useSearchDebounce.ts\nimport { useState, useEffect, useRef, useCallback } from 'react';\nimport { SearchResult, searchDocuments } from '../services/searchService';\n\nexport function useSearchDebounce(query: string, delayMs: number = 300) {\n  const [results, setResults] = useState<SearchResult[]>([]);\n  const [isLoading, setIsLoading] = useState(false);\n  const [error, setError] = useState<string | null>(null);\n  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);\n\n  const debouncedSearch = useCallback(() => {\n    if (timerRef.current) clearTimeout(timerRef.current);\n\n    if (!query.trim()) {\n      setResults([]);\n      setIsLoading(false);\n      return;\n    }\n\n    setIsLoading(true);\n    timerRef.current = setTimeout(async () => {\n      try {\n        const found = await searchDocuments(query);\n        setResults(found);\n        setError(null);\n      } catch (err) {\n        setError(err instanceof Error ? err.message : 'Search failed');\n        setResults([]);\n      } finally {\n        setIsLoading(false);\n      }\n    }, delayMs);\n  }, [query, delayMs, setResults, setIsLoading, setError]); // FIX: Added query, delayMs, and state setters to dependencies\n\n  useEffect(() => {\n    debouncedSearch();\n    return () => {\n      if (timerRef.current) clearTimeout(timerRef.current);\n    };\n  }, [query, debouncedSearch]);\n\n  return { results, isLoading, error };\n}\n```",
+  "proximate_crash_site": "searchService.ts L16 — `searchCallLog.push(query)` receives an outdated query string, reflecting that `searchDocuments()` was called with the wrong parameter.",
+  "reproduction": [
+    "1. Open the application with the `SearchBar` component.",
+    "2. In the search input, type a query, e.g., \"react\".",
+    "3. Immediately (within 300ms, before the debounce timeout fires), clear the input or type a new, different query, e.g., \"typescript\".",
+    "4. Wait for the debounce timeout to elapse.",
+    "5. Observe the network request or the `searchCallLog` in `searchService.ts`: it will show the initial query (\"react\") instead of the final one (\"typescript\"), and the displayed results will correspond to the initial query."
+  ],
+  "rootCause": "The `debouncedSearch` callback in `useSearchDebounce.ts` is defined using `useCallback` with an empty dependency array (`[]`). This causes the callback to capture the `query` prop from its initial render. When the `query` prop changes in subsequent renders (due to user typing), the `debouncedSearch` function itself is not re-created. Therefore, when the `setTimeout` callback inside `debouncedSearch` eventually executes, it accesses the outdated, initially captured `query` value instead of the latest one, leading to `searchDocuments()` being called with the wrong input.",
+  "symptom": "The search bar sends an outdated query to the API (the initial query typed), and displays results for that initial query, if the user changes their input within the 300ms debounce window.",
+  "timelineEdges": [
+    {
+      "from": "User",
+      "isBugPoint": false,
+      "label": "types 'react'",
+      "to": "SearchBar"
+    },
+    {
+      "from": "SearchBar",
+      "isBugPoint": false,
+      "label": "updates inputValue to 'react'",
+      "to": "useSearchDebounce"
+    },
+    {
+      "from": "useSearchDebounce",
+      "isBugPoint": false,
+      "label": "debouncedSearch (instance 1) created, captures query='react'",
+      "to": "useSearchDebounce"
+    },
+    {
+      "from": "useSearchDebounce",
+      "isBugPoint": false,
+      "label": "useEffect calls debouncedSearch()",
+      "to": "useSearchDebounce"
+    },
+    {
+      "from": "useSearchDebounce",
+      "isBugPoint": false,
+      "label": "sets setTimeout(..., 300ms) with callback capturing query='react'",
+      "to": "Browser Timer API"
+    },
+    {
+      "from": "User",
+      "isBugPoint": false,
+      "label": "quickly types 'typescript'",
+      "to": "SearchBar"
+    },
+    {
+      "from": "SearchBar",
+      "isBugPoint": false,
+      "label": "updates inputValue to 'typescript'",
+      "to": "useSearchDebounce"
+    },
+    {
+      "from": "useSearchDebounce",
+      "isBugPoint": false,
+      "label": "useEffect re-runs (query changed) calls debouncedSearch()",
+      "to": "useSearchDebounce"
+    },
+    {
+      "from": "useSearchDebounce",
+      "isBugPoint": false,
+      "label": "debouncedSearch() clears previous timeout for 'react'",
+      "to": "Browser Timer API"
+    },
+    {
+      "from": "useSearchDebounce",
+      "isBugPoint": true,
+      "label": "sets NEW setTimeout(..., 300ms) with callback still capturing query='react' (stale)",
+      "to": "Browser Timer API"
+    },
+    {
+      "from": "Browser Timer API",
+      "isBugPoint": false,
+      "label": "300ms elapses, callback executes",
+      "to": "useSearchDebounce"
+    },
+    {
+      "from": "useSearchDebounce",
+      "isBugPoint": false,
+      "label": "calls searchDocuments('react') (stale query)",
+      "to": "searchService"
+    },
+    {
+      "from": "searchService",
+      "isBugPoint": false,
+      "label": "searchCallLog.push('react') and returns results for 'react'",
+      "to": "SearchBar"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [
+    {
+      "meaning": "The current search query string, derived from user input.",
+      "variable": "query",
+      "whereChanged": "useSearchDebounce.ts L10 (prop update from SearchBar)"
+    },
+    {
+      "meaning": "Reference to the current `setTimeout` ID for debounce, allowing it to be cleared.",
+      "variable": "timerRef.current",
+      "whereChanged": "useSearchDebounce.ts L13 (initialization), L14 (clearTimeout), L26 (setTimeout assignment), L43 (cleanup clearTimeout)"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "read L15",
+          "to": "debouncedSearch",
+          "type": "read"
+        },
+        {
+          "from": "debouncedSearch",
+          "label": "read L28",
+          "to": "setTimeout callback",
+          "type": "read"
+        },
+        {
+          "from": "declared",
+          "label": "read L39 (dependency)",
+          "to": "useEffect",
+          "type": "read"
+        },
+        {
+          "from": "useSearchDebounce",
+          "label": "mutated by prop change",
+          "to": "useSearchDebounce",
+          "type": "mutate"
+        }
+      ],
+      "variable": "query"
+    },
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "written L13",
+          "to": "useSearchDebounce",
+          "type": "write"
+        },
+        {
+          "from": "useSearchDebounce",
+          "label": "read L14",
+          "to": "debouncedSearch",
+          "type": "read"
+        },
+        {
+          "from": "debouncedSearch",
+          "label": "written L14",
+          "to": "debouncedSearch",
+          "type": "write"
+        },
+        {
+          "from": "debouncedSearch",
+          "label": "written L26",
+          "to": "debouncedSearch",
+          "type": "write"
+        },
+        {
+          "from": "useSearchDebounce",
+          "label": "read L42",
+          "to": "useEffect cleanup",
+          "type": "read"
+        },
+        {
+          "from": "useEffect cleanup",
+          "label": "written L43",
+          "to": "useEffect cleanup",
+          "type": "write"
+        }
+      ],
+      "variable": "timerRef.current"
+    }
+  ],
+  "whyFixWorks": "The fix involves adding `query`, `delayMs`, and the React state setters (`setResults`, `setIsLoading`, `setError`) to the dependency array of the `debouncedSearch` `useCallback`. This ensures that whenever the `query` prop or `delayMs` changes, React will re-create a *new* instance of the `debouncedSearch` function. This new function instance will form a fresh closure, capturing the *latest* values of `query` and `delayMs` from the current render. Consequently, when the `setTimeout` callback eventually executes, it will correctly use the most up-to-date `query` string for the `searchDocuments` API call, resolving the stale closure issue."
+}

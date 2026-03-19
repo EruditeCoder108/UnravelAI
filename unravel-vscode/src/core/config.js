@@ -127,18 +127,24 @@ export const LANGUAGES = {
 };
 
 // --- Language Prompts ---
+// FIX: English is a neutral professional baseline — simplification comes from level instructions only.
+// Indian analogies are gated to hinglish/hindi — do NOT fire them for English users.
 const LANG_INSTRUCTIONS = {
-    hinglish: "CRITICAL: Reply ONLY in natural Hinglish (Hindi+English mix) like Indian friends talk. Technical terms in English, explained in Hindi. E.g. 'Yaar, yeh variable basically tera timer ka total time store karta hai.'",
-    hindi: "CRITICAL: Reply ONLY in simple, clear Hindi. Translate all technical terms into Hindi equivalents. Use Devanagari-friendly language.",
-    english: "CRITICAL: Reply ONLY in very simple plain English. Zero jargon. Explain like the user is 15 years old and curious.",
+    hinglish: "CRITICAL: Reply ONLY in natural Hinglish (Hindi+English mix) like Indian friends talk. Technical terms in English, explained in Hindi. Use real Indian daily-life analogies (ghar, sabzi, auto-rickshaw, chai, cricket) to explain concepts. E.g. 'Yaar, yeh variable basically tera timer ka total time store karta hai.'",
+    hindi: "CRITICAL: Reply ONLY in simple, clear Hindi. Translate all technical terms into Hindi equivalents. Use Devanagari-friendly language. Use Indian daily-life analogies to explain concepts.",
+    english: "Reply in clear, professional English. Match technical depth to the user level below. Do NOT use Indian-specific analogies — use universally understood examples instead.",
 };
 
 // --- Level Prompts ---
+// IMPORTANT: Level controls EXPLANATION LANGUAGE AND ANALOGY COMPLEXITY only.
+// Fix quality, diagnostic depth, hypothesis rigor, and cross-file tracing are ALWAYS
+// at maximum regardless of user level. Never simplify or omit the fix because the
+// user is a beginner — give the full correct fix, then explain it simply.
 const LEVEL_INSTRUCTIONS = {
-    beginner: "The user has ZERO coding knowledge. They used AI to build something and don't understand any code. Explain like they're 10 years old using simple analogies from daily Indian life.",
-    vibe: "The user is a vibe coder — they use Cursor/Bolt/Lovable to build apps. They know what an app should DO, not HOW the code works. They understand 'file', 'button', 'API' but not code logic.",
-    basic: "The user knows basic HTML/CSS and can read simple code. They struggle with JavaScript logic, state management, and async behavior.",
-    intermediate: "The user is a developer who can write code but is confused about THIS specific bug. Give technical details but still explain the 'why' clearly.",
+    beginner: "The user has ZERO coding knowledge. They used AI to build something and don't understand any code. Explain like they're 10 years old using simple analogies from daily Indian life. IMPORTANT: Give the FULL correct fix — do not simplify or omit any part of it. Then explain what each change does in plain language without jargon.",
+    vibe: "The user is a vibe coder — they use Cursor/Bolt/Lovable to build apps. They know what an app should DO, not HOW the code works. They understand 'file', 'button', 'API' but not code logic. Give the COMPLETE fix with every change needed. Explain using file names and plain English — not code theory.",
+    basic: "The user knows basic HTML/CSS and can read simple code. They struggle with JavaScript logic, state management, and async behavior. Give the FULL, COMPLETE fix. Explain the 'why' using simple analogies before showing the code.",
+    intermediate: "The user is a developer who can write code but is confused about THIS specific bug. Give full technical details, the complete fix, and explain the why clearly. Do not simplify or abbreviate.",
 };
 
 // ═══════════════════════════════════════════════════
@@ -219,17 +225,32 @@ Populate hypothesisTree with each hypothesis, its status (survived/eliminated), 
 Default: show targeted surgical fixes only. Do NOT rewrite the entire program.
 Explain exactly why this fix works at the root cause level.
 
-ARCHITECTURAL EXCEPTION — only applies when the root cause is structural:
-If the surviving hypothesis reveals that the bug exists because of a fundamental design flaw
-(e.g. shared mutable state across async boundaries, wrong ownership of data, missing abstraction layer),
-and the surgical patch would only hide the symptom while leaving the root cause intact:
+ARCHITECTURAL EXCEPTION — applies in any of these three cases:
+
+Case A — Surgical patch hides the symptom but leaves root cause intact:
+  The patch suppresses the visible error without eliminating the underlying incorrect state.
+  Example: adding a null-check around a crash site when the real bug is that null should never reach there.
+
+Case B — Surgical patch is correct but produces a worse pattern or maintenance debt:
+  The patch technically works but violates framework best practices, creates unnecessary complexity,
+  or sets a pattern that will cause related bugs in future.
+  Example: adding 5 dependencies to a useCallback when the callback should be inlined into useEffect entirely —
+  the dep-list fix works but creates an unstable, hard-to-maintain hook design.
+
+Case C — Fundamental design flaw spans multiple locations:
+  The bug exists because of wrong ownership of data, shared mutable state across async boundaries,
+  or a missing abstraction layer that will cause the same class of bug to recur.
+
+When any case applies:
   1. Still provide the surgical patch (for immediate deployment)
-  2. Add a clearly-labeled "ARCHITECTURAL NOTE" paragraph in minimalFix that names:
-     - What structural property is violated
-     - What the correct design would look like (2-3 sentences max)
+  2. Add a clearly-labeled "ARCHITECTURAL NOTE" section in minimalFix that contains:
+     - A plain-language explanation of what structural property is violated
+     - The correct design described concisely but completely
+     - The FULL better fix code, ready to implement — not a vague description
      - Which files would need to change
+     The developer must be able to implement the better fix from what you write, without doing additional research.
 Do NOT add an architectural note for single-location bugs, typos, missing null checks, or
-off-by-one errors — only for cases where multiple patches in the same area over time are inevitable.
+off-by-one errors — only for cases where the same area will need repeated patches over time.
 
 Populate timelineEdges with the same timeline as directed edges between actors. Mark the exact edge where the bug manifests with isBugPoint: true.`
         },
@@ -237,7 +258,9 @@ Populate timelineEdges with the same timeline as directed edges between actors. 
             n: 7, name: 'CONCEPT EXTRACTION',
             desc: `What programming concept does this bug teach?
 How should the user avoid this entire class of bug forever?
-Give a real-world analogy from Indian daily life.`
+Give a real-world analogy appropriate for the user's language setting (see language instruction above).
+For hinglish/hindi users: use Indian daily-life analogies (auto-rickshaw, sabzi, chai, ghar).
+For english users: use universally understood analogies.`
         },
         {
             n: 8, name: 'INVARIANTS',
@@ -257,7 +280,7 @@ Document them as rules for future prevention.`
         'If multiple hypotheses survive evidence elimination, report all survivors with evidence for each. Do NOT pick one arbitrarily.',
         'The user\'s description is a symptom report, not a diagnosis. Do not treat their assumption about the bug\'s location or cause as fact.',
         'If critical files are missing, set needsMoreInfo to true and specify exactly what you need.',
-        'Use Indian daily-life analogies when explaining (ghar, sabzi, auto-rickshaw, chai, cricket).',
+        'Analogies: for hinglish/hindi users, use Indian daily-life examples (ghar, sabzi, auto-rickshaw, chai, cricket). For english users, use universally understood analogies — do not assume an Indian cultural context.',
         'Be warm like a senior developer friend, not cold like documentation.',
         'CONFIDENCE CALIBRATION — This is static analysis, not runtime execution. Code evidence IS deterministic. If you have traced the exact code path where state is corrupted (line number + mechanism), confidence MUST be 0.85 or above. Do NOT lower confidence to 0.6 merely because you lack runtime logs — if the bug is visible in the code, that IS the evidence. Only drop below 0.75 if: (a) critical files are missing, or (b) two hypotheses genuinely survive elimination with equal evidence.',
         'UNCERTAINTY FIELD — Only list SPECIFIC unknowns that change the diagnosis: e.g. "Cannot determine which branch of condition at L42 executes first without a debugger trace." Do NOT write generic disclaimers like "Without runtime logs it is hard to confirm" — that applies to every static analysis and adds no information. If you have code-level evidence for the root cause, uncertainties should be empty or contain only specific secondary unknowns.',

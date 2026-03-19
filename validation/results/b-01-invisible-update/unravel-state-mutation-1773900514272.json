@@ -1,0 +1,245 @@
+{
+  "aiPrompt": "The TaskDashboard component is not re-rendering when tasks are added or completed. This is due to direct mutation of the 'tasks' array within your Zustand store actions. Zustand relies on new object/array references to detect state changes. Modify 'addTask', 'completeTask', and 'removeTask' in src/store/taskStore.ts to create new array references instead of mutating the existing one. For example, use spread syntax (`...`) and `map`/`filter` to return new arrays. Provide the fix as a unified diff.",
+  "bugType": "STATE_MUTATION",
+  "codeLocation": "src/store/taskStore.ts",
+  "conceptExtraction": {
+    "bugCategory": "State Management",
+    "concept": "Immutability in State Management",
+    "patternToAvoid": "Directly modifying objects or arrays that are part of your application's state (e.g., using `push`, `splice`, or directly assigning properties to nested objects).",
+    "realWorldAnalogy": "Imagine you have a 'guest list' for a wedding written on a piece of paper (your application state). If a new guest arrives, you don't just scribble their name on the *same* piece of paper and expect the caterer (your UI) to automatically know to prepare more food. The caterer only reacts if you hand them a *brand new* piece of paper with the updated guest list. If you just mutate the old paper, they never get a 'new' list, so they keep seeing the old count, just like your UI won't update.",
+    "whyItMatters": "Many modern JavaScript frameworks and state management libraries (like React with `useState`, Zustand, Redux) rely on *reference equality* to efficiently detect when state has changed and when components need to re-render. If you mutate an object or array in place, its memory reference remains the same, even if its contents change. This tricks the system into thinking 'nothing changed,' preventing necessary updates to the user interface and causing stale data to be displayed."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/store/taskStore.ts L26\n+++ src/store/taskStore.ts L26\n@@ -26,23 +26,20 @@\n       completed: false,\n       createdAt: Date.now(),\n     };\n-    tasks.push(newTask);\n-    set({ tasks });\n+    set((state) => ({ tasks: [...state.tasks, newTask] }));\n   },\n \n   completeTask: (id: string) => {\n-    const { tasks } = get();\n-    const task = tasks.find((t) => t.id === id);\n-    if (task) {\n-      task.completed = true;\n-    }\n-    set({ tasks });\n+    set((state) => ({\n+      tasks: state.tasks.map((task) =>\n+        task.id === id ? { ...task, completed: true } : task\n+      ),\n+    }));\n   },\n \n   removeTask: (id: string) => {\n-    const { tasks } = get();\n-    const idx = tasks.findIndex((t) => t.id === id);\n-    if (idx !== -1) tasks.splice(idx, 1);\n-    set({ tasks });\n+    set((state) => ({\n+      tasks: state.tasks.filter((task) => task.id !== id),\n+    }));\n   },\n }));",
+  "evidence": [
+    "src/store/taskStore.ts L29: `tasks.push(newTask);` directly mutates the tasks array.",
+    "src/store/taskStore.ts L30: `set({ tasks });` passes the *original* array reference to Zustand's set function after mutation.",
+    "src/store/taskStore.ts L39: `task.completed = true;` directly mutates an object within the tasks array.",
+    "src/store/taskStore.ts L41: `set({ tasks });` passes the *original* array reference (whose internal object's property changed) to Zustand's set function.",
+    "src/store/taskStore.ts L45: `tasks.splice(idx, 1);` directly mutates the tasks array.",
+    "src/store/taskStore.ts L46: `set({ tasks });` passes the *original* array reference to Zustand's set function after mutation.",
+    "User's `console.log(tasks)` in `useTasks` confirming 'the same array every render' directly points to reference equality issues."
+  ],
+  "hypotheses": [
+    "Store actions mutate state arrays directly, preventing Zustand from detecting changes.",
+    "useCallback in useTasks.ts has incorrect dependencies, leading to stale action references.",
+    "The isLoading guard in TaskDashboard.tsx prevents subsequent renders."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "id": "H1",
+      "reason": "The AST shows `tasks.push(newTask)` at `taskStore.ts L29` and `task.completed = true` at `taskStore.ts L39`, and `tasks.splice(idx, 1)` at `taskStore.ts L45`. These are direct mutations of the existing `tasks` array or its elements. The subsequent `set({ tasks })` calls at `taskStore.ts L30`, `L41`, and `L46` pass the original array reference. Zustand's default shallow comparison sees no reference change for the `tasks` property, thus not triggering subscribers. This is further confirmed by the user's observation: 'console.log(tasks) inside useTasks — shows the same array every render'.",
+      "status": "survived",
+      "text": "Store actions mutate state arrays directly, preventing Zustand from detecting changes."
+    },
+    {
+      "eliminatedBy": "useTasks.ts L17: [_addTask], useTasks.ts L23: [_completeTask], useTasks.ts L28: [_removeTask]",
+      "id": "H2",
+      "reason": "The `useCallback` dependencies in `useTasks.ts` (L17, L23, L28) correctly list the `_addTask`, `_completeTask`, and `_removeTask` functions. Store actions provided by Zustand are stable by default, so these dependencies would not cause stale closures of the actions themselves. The AST confirms `_addTask` and `_completeTask` are selected directly from the store.",
+      "status": "eliminated",
+      "text": "useCallback in useTasks.ts has incorrect dependencies, leading to stale action references."
+    },
+    {
+      "eliminatedBy": "User Report: \"Removed the isLoading guard from TaskDashboard.tsx — no change\"",
+      "id": "H3",
+      "reason": "The user's symptom report explicitly states: 'Removed the `isLoading` guard from `TaskDashboard.tsx` — no change'. This directly contradicts the hypothesis that the `isLoading` guard is swallowing updates.",
+      "status": "eliminated",
+      "text": "The isLoading guard in TaskDashboard.tsx prevents subsequent renders."
+    }
+  ],
+  "invariants": [
+    "All modifications to the `tasks` array or individual `Task` objects within the `useTaskStore` must produce a new array or object reference. Direct mutation of existing state objects/arrays is forbidden.",
+    "Each store action (`addTask`, `completeTask`, `removeTask`) must ensure that the `set` function receives a new, correctly structured state object (or a functional update) to trigger state updates reliably.",
+    "The UI components, such as `TaskDashboard`, must always reflect the current, updated state of `tasks`, `pendingCount`, and `completedCount` as provided by the `useTasks` hook."
+  ],
+  "minimalFix": "The problem is that your Zustand store actions (`addTask`, `completeTask`, `removeTask`) are directly modifying the existing `tasks` array or objects within it. Zustand, like many other state management libraries, relies on detecting *new references* for objects and arrays to understand that the state has changed. When you use `push`, `splice`, or directly assign properties, the array's or object's memory reference stays the same, so Zustand doesn't realize anything has updated and therefore doesn't tell your components to re-render.\n\nTo fix this, you need to ensure that every time you modify the `tasks` array, you create a *brand new* array with the changes, and then pass that new array to Zustand's `set` function. The same applies to objects within the array; if you change a property, you need to create a new object.\n\nHere’s how you'd typically do it using the functional update form of `set` and spread syntax (`...`) for immutability:",
+  "proximate_crash_site": "TaskDashboard() L8 — The component's derived state (`tasks`, `pendingCount`, `completedCount`) from `useTasks()` does not update because the underlying Zustand store does not detect a state change, leading to a frozen UI.",
+  "reproduction": [
+    "Open the TaskDashboard component in a browser.",
+    "Type a task into the input field and click 'Add'.",
+    "Observe that the task does not appear in the list, and the task count doesn't update.",
+    "Click 'Complete' on an existing task (if any).",
+    "Observe that the task's status in the UI does not change, and the completed count doesn't update."
+  ],
+  "rootCause": "Direct mutation of the 'tasks' array and its elements within Zustand store actions (`addTask`, `completeTask`, `removeTask`) without providing a new array/object reference to the `set` function, preventing Zustand from detecting state changes and triggering component re-renders.",
+  "symptom": "The task dashboard doesn't re-render when tasks are added or completed. `addTask()` and `completeTask()` both return without errors but the UI stays frozen. The `TaskDashboard` component only renders once on mount.",
+  "timelineEdges": [
+    {
+      "from": "TaskDashboard",
+      "isBugPoint": false,
+      "label": "calls addTask(input)",
+      "to": "useTasks hook (addTask)"
+    },
+    {
+      "from": "useTasks hook (addTask)",
+      "isBugPoint": false,
+      "label": "calls _addTask(title)",
+      "to": "taskStore (addTask action)"
+    },
+    {
+      "from": "taskStore (addTask action)",
+      "isBugPoint": false,
+      "label": "gets current tasks array (reference A)",
+      "to": "taskStore state"
+    },
+    {
+      "from": "taskStore (addTask action)",
+      "isBugPoint": false,
+      "label": "mutates tasks array (reference A) with push()",
+      "to": "taskStore state (tasks array)"
+    },
+    {
+      "from": "taskStore (addTask action)",
+      "isBugPoint": true,
+      "label": "calls set({ tasks: reference A })",
+      "to": "Zustand internal"
+    },
+    {
+      "from": "Zustand internal",
+      "isBugPoint": true,
+      "label": "shallow comparison finds no change for 'tasks' property",
+      "to": "Zustand subscribers"
+    },
+    {
+      "from": "Zustand subscribers",
+      "isBugPoint": true,
+      "label": "no notification to useTasks hook",
+      "to": "useTasks hook"
+    },
+    {
+      "from": "useTasks hook",
+      "isBugPoint": true,
+      "label": "returns old tasks reference",
+      "to": "TaskDashboard"
+    },
+    {
+      "from": "TaskDashboard",
+      "isBugPoint": true,
+      "label": "does not re-render",
+      "to": "User UI"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [
+    {
+      "meaning": "The list of all tasks in the application state.",
+      "variable": "tasks",
+      "whereChanged": "taskStore.ts L29 (mutated via push), taskStore.ts L39 (element property mutated), taskStore.ts L45 (mutated via splice)"
+    },
+    {
+      "meaning": "The completion status of a single task.",
+      "variable": "task.completed",
+      "whereChanged": "taskStore.ts L39 (property assigned true)"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "initialised L19",
+          "to": "taskStore",
+          "type": "write"
+        },
+        {
+          "from": "addTask",
+          "label": "read L24",
+          "to": "addTask",
+          "type": "read"
+        },
+        {
+          "from": "addTask",
+          "label": "mutated L29",
+          "to": "addTask",
+          "type": "mutate"
+        },
+        {
+          "from": "addTask",
+          "label": "written L30",
+          "to": "taskStore",
+          "type": "write"
+        },
+        {
+          "from": "completeTask",
+          "label": "read L35",
+          "to": "completeTask",
+          "type": "read"
+        },
+        {
+          "from": "completeTask",
+          "label": "written L41",
+          "to": "taskStore",
+          "type": "write"
+        },
+        {
+          "from": "removeTask",
+          "label": "read L44",
+          "to": "removeTask",
+          "type": "read"
+        },
+        {
+          "from": "removeTask",
+          "label": "mutated L45",
+          "to": "removeTask",
+          "type": "mutate"
+        },
+        {
+          "from": "removeTask",
+          "label": "written L46",
+          "to": "taskStore",
+          "type": "write"
+        },
+        {
+          "from": "useTasks()",
+          "label": "read L9",
+          "to": "useTasks",
+          "type": "read"
+        },
+        {
+          "from": "useTasks()",
+          "label": "read L31",
+          "to": "useTasks",
+          "type": "read"
+        },
+        {
+          "from": "useTasks()",
+          "label": "read L32",
+          "to": "useTasks",
+          "type": "read"
+        },
+        {
+          "from": "TaskDashboard()",
+          "label": "read L8",
+          "to": "TaskDashboard",
+          "type": "read"
+        },
+        {
+          "from": "TaskDashboard()",
+          "label": "read L27",
+          "to": "TaskDashboard",
+          "type": "read"
+        },
+        {
+          "from": "TaskDashboard()",
+          "label": "read L36",
+          "to": "TaskDashboard",
+          "type": "read"
+        }
+      ],
+      "variable": "tasks"
+    },
+    {
+      "edges": [
+        {
+          "from": "completeTask",
+          "label": "written L39",
+          "to": "completeTask",
+          "type": "write"
+        }
+      ],
+      "variable": "task.completed"
+    }
+  ],
+  "whyFixWorks": "This fix works by embracing the principle of immutability. Instead of modifying the `tasks` array (or `task` objects within it) directly, we now create *new* arrays and objects for each state change. For example:\n\n1.  **`addTask`**: `[...state.tasks, newTask]` creates a brand new array that includes all the old tasks plus the new one. The `set` function then receives a new array reference.\n2.  **`completeTask`**: `state.tasks.map(...)` iterates over the `tasks` array, creating a new array. For the task that needs to be completed, `{ ...task, completed: true }` creates a brand new task object with the updated `completed` status, ensuring that even nested objects have new references if modified.\n3.  **`removeTask`**: `state.tasks.filter(...)` also creates a brand new array that excludes the removed task.\n\nBecause `set` now receives a completely new array (or new objects within it), Zustand's shallow comparison correctly detects that the `tasks` state property has changed its reference. This triggers the necessary notifications to components like `TaskDashboard` (via the `useTasks` hook), prompting them to re-render with the freshest data."
+}

@@ -1,0 +1,292 @@
+{
+  "aiPrompt": "The `optimisticStore.applyServerUpdate` function in `src/store/optimisticStore.ts` does not check if the incoming `serverVersion` is older than the `current.version` stored for a `postId`. This allows stale WebSocket updates to overwrite newer optimistic or confirmed states, causing a UI flicker where the count temporarily snaps back. Implement a version check within `applyServerUpdate` to only apply updates if `serverVersion` is greater than or equal to `current.version`. Add a console warning for ignored stale updates.",
+  "bugType": "DATA_FLOW",
+  "codeLocation": "src/store/optimisticStore.ts L51",
+  "conceptExtraction": {
+    "bugCategory": "Concurrency and State Management",
+    "concept": "Optimistic Concurrency Control / Stale Data Handling",
+    "patternToAvoid": "Unconditionally applying updates to shared state from multiple asynchronous sources without validating their recency or authority (e.g., using version numbers or timestamps). This leads to older data overwriting newer, correct data, causing inconsistencies and poor user experience.",
+    "realWorldAnalogy": "Imagine you and a friend are editing a shared document online. You make a change (optimistic update). Your friend also makes a change. The server sends you an update about your friend's change (WebSocket broadcast). If your document editor simply applies whatever update arrives without checking if it's older than your own unsaved change, your recent edit might disappear, only to reappear when your own change is finally saved to the server. A good editor would use versioning to prioritize the most recent or authoritative changes.",
+    "whyItMatters": "In distributed or real-time systems, multiple concurrent operations (user actions, HTTP requests, real-time broadcasts) often modify the same data. Without proper concurrency control mechanisms like version checks, stale or out-of-order updates can corrupt the client's state, leading to confusing UI flickers, incorrect data displays, and a degraded user experience. Implementing versioning ensures data integrity and consistency across asynchronous updates."
+  },
+  "confidence": 0.6000000000000001,
+  "diffBlock": "--- src/store/optimisticStore.ts L51\n+++ src/store/optimisticStore.ts L51\n   applyServerUpdate(postId: string, count: number, serverVersion: number): PostLikeState {\n     const current = this.get(postId);\n+    // Only apply server update if it's not older than our current state\n+    // This prevents stale WebSocket events from overwriting newer optimistic or confirmed states.\n+    if (serverVersion < current.version) {\n+      console.warn(`[OptimisticStore] Ignoring stale server update for postId ${postId}. Current version: ${current.version}, Server version: ${serverVersion}`);\n+      return current; // Return current state, do not apply stale update\n+    }\n     const next: PostLikeState = {\n       postId,\n       count,\n",
+  "evidence": [
+    "src/store/optimisticStore.ts L51: The `applyServerUpdate` method does not perform a check against `current.version` to determine if the incoming `serverVersion` is newer or older. It unconditionally overwrites the existing state.",
+    "src/services/likeService.ts L39: `handleWebSocketLikeEvent` calls `optimisticStore.applyServerUpdate`. When a stale WebSocket event arrives, this call will overwrite newer optimistic state.",
+    "src/services/likeService.ts L48: `reconcileFinalCount` also calls `optimisticStore.applyServerUpdate`. This is the final step in the HTTP flow, which correctly applies the latest version for the current user interaction."
+  ],
+  "hypotheses": [
+    "Stale WebSocket update overwrites newer client state due to missing version check.",
+    "`likesRouter` sends incorrect `serverVersion` to `reconcileFinalCount`.",
+    "Race condition where `optimisticStore.applyOptimistic` is not atomic."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "id": "H1",
+      "reason": "`optimisticStore.applyServerUpdate` (optimisticStore.ts L51) unconditionally applies `count` and `serverVersion` without checking if `serverVersion` is older than `current.version`. This allows an older WebSocket event (e.g., `{ count: 10, version: 10 }`) to overwrite a newer optimistic state (`{ count: 11, version: 11, optimistic: true }`), causing the 'snap back to pre-click count' symptom. The subsequent HTTP reconciliation (which uses the correct `optimistic.version` from the user's current click) then restores the correct count.",
+      "status": "survived",
+      "text": "Stale WebSocket update overwrites newer client state due to missing version check."
+    },
+    {
+      "eliminatedBy": "likesRouter.ts L34: serverVersion = optimistic.version;",
+      "id": "H2",
+      "reason": "In `likesRouter.ts L34`, `serverVersion` is set to `optimistic.version`. This `optimistic` object is the direct result of `applyOptimisticLike` (L25), meaning its version is `current_optimistic_version + 1`. This is the correct version to associate with the *current* user action being confirmed by the HTTP response. The user's symptom states 'WS is causing the rollback, not the HTTP', which contradicts this hypothesis.",
+      "status": "eliminated",
+      "text": "`likesRouter` sends incorrect `serverVersion` to `reconcileFinalCount`."
+    },
+    {
+      "eliminatedBy": "optimisticStore.ts L37: this.state.set(postId, next);",
+      "id": "H3",
+      "reason": "`optimisticStore.applyOptimistic` (optimisticStore.ts L37) uses `Map.set` which is an atomic operation for storing the new state object. While multiple calls could happen, each would produce a sequentially incremented version, and the internal logic for `count` and `version` increment is synchronous. This hypothesis doesn't explain a 'snap back' to a previous count, but rather a potential miscalculation if atomicity was truly broken, which it isn't here.",
+      "status": "eliminated",
+      "text": "Race condition where `optimisticStore.applyOptimistic` is not atomic."
+    }
+  ],
+  "invariants": [
+    "For any given `postId`, the `optimisticStore`'s `version` MUST monotonically increase with each `applyOptimistic` call to reflect the order of client-initiated updates.",
+    "`optimisticStore.applyServerUpdate` MUST only apply updates where the `incomingServerVersion` is greater than or equal to the `current.version` to prevent stale server data (e.g., from delayed WebSocket events) from overwriting newer optimistic or confirmed states.",
+    "The `optimistic` flag in `PostLikeState` MUST accurately reflect whether the current `count` is a client-initiated optimistic prediction or a server-confirmed authoritative value.",
+    "The `serverVersion` parameter passed to `reconcileFinalCount` (and subsequently `optimisticStore.applyServerUpdate`) MUST represent the authoritative server-confirmed version for the specific transaction it's reconciling, not an arbitrary value like the `serverCount`."
+  ],
+  "minimalFix": "To fix the flicker, you need to modify the `applyServerUpdate` method in `src/store/optimisticStore.ts` to include a version check. This ensures that a server update is only applied if its version is greater than or equal to the currently stored version, preventing older WebSocket events from overwriting newer optimistic state.\n\n```typescript\n// src/store/optimisticStore.ts\n\n  applyServerUpdate(postId: string, count: number, serverVersion: number): PostLikeState {\n    const current = this.get(postId);\n    // Only apply server update if it's not older than our current state\n    // This prevents stale WebSocket events from overwriting newer optimistic or confirmed states.\n    if (serverVersion < current.version) {\n      console.warn(`[OptimisticStore] Ignoring stale server update for postId ${postId}. Current version: ${current.version}, Server version: ${serverVersion}`);\n      return current; // Return current state, do not apply stale update\n    }\n\n    const next: PostLikeState = {\n      postId,\n      count,\n      version: serverVersion,\n      optimistic: false,\n    };\n    this.state.set(postId, next);\n    return next;\n  }\n```",
+  "proximate_crash_site": "handleWebSocketLikeEvent() L39 in src/services/likeService.ts — It calls the buggy `optimisticStore.applyServerUpdate` with potentially stale WebSocket data, causing the state to revert temporarily.",
+  "reproduction": [
+    "1. Navigate to a page displaying a post with a like button.",
+    "2. Click the 'Like' button for a post. The UI should optimistically increment the count.",
+    "3. Shortly after (within 50-100ms), observe the like count briefly revert to its pre-click value, then update again to the correct incremented value."
+  ],
+  "rootCause": "The `optimisticStore.applyServerUpdate` function in `src/store/optimisticStore.ts` unconditionally applies incoming server updates (from both WebSocket events and HTTP reconciliation), even if the `serverVersion` provided by the update is older than the `version` already present in the local store for that `postId`. This allows a stale WebSocket broadcast (which can arrive earlier than the HTTP reconciliation for the same action, or represent an older, delayed server event) to overwrite a newer, more up-to-date optimistic or confirmed state, leading to a temporary 'snap back' to an older count.",
+  "symptom": "The like button shows the correct optimistic count for about 80–200ms, then snaps back to the pre-click count. If you click quickly a second time, both clicks are eventually confirmed but the displayed count flickers down then back up. The snap-back only happens on like, not unlike. The network tab shows the HTTP POST completing successfully. Console logs confirm the WebSocket broadcast fires at T+80ms and HTTP reconciliation at T+100ms. The WS broadcast appears to cause the rollback.",
+  "timeline": [
+    {
+      "event": "User clicks 'like' button",
+      "time": "T=0ms"
+    },
+    {
+      "event": "Router applies optimistic like via `applyOptimisticLike`",
+      "time": "T=0ms"
+    },
+    {
+      "event": "`optimisticStore` updates: `{ count: initial+1, version: V+1, optimistic: true }`",
+      "time": "T=0ms"
+    },
+    {
+      "event": "UI displays `initial+1`",
+      "time": "T=0ms"
+    },
+    {
+      "event": "HTTP request starts (simulated network await for 50ms)",
+      "time": "T=0ms"
+    },
+    {
+      "event": "WebSocket `like_update` event for current or older action arrives (e.g., `{ count: initial, version: V }`)",
+      "time": "T=80ms"
+    },
+    {
+      "event": "`wsHandler.handleWsMessage` dispatches to `handleWebSocketLikeEvent`",
+      "time": "T=80ms"
+    },
+    {
+      "event": "`optimisticStore.applyServerUpdate` is called with stale WS data (e.g., `count: initial, version: V`). **BUG POINT**",
+      "time": "T=80ms"
+    },
+    {
+      "event": "`optimisticStore` unconditionally overwrites state: `{ count: initial, version: V, optimistic: false }`",
+      "time": "T=80ms"
+    },
+    {
+      "event": "UI snaps back to `initial` (pre-click count)",
+      "time": "T=80ms"
+    },
+    {
+      "event": "HTTP request resolves, `likesRouter` continues after await",
+      "time": "T=100ms"
+    },
+    {
+      "event": "Router calls `reconcileFinalCount` with correct confirmed data (e.g., `count: initial+1, version: V+1`)",
+      "time": "T=100ms"
+    },
+    {
+      "event": "`optimisticStore.applyServerUpdate` is called with correct HTTP data",
+      "time": "T=100ms"
+    },
+    {
+      "event": "`optimisticStore` updates: `{ count: initial+1, version: V+1, optimistic: false }`",
+      "time": "T=100ms"
+    },
+    {
+      "event": "UI updates to `initial+1` (correct final count)",
+      "time": "T=100ms"
+    }
+  ],
+  "timelineEdges": [
+    {
+      "from": "User",
+      "isBugPoint": false,
+      "label": "clicks 'like' button",
+      "to": "likesRouter"
+    },
+    {
+      "from": "likesRouter",
+      "isBugPoint": false,
+      "label": "calls applyOptimisticLike",
+      "to": "likeService"
+    },
+    {
+      "from": "likeService",
+      "isBugPoint": false,
+      "label": "updates optimisticStore (count: +1, version: V+1)",
+      "to": "optimisticStore"
+    },
+    {
+      "from": "optimisticStore",
+      "isBugPoint": false,
+      "label": "triggers UI update to +1 (optimistic)",
+      "to": "UI"
+    },
+    {
+      "from": "likesRouter",
+      "isBugPoint": false,
+      "label": "simulates network latency",
+      "to": "setTimeout"
+    },
+    {
+      "from": "Server",
+      "isBugPoint": false,
+      "label": "sends WebSocket 'like_update' (stale/older version)",
+      "to": "wsHandler"
+    },
+    {
+      "from": "wsHandler",
+      "isBugPoint": false,
+      "label": "dispatches to handleWebSocketLikeEvent",
+      "to": "likeService"
+    },
+    {
+      "from": "likeService",
+      "isBugPoint": true,
+      "label": "calls optimisticStore.applyServerUpdate with stale WS data",
+      "to": "optimisticStore"
+    },
+    {
+      "from": "optimisticStore",
+      "isBugPoint": false,
+      "label": "unconditionally applies stale update, version: V",
+      "to": "UI"
+    },
+    {
+      "from": "UI",
+      "isBugPoint": false,
+      "label": "snaps back to pre-click count",
+      "to": "User"
+    },
+    {
+      "from": "setTimeout",
+      "isBugPoint": false,
+      "label": "resolves (HTTP request completes)",
+      "to": "likesRouter"
+    },
+    {
+      "from": "likesRouter",
+      "isBugPoint": false,
+      "label": "calls reconcileFinalCount with confirmed HTTP data",
+      "to": "likeService"
+    },
+    {
+      "from": "likeService",
+      "isBugPoint": false,
+      "label": "calls optimisticStore.applyServerUpdate (count: +1, version: V+1)",
+      "to": "optimisticStore"
+    },
+    {
+      "from": "optimisticStore",
+      "isBugPoint": false,
+      "label": "triggers UI update to final correct count",
+      "to": "UI"
+    }
+  ],
+  "uncertainties": [
+    "AST Guard: Fix modifies 'optimisticStore' but misses updates to downstream caller 'likeservice.ts'",
+    "AST Guard: Fix modifies 'optimisticStore' but misses updates to downstream caller 'likesrouter.ts'"
+  ],
+  "variableState": [
+    {
+      "meaning": "The raw incoming WebSocket message string.",
+      "variable": "message",
+      "whereChanged": "handleWsMessage L23 (reassignment after JSON.parse)"
+    },
+    {
+      "meaning": "The length of the array tracking all store writes, used for test inspection.",
+      "variable": "writeLog.length",
+      "whereChanged": "clearWriteLog L20 (property write to reset to 0)"
+    },
+    {
+      "meaning": "Simulated authoritative like counts from the server (DB replacement).",
+      "variable": "serverLikeCounts[]",
+      "whereChanged": "(anonymous) L32 (array element write), (anonymous) L54 (array element write)"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "reassigned L23",
+          "to": "handleWsMessage",
+          "type": "write"
+        },
+        {
+          "from": "handleWsMessage",
+          "label": "read L29",
+          "to": "handleWsMessage",
+          "type": "read"
+        },
+        {
+          "from": "handleWsMessage",
+          "label": "read L31",
+          "to": "handleWsMessage",
+          "type": "read"
+        },
+        {
+          "from": "handleWsMessage",
+          "label": "read L43",
+          "to": "handleWsMessage",
+          "type": "read"
+        }
+      ],
+      "variable": "message"
+    },
+    {
+      "edges": [
+        {
+          "from": "clearWriteLog",
+          "label": "written L20",
+          "to": "clearWriteLog",
+          "type": "write"
+        }
+      ],
+      "variable": "writeLog.length"
+    },
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "written L32",
+          "to": "(anonymous)",
+          "type": "write"
+        },
+        {
+          "from": "(anonymous)",
+          "label": "written L54",
+          "to": "(anonymous)",
+          "type": "write"
+        }
+      ],
+      "variable": "serverLikeCounts[]"
+    }
+  ],
+  "whyFixWorks": "The fix ensures that `optimisticStore.applyServerUpdate` respects the `version` field, which is explicitly designed to detect stale writes. By comparing the incoming `serverVersion` against the `current.version` held in the store, the function now prevents older or outdated server updates (like a delayed WebSocket event carrying an older version) from overwriting a more recent state. When a stale WebSocket event arrives with a `serverVersion` that is less than the `current.version` (which might be an optimistic version from the user's current click), the update is correctly ignored, preventing the 'snap back' of the UI to an older count. Only updates with a `serverVersion` equal to or greater than the current local version will be applied, maintaining data consistency and resolving the flickering issue.",
+  "_originalConfidence": 0.9
+}

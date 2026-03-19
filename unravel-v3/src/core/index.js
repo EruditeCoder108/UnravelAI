@@ -15,6 +15,7 @@ export {
     buildSecurityPrompt,
     buildRouterPrompt,
     buildSecondPassRouterPrompt,
+    classifyErrorType,
     ENGINE_SCHEMA,
     ENGINE_SCHEMA_INSTRUCTION,
     EXPLAIN_SCHEMA,
@@ -27,6 +28,9 @@ export {
     buildDynamicSchemaInstruction,
     estimateRuntime,
     LAYER_BOUNDARY_VERDICT,
+    LAYER_BOUNDARY_SCHEMA,
+    EXTERNAL_FIX_TARGET_VERDICT,
+    EXTERNAL_FIX_TARGET_SCHEMA,
 } from './config.js';
 
 // AST pre-analysis engine (tree-sitter based)

@@ -1,0 +1,212 @@
+{
+  "aiPrompt": "Fix the `NotificationPlugin` event handler to dynamically read `maxRetries` and `logLevel` from `this.configLoader` on every event processing, instead of capturing them once during `init()`.",
+  "bugType": "STALE_CLOSURE",
+  "codeLocation": "src/plugins/NotificationPlugin.ts L30",
+  "conceptExtraction": {
+    "bugCategory": "State Management",
+    "concept": "Closure over stale primitive values",
+    "patternToAvoid": "Capturing primitive configuration values or object snapshots from a mutable external source within a long-lived closure, especially when those values are expected to change over time. Instead, re-read the latest values from the source of truth when needed.",
+    "realWorldAnalogy": "Imagine you're a chef preparing a dish for a restaurant. At the start of your shift, you check the recipe on the blackboard. The recipe says \"use 3 eggs\". You write \"3 eggs\" on your personal notepad and use that for all your dishes for the entire day. Later, the head chef updates the blackboard to say \"use 5 eggs\" for the same dish, but you're still using your notepad which says \"3 eggs\". You are working with stale information because you took a snapshot (wrote it on your notepad) instead of checking the blackboard (the source of truth) every time you prepare a new dish.",
+    "whyItMatters": "This leads to subtle bugs where application logic appears correct but operates on outdated data, causing incorrect behavior that is hard to trace. It frequently occurs in event handlers, observers, and long-running processes that initialize once but depend on dynamic configuration, leading to a disconnect between the intended and actual system state."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/plugins/NotificationPlugin.ts L28\n-  init(): void {\n-    const config = this.configLoader.getConfig();\n-    const { logLevel, maxRetries } = config;\n+\n-    const handler = (event: DataEvent) => {\n+  init(): void {\n+    const handler = (event: DataEvent) => {\n+      const { logLevel, maxRetries } = this.configLoader.getConfig();\n       const result: ProcessedResult = {\n         source: event.source,\n         processed: true,\n         retries: maxRetries,\n         logLevel: logLevel,",
+  "evidence": [
+    "src/plugins/NotificationPlugin.ts L29-30: `const config = this.configLoader.getConfig(); const { logLevel, maxRetries } = config;` These lines capture config values as local constants at `init()` time.",
+    "src/plugins/NotificationPlugin.ts L32-44: The `handler` closure is defined and uses these `logLevel` and `maxRetries` constants, which are now stale.",
+    "src/app/Application.ts L37: `this.registry.initAll();` This call initializes plugins and captures config *before* any remote updates.",
+    "src/app/Application.ts L42: `this.configLoader.updateConfig(partial);` This updates the `ConfigLoader`'s internal state *after* the plugin has captured its stale config."
+  ],
+  "hypotheses": [
+    "ConfigLoader.getConfig() returns a shared mutable reference, and external modifications bypass updateConfig().",
+    "The NotificationPlugin event handler captures config values at initialization time and does not re-evaluate them.",
+    "PluginRegistry's initAll() guard (this.initialised) prevents re-initialization, thereby blocking config updates."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "src/core/ConfigLoader.ts L28: this.currentConfig = { ...this.currentConfig, ...partial };",
+      "id": "H1",
+      "reason": "`ConfigLoader.ts L28` and `ConfigLoader.ts L33` explicitly create a *new* object for `this.currentConfig` when `updateConfig` or `setFeatureFlag` are called. `NotificationPlugin.ts L30` extracts primitive values (logLevel, maxRetries) from the *then-current* config object, not a direct reference to `ConfigLoader`'s internal state.",
+      "status": "eliminated",
+      "text": "ConfigLoader returns shared mutable reference"
+    },
+    {
+      "eliminatedBy": "",
+      "id": "H2",
+      "reason": "`NotificationPlugin.ts L30` extracts `logLevel` and `maxRetries` into `const` variables. `NotificationPlugin.ts L32-44` defines the `handler` closure which captures and uses these `const` values. `Application.ts L37` calls `registry.initAll()` (and thus `notificationPlugin.init()`) *before* any remote config updates, meaning the captured values are permanently stale unless the plugin is re-initialized.",
+      "status": "survived",
+      "text": "NotificationPlugin handler captures stale config values"
+    },
+    {
+      "eliminatedBy": "src/plugins/NotificationPlugin.ts L30: const { logLevel, maxRetries } = config;",
+      "id": "H3",
+      "reason": "While removing the guard and re-initializing fixes the symptom, it is a workaround, not the root cause. The root cause is `NotificationPlugin`'s static config capture. The `initAll()` guard simply prevents a problematic re-initialization strategy; the design intent is for plugins to initialize once and either dynamically read config or subscribe to config changes, not be repeatedly re-initialized. The problem isn't that `initAll` *can't* be called, but that the plugin isn't designed to handle config changes without re-initialization.",
+      "status": "eliminated",
+      "text": "PluginRegistry init guard blocks updates"
+    }
+  ],
+  "invariants": [
+    "The `ConfigLoader`'s `currentConfig` must always reflect the *latest* applied configuration across the application.",
+    "Any component (like `NotificationPlugin`) that requires up-to-date configuration values must dynamically fetch them from the `ConfigLoader` at the point of use, or subscribe to configuration change events if a reactive mechanism is implemented.",
+    "The `NotificationPlugin`'s event handler must always process `DataEvent`s using the `maxRetries` and `logLevel` values that are currently active in the `ConfigLoader`."
+  ],
+  "minimalFix": "To fix the issue, the `NotificationPlugin`'s event handler must dynamically read the latest configuration values from `this.configLoader` every time it processes an event. This ensures that even if the configuration changes after the plugin's initialization, the handler always uses the most current `maxRetries` and `logLevel`.\n\n```typescript\n// src/plugins/NotificationPlugin.ts\nexport class NotificationPlugin {\n  // ... other properties and constructor\n\n  init(): void {\n    // Config values should be dynamically read within the handler,\n    // not captured at init time.\n    const handler = (event: DataEvent) => {\n      const { logLevel, maxRetries } = this.configLoader.getConfig(); // Dynamically get latest config\n\n      const result: ProcessedResult = {\n        source: event.source,\n        processed: true,\n        retries: maxRetries, // Now uses latest maxRetries\n        logLevel: logLevel,   // Now uses latest logLevel\n      };\n\n      if (logLevel !== 'silent') { // Now uses latest logLevel\n        console.log(`[NotificationPlugin] Processing event from ${event.source}`);\n      }\n\n      this.results.push(result);\n    };\n\n    this.bus.on<DataEvent>('data:received', handler);\n  }\n\n  // ... other methods\n}\n```",
+  "proximate_crash_site": "NotificationPlugin.init() L32-44 — The `handler` uses `logLevel` and `maxRetries` that were captured at `init()` time, making them stale after `ConfigLoader` updates.",
+  "reproduction": [
+    "1. Initialize `Application` which sets up `ConfigLoader` with `DEFAULT_CONFIG` (`maxRetries: 3`, `logLevel: 'warn'`).",
+    "2. Call `app.start()` which initializes `PluginRegistry` and `NotificationPlugin`. The `NotificationPlugin`'s event handler captures `maxRetries: 3` and `logLevel: 'warn'` from the `ConfigLoader`.",
+    "3. Call `app.applyRemoteConfig({ maxRetries: 5, logLevel: 'debug' })`. `ConfigLoader`'s internal state is updated correctly.",
+    "4. Call `app.emitDataEvent('test-source', {})`.",
+    "5. Observe `app.registry.notificationPlugin.getResults()`. The processed event's `retries` will be `3` and `logLevel` will be `'warn'`, instead of `5` and `'debug'`."
+  ],
+  "rootCause": "The `NotificationPlugin`'s event handler, registered during `init()`, captures and closes over primitive configuration values (`logLevel`, `maxRetries`) from `ConfigLoader` at the exact moment of initialization. Since initialization happens only once at application startup (before any remote config updates), these captured values become stale and do not reflect subsequent updates to the `ConfigLoader`'s state.",
+  "symptom": "Runtime config updates from our remote config service are completely ignored by the NotificationPlugin. After calling `applyRemoteConfig()` with new `maxRetries` and `logLevel` values, events processed by the plugin still reflect the original startup configuration.",
+  "timeline": [
+    {
+      "event": "Application constructor initializes EventBus, ConfigLoader, PluginRegistry.",
+      "time": "T0"
+    },
+    {
+      "event": "Application.start() calls PluginRegistry.initAll().",
+      "time": "T1"
+    },
+    {
+      "event": "PluginRegistry.initAll() calls NotificationPlugin.init().",
+      "time": "T2"
+    },
+    {
+      "event": "NotificationPlugin.init() reads config, captures `logLevel` and `maxRetries` into a closure.",
+      "time": "T2.1"
+    },
+    {
+      "event": "Event handler with stale captured config is registered on EventBus.",
+      "time": "T2.2"
+    },
+    {
+      "event": "Application.applyRemoteConfig() calls ConfigLoader.updateConfig().",
+      "time": "T3"
+    },
+    {
+      "event": "ConfigLoader updates its internal `currentConfig` successfully.",
+      "time": "T3.1"
+    },
+    {
+      "event": "Application.emitDataEvent() emits 'data:received'.",
+      "time": "T4"
+    },
+    {
+      "event": "NotificationPlugin's handler is invoked.",
+      "time": "T4.1"
+    },
+    {
+      "event": "Handler uses *stale* captured `logLevel` and `maxRetries` for processing.",
+      "time": "T4.2"
+    }
+  ],
+  "timelineEdges": [
+    {
+      "from": "Application",
+      "isBugPoint": false,
+      "label": "calls initAll()",
+      "to": "PluginRegistry"
+    },
+    {
+      "from": "PluginRegistry",
+      "isBugPoint": false,
+      "label": "calls init()",
+      "to": "NotificationPlugin"
+    },
+    {
+      "from": "NotificationPlugin.init()",
+      "isBugPoint": true,
+      "label": "captures config values into closure",
+      "to": "NotificationPlugin.handler"
+    },
+    {
+      "from": "Application",
+      "isBugPoint": false,
+      "label": "calls updateConfig()",
+      "to": "ConfigLoader"
+    },
+    {
+      "from": "ConfigLoader",
+      "isBugPoint": false,
+      "label": "updates internal config state",
+      "to": "ConfigLoader"
+    },
+    {
+      "from": "Application",
+      "isBugPoint": false,
+      "label": "emits data:received event",
+      "to": "EventBus"
+    },
+    {
+      "from": "EventBus",
+      "isBugPoint": false,
+      "label": "invokes NotificationPlugin handler",
+      "to": "NotificationPlugin.handler"
+    },
+    {
+      "from": "NotificationPlugin.handler",
+      "isBugPoint": false,
+      "label": "processes event with stale config",
+      "to": "NotificationPlugin.results"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [
+    {
+      "meaning": "The current configuration object held by the ConfigLoader.",
+      "variable": "currentConfig",
+      "whereChanged": "src/core/ConfigLoader.ts L28 (updateConfig), L33 (setFeatureFlag), L38 (reset)"
+    },
+    {
+      "meaning": "The `logLevel` value captured by the `NotificationPlugin` handler closure.",
+      "variable": "logLevel (captured)",
+      "whereChanged": "src/plugins/NotificationPlugin.ts L30 (initial assignment in init())"
+    },
+    {
+      "meaning": "The `maxRetries` value captured by the `NotificationPlugin` handler closure.",
+      "variable": "maxRetries (captured)",
+      "whereChanged": "src/plugins/NotificationPlugin.ts L30 (initial assignment in init())"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "written L20",
+          "to": "ConfigLoader",
+          "type": "write"
+        },
+        {
+          "from": "ConfigLoader",
+          "label": "read L24",
+          "to": "getConfig",
+          "type": "read"
+        },
+        {
+          "from": "ConfigLoader",
+          "label": "mutated L28",
+          "to": "updateConfig",
+          "type": "mutate"
+        },
+        {
+          "from": "ConfigLoader",
+          "label": "mutated L33",
+          "to": "setFeatureFlag",
+          "type": "mutate"
+        },
+        {
+          "from": "ConfigLoader",
+          "label": "mutated L38",
+          "to": "reset",
+          "type": "mutate"
+        }
+      ],
+      "variable": "currentConfig"
+    }
+  ],
+  "whyFixWorks": "The fix works by moving the retrieval of `logLevel` and `maxRetries` inside the event `handler` function itself. Instead of capturing these values once during `init()`, the `handler` now calls `this.configLoader.getConfig()` *every time an event is processed*. This ensures that the plugin always fetches the absolute latest configuration values from the `ConfigLoader` at the moment of use, thereby respecting all runtime updates to `maxRetries` and `logLevel`."
+}

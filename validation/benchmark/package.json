@@ -1,0 +1,17 @@
+{
+  "name": "udb-20",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UDB-20 — Unravel Diagnostic Benchmark, 20 bugs",
+  "scripts": {
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/node": "^20.11.0"
+    }
+  }
+}

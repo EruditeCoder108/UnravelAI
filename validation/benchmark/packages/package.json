@@ -1,0 +1,12 @@
+{
+  "name": "unravel-benchmark",
+  "private": true,
+  "scripts": {
+    "test": "pnpm -r test",
+    "test:b01": "pnpm --filter b-01-invisible-update test",
+    "test:b02": "pnpm --filter b-02-phantom-preference test",
+    "test:b03": "pnpm --filter b-03-loyal-closure test",
+    "test:b04": "pnpm --filter b-04-deaf-plugin test",
+    "test:b05": "pnpm --filter b-05-fickle-like test"
+  }
+}
