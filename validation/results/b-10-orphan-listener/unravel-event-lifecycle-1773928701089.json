@@ -1,0 +1,266 @@
+{
+  "aiPrompt": "The `removeEventListener` call in `src/hooks/useScrollAnalytics.ts` is not correctly unregistering the scroll event listener because it omits the `options` object that was used during `addEventListener`. Modify the `useEffect` to ensure the same `{ passive: true }` options object is passed to both `addEventListener` and `removeEventListener` to prevent listener accumulation and duplicate analytics events. Store the options in a `const` to ensure object identity.",
+  "bugType": "EVENT_LIFECYCLE",
+  "codeLocation": "src/hooks/useScrollAnalytics.ts",
+  "conceptExtraction": {
+    "bugCategory": "Event Lifecycle Management",
+    "concept": "Correctly managing event listener lifecycles, especially when using options objects.",
+    "patternToAvoid": "Mismatched arguments between `addEventListener` and `removeEventListener`, specifically omitting the `options` object or providing a different one to `removeEventListener` when it was used during `addEventListener`.",
+    "realWorldAnalogy": "Imagine you have a club membership, and the bouncer at the entrance (addEventListener) checks your ID *and* your special 'VIP pass' (the options object, like `{ passive: true }`). When you leave the club (cleanup), you only show your ID to the exit bouncer (removeEventListener without options). The system still thinks you're inside with your VIP pass because the exit bouncer didn't recognize the full 'entry condition'. Each time you enter, you get a new 'entry record', and since the exit process is incomplete, these records accumulate, showing you as 'inside' multiple times.",
+    "whyItMatters": "Failing to properly remove event listeners leads to resource leaks, performance degradation, and subtle bugs like duplicate event firing. It makes debugging harder because the issue isn't a crash but unexpected behavior. Understanding the exact signature matching required for event listener removal is crucial for robust web applications."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/hooks/useScrollAnalytics.ts L21\n+++ src/hooks/useScrollAnalytics.ts L21\n@@ -21,9 +21,10 @@\n       analyticsService.track('scroll_depth', { pageId, depth });\n     };\n \n-    window.addEventListener('scroll', onScroll, { passive: true });\n+    const scrollOptions = { passive: true };\n+\n+    window.addEventListener('scroll', onScroll, scrollOptions);\n \n-    return () => window.removeEventListener('scroll', onScroll);\n+    return () => window.removeEventListener('scroll', onScroll, scrollOptions);\n   }, [pageId, analyticsService]);\n }",
+  "evidence": [
+    "src/hooks/useScrollAnalytics.ts L23: `window.addEventListener('scroll', onScroll, { passive: true });` uses an options object.",
+    "src/hooks/useScrollAnalytics.ts L25: `return () => window.removeEventListener('scroll', onScroll);` omits the options object during cleanup.",
+    "DOM specification for `removeEventListener`: \"The options argument (when a dictionary) needs to be identical (the same object reference) to the one passed to `addEventListener()`.\""
+  ],
+  "hypotheses": [
+    "H1: `removeEventListener` fails due to missing options object.",
+    "H2: Stale `onScroll` closure prevents listener removal.",
+    "H3: `useEffect` dependencies are incorrect, preventing cleanup."
+  ],
+  "hypothesisTree": [
+    {
+      "id": "H1",
+      "reason": "The `removeEventListener` call at src/hooks/useScrollAnalytics.ts L25 omits the `{ passive: true }` options object, which was used during the `addEventListener` call at src/hooks/useScrollAnalytics.ts L23. This mismatch prevents the browser from correctly identifying and removing the registered listener, leading to listener accumulation as effects re-run.",
+      "status": "survived",
+      "text": "`removeEventListener` fails due to missing options object."
+    },
+    {
+      "eliminatedBy": "src/hooks/useScrollAnalytics.ts L12: const onScroll = () => { /* ... */ }; src/hooks/useScrollAnalytics.ts L25: removeEventListener('scroll', onScroll)",
+      "id": "H2",
+      "reason": "The `onScroll` function is declared as a `const` inside the `useEffect` callback at src/hooks/useScrollAnalytics.ts L12. Each time the effect re-runs, a *new* instance of `onScroll` is created, and the cleanup function correctly closes over *that specific instance*. Thus, the `onScroll` passed to `removeEventListener` is always the same instance as was passed to `addEventListener` for that specific effect run.",
+      "status": "eliminated",
+      "text": "Stale `onScroll` closure prevents listener removal."
+    },
+    {
+      "eliminatedBy": "src/hooks/useScrollAnalytics.ts L26: }, [pageId, analyticsService]);",
+      "id": "H3",
+      "reason": "The `useEffect` hook correctly lists `[pageId, analyticsService]` as dependencies at src/hooks/useScrollAnalytics.ts L26. When `pageId` changes (e.g., on navigation), the effect re-runs, which includes invoking the cleanup function from the previous effect run *before* the new effect is registered. This ensures cleanup is attempted when dependencies change.",
+      "status": "eliminated",
+      "text": "`useEffect` dependencies are incorrect, preventing cleanup."
+    }
+  ],
+  "invariants": [
+    "For every `window.addEventListener(type, listener, options)` call, there MUST be a corresponding `window.removeEventListener(type, listener, options)` call with the exact same `listener` function instance and an `options` object that is identical (same reference) or at least has the same `capture` property value.",
+    "A React `useEffect` hook that registers event listeners MUST provide a cleanup function that correctly unregisters the *exact* listener instance (function and options) that was registered by that effect run.",
+    "At any given time, only one `scroll_depth` listener associated with `useScrollAnalytics` should be actively listening on the `window` object per mounted `PageView` component instance."
+  ],
+  "minimalFix": "To fix the issue, you need to pass the same `options` object (specifically `{ passive: true }`) to `window.removeEventListener` as was used for `window.addEventListener`. This ensures the browser can correctly identify and unregister the event listener.\n\n```typescript\n// src/hooks/useScrollAnalytics.ts\nimport { useEffect } from 'react';\nimport { AnalyticsService } from '../services/AnalyticsService';\n\nexport function useScrollAnalytics(\n  pageId: string,\n  analyticsService: AnalyticsService\n): void {\n  useEffect(() => {\n    const onScroll = () => {\n      const scrollHeight = document.body.scrollHeight - window.innerHeight;\n      const depth = scrollHeight > 0\n        ? Math.round((window.scrollY / scrollHeight) * 100)\n        : 0;\n      analyticsService.track('scroll_depth', { pageId, depth });\n    };\n\n    const scrollOptions = { passive: true }; // Define options once\n\n    window.addEventListener('scroll', onScroll, scrollOptions);\n\n    // Pass the same options object to removeEventListener\n    return () => window.removeEventListener('scroll', onScroll, scrollOptions);\n  }, [pageId, analyticsService]);\n}\n```",
+  "proximate_crash_site": "AnalyticsService.track() L32 — records duplicate 'scroll_depth' events due to multiple active listeners calling it.",
+  "reproduction": [
+    "1. Navigate to a page that uses `PageView` (e.g., Page A).",
+    "2. Observe `scroll_depth` events in the analytics dashboard (or network tab) while scrolling. In React Strict Mode, 2 events will fire per scroll. In production, 1 event will fire.",
+    "3. Navigate to a second page (e.g., Page B) using the same `PageView` component instance (e.g., via client-side routing that updates `pageId` prop, but doesn't unmount `PageView`).",
+    "4. Scroll on Page B. Observe 2 `scroll_depth` events firing per scroll (one for Page A's listener, one for Page B's listener).",
+    "5. Navigate to additional pages. The number of `scroll_depth` events fired per scroll will increase proportionally with the number of pages navigated, leading to N events per scroll after N navigations."
+  ],
+  "rootCause": "The `removeEventListener` call inside the `useEffect` cleanup in `useScrollAnalytics.ts` fails to unregister previously added scroll listeners because it does not provide the same `options` object (`{ passive: true }`) that was originally used with `addEventListener`. According to DOM specifications, when an `options` object is used during registration, `removeEventListener` must be called with an identical `options` object to correctly identify and remove the listener. This omission causes scroll event listeners to accumulate, leading to multiple `analyticsService.track('scroll_depth')` calls for each actual scroll.",
+  "symptom": "The analytics dashboard shows `scroll_depth` events firing 3–8 times per actual scroll gesture, and the count grows with session length. A user who has navigated through 5 pages has 5x the expected scroll event volume. In development (React StrictMode) we saw 2 events per scroll from the first page load. In production it starts at 1 and grows with navigation.",
+  "timelineEdges": [
+    {
+      "from": "PageView.tsx",
+      "isBugPoint": false,
+      "label": "mounts/re-renders with new pageId",
+      "to": "useScrollAnalytics.ts"
+    },
+    {
+      "from": "useScrollAnalytics.ts",
+      "isBugPoint": false,
+      "label": "useEffect runs (dependencies changed)",
+      "to": "useScrollAnalytics.ts (cleanup)"
+    },
+    {
+      "from": "useScrollAnalytics.ts (cleanup)",
+      "isBugPoint": true,
+      "label": "calls window.removeEventListener(onScroll) without options",
+      "to": "Browser DOM"
+    },
+    {
+      "from": "Browser DOM",
+      "isBugPoint": true,
+      "label": "FAILS to remove previous listener (mismatched args)",
+      "to": "Browser DOM (Active Listeners)"
+    },
+    {
+      "from": "useScrollAnalytics.ts",
+      "isBugPoint": false,
+      "label": "new effect runs",
+      "to": "Browser DOM"
+    },
+    {
+      "from": "Browser DOM",
+      "isBugPoint": false,
+      "label": "adds new window.addEventListener(onScroll, { passive: true })",
+      "to": "Browser DOM (Active Listeners)"
+    },
+    {
+      "from": "Browser DOM (Active Listeners)",
+      "isBugPoint": true,
+      "label": "Multiple listeners now active for 'scroll' event",
+      "to": "AnalyticsService.ts"
+    },
+    {
+      "from": "Browser DOM (Active Listeners)",
+      "isBugPoint": true,
+      "label": "user scrolls, all active listeners fire 'onScroll'",
+      "to": "AnalyticsService.ts"
+    },
+    {
+      "from": "AnalyticsService.ts",
+      "isBugPoint": true,
+      "label": "each onScroll calls track() leading to duplicate events",
+      "to": "Analytics Dashboard"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [
+    {
+      "meaning": "The function instance used as a scroll event handler.",
+      "variable": "onScroll",
+      "whereChanged": "src/hooks/useScrollAnalytics.ts L12 (declared within useEffect, new instance per effect run)"
+    },
+    {
+      "meaning": "The unique identifier for the current page, used in analytics.",
+      "variable": "pageId",
+      "whereChanged": "src/components/PageView.tsx L15 (prop, changes on navigation)"
+    },
+    {
+      "meaning": "The service used to track analytics events.",
+      "variable": "analyticsService",
+      "whereChanged": "src/components/PageView.tsx L16 (prop, stable reference)"
+    },
+    {
+      "meaning": "The list of tracked events, growing with each `track()` call.",
+      "variable": "eventLog",
+      "whereChanged": "src/services/AnalyticsService.ts L32 (mutated by `track`)"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "declared L12",
+          "to": "useEffect",
+          "type": "write"
+        },
+        {
+          "from": "useEffect",
+          "label": "passed to addEventListener L23",
+          "to": "addEventListener",
+          "type": "read"
+        },
+        {
+          "from": "useEffect",
+          "label": "captured by cleanup function L25",
+          "to": "removeEventListener",
+          "type": "read"
+        },
+        {
+          "from": "useEffect",
+          "label": "captures current pageId, analyticsService L19",
+          "to": "onScroll",
+          "type": "read"
+        }
+      ],
+      "variable": "onScroll"
+    },
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "declared L15",
+          "to": "PageView",
+          "type": "write"
+        },
+        {
+          "from": "PageView",
+          "label": "passed to useScrollAnalytics L27",
+          "to": "useScrollAnalytics",
+          "type": "read"
+        },
+        {
+          "from": "useScrollAnalytics",
+          "label": "used as useEffect dependency L26",
+          "to": "useEffect",
+          "type": "read"
+        },
+        {
+          "from": "useScrollAnalytics",
+          "label": "captured by onScroll closure L19",
+          "to": "onScroll",
+          "type": "read"
+        }
+      ],
+      "variable": "pageId"
+    },
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "declared L16",
+          "to": "PageView",
+          "type": "write"
+        },
+        {
+          "from": "PageView",
+          "label": "passed to useScrollAnalytics L27",
+          "to": "useScrollAnalytics",
+          "type": "read"
+        },
+        {
+          "from": "useScrollAnalytics",
+          "label": "used as useEffect dependency L26",
+          "to": "useEffect",
+          "type": "read"
+        },
+        {
+          "from": "useScrollAnalytics",
+          "label": "captured by onScroll closure L19",
+          "to": "onScroll",
+          "type": "read"
+        },
+        {
+          "from": "onScroll",
+          "label": "calls analyticsService.track() L19",
+          "to": "AnalyticsService.track",
+          "type": "read"
+        }
+      ],
+      "variable": "analyticsService"
+    },
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "declared L14",
+          "to": "AnalyticsService",
+          "type": "write"
+        },
+        {
+          "from": "AnalyticsService.track",
+          "label": "pushes new event L32",
+          "to": "eventLog",
+          "type": "mutate"
+        },
+        {
+          "from": "AnalyticsService.getEventCount",
+          "label": "filters events L36",
+          "to": "eventLog",
+          "type": "read"
+        },
+        {
+          "from": "AnalyticsService.clear",
+          "label": "resets to empty array L40",
+          "to": "eventLog",
+          "type": "mutate"
+        }
+      ],
+      "variable": "eventLog"
+    }
+  ],
+  "whyFixWorks": "By consistently passing the `scrollOptions` object `{ passive: true }` to both `window.addEventListener` and `window.removeEventListener`, the browser can correctly identify the exact listener instance that was registered. This enables `removeEventListener` to successfully unregister the listener when the `useEffect` cleanup function runs (either on component unmount or when `pageId` changes), preventing the accumulation of multiple scroll event handlers and ensuring only one active listener at a time."
+}

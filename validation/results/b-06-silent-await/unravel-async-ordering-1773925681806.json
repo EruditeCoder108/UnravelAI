@@ -1,0 +1,182 @@
+{
+  "aiPrompt": "The application is experiencing `DatabaseNotReadyError` on production cold starts, despite `bootstrap()` and `db.init()` being called. This is because asynchronous initialization steps are not being awaited. To fix this, modify `src/services/DatabaseService.ts` to `await this.connect();` in the `init()` method, and modify `src/app/Application.ts` to `await this.db.init();` in the `bootstrap()` method. These changes ensure the application waits for the database connection to be fully established before processing requests.",
+  "bugType": "ASYNC_ORDERING",
+  "codeLocation": "src/app/Application.ts L34 and src/services/DatabaseService.ts L37",
+  "conceptExtraction": {
+    "bugCategory": "Asynchronous Programming, Initialization Order",
+    "concept": "Awaiting Asynchronous Operations",
+    "patternToAvoid": "Calling async functions as 'fire-and-forget' when subsequent code or overall application readiness depends on their completion.",
+    "realWorldAnalogy": "Imagine you're organizing a big event (your application) and you've hired a catering service (DatabaseService) to set up food and drinks. You call the catering company and tell them to start setting up (call `db.init()`), and immediately announce to your guests that the party has begun and food is ready (return from `bootstrap()`). The catering service, in turn, has to wait for a delivery truck with ingredients (the `setTimeout` in `connect()`). If you don't *wait* for the catering company to confirm *all* the food is set up, and the catering company doesn't *wait* for the delivery truck to arrive and unload, your guests will arrive to empty tables, leading to frustration (the `DatabaseNotReadyError`). You need to ensure each step is completed before moving to the next.",
+    "whyItMatters": "Failing to await asynchronous initialization can lead to subtle race conditions, where your application attempts to use resources or services before they are genuinely ready. This causes intermittent failures, especially under varying load or environment conditions (like cold starts in production where network latency is higher). It compromises the reliability of your application's startup and can be hard to debug without understanding the full asynchronous flow."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/services/DatabaseService.ts L37\n+++ src/services/DatabaseService.ts L37\n@@ -34,7 +34,7 @@\n    * Call this once at application startup and await its resolution\n    * before handling any requests.\n    */\n-  async init(): Promise<void> {\n-    this.connect();\n+  async init(): Promise<void> {\n+    await this.connect();\n     console.log('[DB] init() returned — connection may not be established yet');\n   }\n \n--- src/app/Application.ts L34\n+++ src/app/Application.ts L34\n@@ -31,7 +31,7 @@\n    * Initialise all services and prepare the application to handle requests.\n    */\n   async bootstrap(): Promise<void> {\n-    this.db.init();\n+    await this.db.init();\n     console.log('[App] Bootstrap called — DB may not be ready');\n   }\n ",
+  "evidence": [
+    "src/services/DatabaseService.ts L37: `this.connect();` (missing `await`) allows `init()` to return before connection is established.",
+    "src/app/Application.ts L34: `this.db.init();` (missing `await`) allows `bootstrap()` to return before database initialization is complete.",
+    "src/services/DatabaseService.ts L43: `this.isReady = true;` is executed asynchronously after a `setTimeout` delay, confirming that `isReady` is `false` initially.",
+    "AST confirms `connect()` in `init()` [L36] is an unawaited async call, causing a floating promise.",
+    "The `handleRequest()` method (src/app/Application.ts L51) is called after `bootstrap()` has returned, leading to immediate queries."
+  ],
+  "hypotheses": [
+    "DatabaseService.init() does not await connect()",
+    "Application.bootstrap() does not await db.init()",
+    "UserRepository methods are not robust to a non-ready database"
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "id": "H1",
+      "reason": "`src/services/DatabaseService.ts L37: this.connect();` clearly shows `connect()` is called without `await`. This means `init()` returns before `isReady` is set to `true` by `connect()`.",
+      "status": "survived",
+      "text": "DatabaseService.init() does not await connect()"
+    },
+    {
+      "eliminatedBy": "",
+      "id": "H2",
+      "reason": "`src/app/Application.ts L34: this.db.init();` clearly shows `db.init()` is called without `await`. This means `bootstrap()` returns before `db.init()` (and therefore `connect()`) completes.",
+      "status": "survived",
+      "text": "Application.bootstrap() does not await db.init()"
+    },
+    {
+      "eliminatedBy": "src/repositories/UserRepository.ts L31: const result = await this.db.query<User>(...);",
+      "id": "H3",
+      "reason": "While `UserRepository` methods (`findById`, `create`) directly call `db.query()` without retry logic, it is the responsibility of `DatabaseService` to manage its readiness state and the `Application` to ensure services are fully initialized before use. Adding retry logic here would mask the upstream initialization defect.",
+      "status": "eliminated",
+      "text": "UserRepository methods are not robust to a non-ready database"
+    }
+  ],
+  "invariants": [
+    "1. `DatabaseService.isReady` MUST be `true` before any call to `DatabaseService.query()`.",
+    "2. `DatabaseService.init()` MUST resolve only after `DatabaseService.connect()` has completed its asynchronous work and set `isReady` to `true`.",
+    "3. `Application.bootstrap()` MUST resolve only after all its dependent services, including `DatabaseService`, are fully initialized and ready.",
+    "4. No requests should be routed to `Application.handleRequest()` until `Application.bootstrap()` has fully resolved."
+  ],
+  "minimalFix": "To resolve the `DatabaseNotReadyError`, you need to ensure that the asynchronous initialization steps for the database service are properly awaited throughout the application's startup sequence. This involves two critical changes:\n\n1.  **In `src/services/DatabaseService.ts`**: Modify the `init()` method to `await` the `this.connect()` call. This ensures that `init()` will not return until the simulated TCP handshake is complete and `this.isReady` is set to `true`.\n\n    ```typescript\n    // src/services/DatabaseService.ts\n    async init(): Promise<void> {\n        await this.connect(); // <--- ADD AWAIT HERE\n        console.log('[DB] init() returned — connection may not be established yet');\n    }\n    ```\n\n2.  **In `src/app/Application.ts`**: Modify the `bootstrap()` method to `await` the `this.db.init()` call. This ensures that the application's overall bootstrap process will not complete until the database service has fully initialized itself.\n\n    ```typescript\n    // src/app/Application.ts\n    async bootstrap(): Promise<void> {\n        await this.db.init(); // <--- ADD AWAIT HERE\n        console.log('[App] Bootstrap called — DB may not be ready');\n    }\n    ```\n\nThese changes will ensure that the application is fully ready to handle requests only after the database connection has been established, preventing the `DatabaseNotReadyError` on cold starts.\n\nARCHITECTURAL NOTE:\nThis bug is a classic example of an **ASYNC_ORDERING** problem due to improper handling of asynchronous initialization. The core structural property violated is the principle of ",
+  "proximate_crash_site": "DatabaseService.query() L58 — `this.isReady` is `false` because `connect()` has not yet completed its asynchronous task.",
+  "reproduction": [
+    "1. Start the application process.",
+    "2. Immediately send 1-3 requests to any user endpoint (e.g., to `handleRequest` with action 'fetch' or 'create').",
+    "3. Observe `DatabaseNotReadyError` being thrown, originating from `DatabaseService.query()`."
+  ],
+  "rootCause": "The `Application.bootstrap()` method initiates `DatabaseService` initialization via `this.db.init()` but fails to `await` its completion. Concurrently, `DatabaseService.init()` itself fails to `await` its internal `this.connect()` method, which asynchronously sets the `isReady` flag after a simulated delay. This cascade of unawaited asynchronous operations allows the application to signal readiness and start processing requests before the database connection is actually established, leading to `DatabaseNotReadyError` when `db.query()` is invoked.",
+  "symptom": "On production cold starts, the first 1-3 requests to any user endpoint fail with `Database is not ready. Ensure init() has fully resolved before issuing queries.` The service recovers after the initial failures. This is reproducible on restart.",
+  "timelineEdges": [
+    {
+      "from": "Application",
+      "isBugPoint": false,
+      "label": "calls bootstrap()",
+      "to": "Application"
+    },
+    {
+      "from": "Application.bootstrap()",
+      "isBugPoint": false,
+      "label": "calls db.init() without awaiting",
+      "to": "DatabaseService"
+    },
+    {
+      "from": "DatabaseService.init()",
+      "isBugPoint": false,
+      "label": "calls connect() without awaiting",
+      "to": "DatabaseService"
+    },
+    {
+      "from": "DatabaseService.connect()",
+      "isBugPoint": false,
+      "label": "simulates latency with setTimeout",
+      "to": "DatabaseService"
+    },
+    {
+      "from": "Application",
+      "isBugPoint": false,
+      "label": "starts handling requests (before DB ready)",
+      "to": "Application"
+    },
+    {
+      "from": "Application.handleRequest()",
+      "isBugPoint": false,
+      "label": "calls userRepo.findById()",
+      "to": "UserRepository"
+    },
+    {
+      "from": "UserRepository.findById()",
+      "isBugPoint": false,
+      "label": "calls db.query()",
+      "to": "DatabaseService"
+    },
+    {
+      "from": "DatabaseService.query()",
+      "isBugPoint": true,
+      "label": "checks isReady, finds it false",
+      "to": "DatabaseService"
+    },
+    {
+      "from": "DatabaseService.query()",
+      "isBugPoint": true,
+      "label": "throws DatabaseNotReadyError",
+      "to": "Application.handleRequest()"
+    },
+    {
+      "from": "DatabaseService.connect()",
+      "isBugPoint": false,
+      "label": "resolves, sets isReady = true (after initial failures)",
+      "to": "DatabaseService"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [
+    {
+      "meaning": "Flag indicating if the database connection is ready to process queries.",
+      "variable": "this.isReady",
+      "whereChanged": "src/services/DatabaseService.ts L44"
+    },
+    {
+      "meaning": "Counter for connection attempts, not directly related to the bug.",
+      "variable": "this.connectionAttempts",
+      "whereChanged": "src/services/DatabaseService.ts L42, L68"
+    },
+    {
+      "meaning": "Log of SQL queries executed, not directly related to the bug.",
+      "variable": "this.queryLog",
+      "whereChanged": "src/services/DatabaseService.ts L59, L69"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "written L25",
+          "to": "constructor",
+          "type": "write"
+        },
+        {
+          "from": "constructor",
+          "label": "read L58",
+          "to": "query",
+          "type": "read"
+        },
+        {
+          "from": "query",
+          "label": "written L44",
+          "to": "connect",
+          "type": "write"
+        },
+        {
+          "from": "connect",
+          "label": "read L62",
+          "to": "isConnected",
+          "type": "read"
+        },
+        {
+          "from": "isConnected",
+          "label": "written L67",
+          "to": "reset",
+          "type": "write"
+        }
+      ],
+      "variable": "this.isReady"
+    }
+  ],
+  "whyFixWorks": "By adding `await` keywords, we ensure proper sequencing of asynchronous operations. First, `DatabaseService.init()` will now pause until `this.connect()` has fully established the connection and set `this.isReady` to `true`. Second, `Application.bootstrap()` will now pause until `this.db.init()` has fully completed, meaning the database is truly ready. This guarantees that when the application starts handling requests, the `DatabaseService.isReady` flag is `true`, preventing the `DatabaseNotReadyError`."
+}

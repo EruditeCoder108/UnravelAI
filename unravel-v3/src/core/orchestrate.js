@@ -1209,7 +1209,10 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode, symptom = '
     // A match fires if the claimed name equals, starts, or ends with a known AST var.
     // This is a WARNING only — no confidencePenalty, no rootCauseRejected.
     const varEdges = report.variableStateEdges || result.variableStateEdges;
-    if (Array.isArray(varEdges) && astRaw?.mutations) {
+    // Only run Check 4 when the AST actually produced mutation data.
+    // If mutations is empty ({}), knownVars would be empty too — every claim
+    // would fail, producing guaranteed false positives for correct analyses.
+    if (Array.isArray(varEdges) && astRaw?.mutations && Object.keys(astRaw.mutations).length > 0) {
         const knownVars = new Set();
         for (const key of Object.keys(astRaw.mutations)) {
             // Keys are like "varName [filename]" or "obj.prop [filename]" or "this.prop [filename]" or "arr[] [filename]"
@@ -1242,12 +1245,19 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode, symptom = '
             // so 'serverLikeCounts[]' in the AI output becomes 'serverLikeCounts' in knownVars.
             // Stripping [] from claimed at match-time is the correct fix.
             const claimedBase = claimed.replace(/\[\]$/, '');
-            // Fuzzy: exact match OR [] -stripped match OR dot-prefix match
+            // Also strip 'this.' prefix from the claim — the AI sometimes outputs 'this.isReady'
+            // but the AST tracks class properties without the prefix (just 'isReady').
+            const claimedNoPfx = claimed.startsWith('this.') ? claimed.slice(5) : claimed;
+            const claimedBaseNoPfx = claimedBase.startsWith('this.') ? claimedBase.slice(5) : claimedBase;
+            // Fuzzy: exact match OR [] -stripped match OR this.-stripped match OR dot-prefix match
             const matched = knownVars.has(claimed) ||
                 knownVars.has(claimedBase) ||
+                knownVars.has(claimedNoPfx) ||
+                knownVars.has(claimedBaseNoPfx) ||
                 [...knownVars].some(k =>
                     k.startsWith(claimed + '.') || claimed.startsWith(k + '.') ||
-                    k.startsWith(claimedBase + '.') || claimedBase.startsWith(k + '.')
+                    k.startsWith(claimedBase + '.') || claimedBase.startsWith(k + '.') ||
+                    k.startsWith(claimedNoPfx + '.') || claimedNoPfx.startsWith(k + '.')
                 );
             if (!matched) {
                 // Soft warning only — non-JS variables (CSS props, Python attrs) legitimately

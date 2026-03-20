@@ -877,7 +877,7 @@ export async function runFullAnalysis(code, filename = '') {
         };
     }
 
-    let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [];
+    let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [];
 
     try { mutations = extractMutationChains(tree); }
     catch (e) { console.warn('[AST-TS] Mutation analysis failed:', e.message); }
@@ -894,10 +894,16 @@ export async function runFullAnalysis(code, filename = '') {
     try { floatingPromises = detectFloatingPromises(tree); }
     catch (e) { console.warn('[AST-TS] Floating promise detection failed:', e.message); }
 
-    const formatted = formatAnalysis(mutations, closures, timing, reactPatterns, floatingPromises);
+    try { listenerParity = detectListenerParity(tree); }
+    catch (e) { console.warn('[AST-TS] Listener parity detection failed:', e.message); }
+
+    try { stateMutations = detectDirectStateMutations(tree); }
+    catch (e) { console.warn('[AST-TS] State mutation detection failed:', e.message); }
+
+    const formatted = formatAnalysis(mutations, closures, timing, reactPatterns, floatingPromises, listenerParity, stateMutations);
 
     tree.delete(); // Free WASM memory
-    return { raw: { mutations, closures, timingNodes: timing, reactPatterns, floatingPromises }, formatted };
+    return { raw: { mutations, closures, timingNodes: timing, reactPatterns, floatingPromises, listenerParity, stateMutations }, formatted };
 }
 
 // ═══════════════════════════════════════════════════
@@ -907,11 +913,13 @@ export async function runFullAnalysis(code, filename = '') {
 export async function runMultiFileAnalysis(files) {
     await initParser();
 
-    const mergedMutations = Object.create(null); // null prototype — safe against variable name collisions
+    const mergedMutations = Object.create(null);
     const mergedClosures = Object.create(null);
     const mergedTiming = [];
     const mergedReactPatterns = [];
     const mergedFloatingPromises = [];
+    const mergedListenerParity = [];
+    const mergedStateMutations = [];
     let totalParsed = 0;
     let totalFailed = 0;
     const failedFiles = [];
@@ -976,7 +984,7 @@ export async function runMultiFileAnalysis(files) {
             console.warn(`[AST-TS] Partial analysis for ${shortName}: error ratio ${(errorRatio * 100).toFixed(1)}% — results flagged in output`);
         }
 
-        let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [];
+        let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [];
         let anySucceeded = false;
 
         try { mutations = extractMutationChains(tree); anySucceeded = true; }
@@ -993,6 +1001,12 @@ export async function runMultiFileAnalysis(files) {
 
         try { floatingPromises = detectFloatingPromises(tree); anySucceeded = true; }
         catch (e) { console.warn(`[AST-TS] Float promise failed for ${shortName}:`, e.message); }
+
+        try { listenerParity = detectListenerParity(tree); anySucceeded = true; }
+        catch (e) { console.warn(`[AST-TS] Listener parity failed for ${shortName}:`, e.message); }
+
+        try { stateMutations = detectDirectStateMutations(tree); anySucceeded = true; }
+        catch (e) { console.warn(`[AST-TS] State mutations failed for ${shortName}:`, e.message); }
 
         tree.delete(); // Free WASM memory
 
@@ -1037,6 +1051,12 @@ export async function runMultiFileAnalysis(files) {
         for (const p of floatingPromises) {
             mergedFloatingPromises.push({ ...p, file: shortName });
         }
+        for (const p of listenerParity) {
+            mergedListenerParity.push({ ...p, file: shortName });
+        }
+        for (const p of stateMutations) {
+            mergedStateMutations.push({ ...p, file: shortName });
+        }
     }
 
     if (totalParsed === 0) {
@@ -1046,7 +1066,7 @@ export async function runMultiFileAnalysis(files) {
         };
     }
 
-    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises);
+    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises, mergedListenerParity, mergedStateMutations);
     const header = `Files parsed: ${totalParsed}/${files.length}`;
     const failNote = totalFailed > 0
         ? ` (${totalFailed} failed: ${failedFiles.join(', ')})`
@@ -1058,7 +1078,8 @@ export async function runMultiFileAnalysis(files) {
 
     return {
         raw: { mutations: mergedMutations, closures: mergedClosures, timingNodes: mergedTiming,
-               reactPatterns: mergedReactPatterns, floatingPromises: mergedFloatingPromises },
+               reactPatterns: mergedReactPatterns, floatingPromises: mergedFloatingPromises,
+               listenerParity: mergedListenerParity, stateMutations: mergedStateMutations },
         formatted: fullFormatted,
         partialFiles,
     };
@@ -1067,12 +1088,39 @@ export async function runMultiFileAnalysis(files) {
 // ═══════════════════════════════════════════════════
 // FEATURE 4: React-Specific Pattern Detection
 // Detects useState stale closures, missing useEffect cleanup,
-// and useCallback/useMemo with missing deps.
+// useCallback/useMemo with missing deps, unstable deps (new X()
+// inline without useMemo), and listener options parity issues.
 // ═══════════════════════════════════════════════════
 
 const REACT_STATE_HOOKS = new Set(['useState', 'useReducer']);
 const REACT_EFFECT_HOOKS = new Set(['useEffect', 'useLayoutEffect']);
 const REACT_MEMO_HOOKS = new Set(['useCallback', 'useMemo']);
+
+/**
+ * Check whether a node is directly inside a useMemo() or useCallback() call.
+ * Used to avoid false-positives when a value that looks unstable is in fact memoized.
+ * @param {import('web-tree-sitter').Node} node
+ * @returns {boolean}
+ */
+function isWrappedInMemoHook(node) {
+    let cur = node.parent;
+    while (cur) {
+        if (cur.type === 'call_expression') {
+            const fnNode = cur.childForFieldName('function');
+            if (fnNode) {
+                const name = fnNode.type === 'identifier' ? fnNode.text
+                    : fnNode.type === 'member_expression' ? fnNode.childForFieldName('property')?.text
+                    : null;
+                if (name && REACT_MEMO_HOOKS.has(name)) return true;
+            }
+        }
+        // Stop at function/arrow boundaries — useMemo in a different component doesn't count
+        if (cur.type === 'function_declaration' || cur.type === 'function' ||
+            cur.type === 'arrow_function' || cur.type === 'method_definition') break;
+        cur = cur.parent;
+    }
+    return false;
+}
 
 /**
  * Detect React-specific patterns that are common sources of bugs.
@@ -1205,6 +1253,59 @@ export function detectReactPatterns(tree) {
                         fn: enclosingFn,
                     });
                 }
+
+                // ── Unstable dep detection ──
+                // A dep is "unstable" if it's a new X(), {}, [], or inline function
+                // created inside the component body without useMemo/useCallback.
+                // Such deps produce a new reference every render, causing the effect
+                // to re-run on EVERY render — adding a new listener each time.
+                //
+                // Strategy: for each identifier in the deps array, look for its
+                // declaration in the tree. If the RHS is an unstable expression and
+                // is NOT wrapped in useMemo/useCallback, flag it.
+                if (depsArray && depsArray.type === 'array') {
+                    for (const dep of depsArray.namedChildren) {
+                        if (dep.type !== 'identifier') continue;
+                        const depName = dep.text;
+
+                        // Search all variable_declarator nodes in the file
+                        const decls = root.descendantsOfType('variable_declarator');
+                        for (const decl of decls) {
+                            const nameNode = decl.childForFieldName('name');
+                            const valueNode = decl.childForFieldName('value');
+                            if (!nameNode || !valueNode) continue;
+                            // Only match the exact dep name
+                            if (nameNode.type !== 'identifier' || nameNode.text !== depName) continue;
+
+                            const isNewExpr       = valueNode.type === 'new_expression';
+                            const isObjectLiteral = valueNode.type === 'object';
+                            const isArrayLiteral  = valueNode.type === 'array';
+                            const isInlineArrow   = valueNode.type === 'arrow_function' ||
+                                                    valueNode.type === 'function_expression';
+
+                            if (isNewExpr || isObjectLiteral || isArrayLiteral || isInlineArrow) {
+                                // Skip if wrapped in useMemo / useCallback
+                                if (isWrappedInMemoHook(decl)) continue;
+
+                                const ctorName = isNewExpr
+                                    ? valueNode.childForFieldName('constructor')?.text || 'Object'
+                                    : null;
+                                const kind = isNewExpr      ? `new ${ctorName}()`
+                                           : isObjectLiteral ? '{}'
+                                           : isArrayLiteral  ? '[]'
+                                           : '() => ...';
+
+                                findings.push({
+                                    type: 'react_unstable_dep',
+                                    description: `${hookName}() dep \`${depName}\` is \`${kind}\` — new reference each render, effect re-runs every render → listener/subscription accumulation`,
+                                    line,
+                                    fn: enclosingFn,
+                                    dep: depName,
+                                });
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1220,6 +1321,252 @@ export function detectReactPatterns(tree) {
                 });
             }
         }
+    }
+
+    return findings;
+}
+
+// ═══════════════════════════════════════════════════
+// FEATURE 4b: Listener Options Parity Detection
+// Checks that addEventListener and removeEventListener
+// use the same `capture` flag. Passive/once don't affect
+// listener identity (per DOM spec) — only capture does.
+// Also flags asymmetric passive/once as a style warning.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Extract boolean value from an options object property.
+ * Looks for { capture: true } or { capture: false } patterns.
+ * @param {import('web-tree-sitter').Node} optionsNode
+ * @param {string} propName
+ * @returns {boolean|null} — true/false if found, null if not present
+ */
+function extractOptionFlag(optionsNode, propName) {
+    if (!optionsNode || optionsNode.type !== 'object') return null;
+    for (const prop of optionsNode.namedChildren) {
+        if (prop.type !== 'pair' && prop.type !== 'shorthand_property_identifier_pattern') continue;
+        const key = prop.childForFieldName('key');
+        const val = prop.childForFieldName('value');
+        if (key?.text === propName && val) {
+            if (val.text === 'true')  return true;
+            if (val.text === 'false') return false;
+        }
+    }
+    return null;
+}
+
+/**
+ * Detect addEventListener / removeEventListener options parity issues.
+ * The capture flag MUST match between add and remove — this is the only flag
+ * that affects listener identity per the DOM Event Listener specification.
+ * Also warns about asymmetric passive/once as a style issue.
+ *
+ * @param {import('web-tree-sitter').Tree} tree
+ * @returns {Array<{type: string, description: string, addLine: number, removeLine: number, fn: string}>}
+ */
+export function detectListenerParity(tree) {
+    const findings = [];
+    if (!tree) return findings;
+    const root = tree.rootNode;
+
+    // Collect all addEventListener calls with their options
+    const addCalls = [];
+    const removeCalls = [];
+
+    const calls = root.descendantsOfType('call_expression');
+    for (const call of calls) {
+        const fnNode = call.childForFieldName('function');
+        if (!fnNode || fnNode.type !== 'member_expression') continue;
+        const prop = fnNode.childForFieldName('property');
+        if (!prop) continue;
+
+        const argsNode = call.childForFieldName('arguments');
+        const callArgs = argsNode?.namedChildren || [];
+        if (callArgs.length < 2) continue;
+
+        const eventType = callArgs[0]?.text?.replace(/['"`]/g, '') || '';
+        const listenerNode = callArgs[1];
+        const listenerName = listenerNode?.type === 'identifier' ? listenerNode.text : '(anonymous)';
+        const optionsNode  = callArgs[2] || null;
+        const line = call.startPosition.row + 1;
+        const enclosingFn = getEnclosingFunction(call);
+
+        if (prop.text === 'addEventListener') {
+            addCalls.push({ eventType, listenerName, optionsNode, line, enclosingFn });
+        } else if (prop.text === 'removeEventListener') {
+            removeCalls.push({ eventType, listenerName, optionsNode, line, enclosingFn });
+        }
+    }
+
+    // For each add, find a corresponding remove with the same (eventType, listenerName)
+    for (const add of addCalls) {
+        const match = removeCalls.find(r =>
+            r.eventType === add.eventType && r.listenerName === add.listenerName
+        );
+        if (!match) continue; // no remove found — missing cleanup detected elsewhere
+
+        const addCapture    = extractOptionFlag(add.optionsNode, 'capture') ?? false;
+        const removeCapture = extractOptionFlag(match.optionsNode, 'capture') ?? false;
+        const addPassive    = extractOptionFlag(add.optionsNode, 'passive');
+        const removePassive = extractOptionFlag(match.optionsNode, 'passive');
+
+        // capture mismatch — this WILL break listener removal (spec-defined)
+        if (addCapture !== removeCapture) {
+            findings.push({
+                type: 'listener_capture_mismatch',
+                description: `addEventListener('${add.eventType}', ${add.listenerName}) added with capture:${addCapture} but removed with capture:${removeCapture} — listener will NOT be removed (capture flag must match)`,
+                addLine: add.line,
+                removeLine: match.line,
+                fn: add.enclosingFn,
+            });
+        }
+
+        // passive/once mismatch — style warning only, does NOT affect removal
+        // but signals that the add/remove calls were written inconsistently
+        if (addPassive !== null && removePassive !== null && addPassive !== removePassive) {
+            findings.push({
+                type: 'listener_options_asymmetric',
+                description: `addEventListener('${add.eventType}', ${add.listenerName}) options differ between add (passive:${addPassive}) and remove (passive:${removePassive}) — passive does not affect removal but signals inconsistent cleanup code`,
+                addLine: add.line,
+                removeLine: match.line,
+                fn: add.enclosingFn,
+            });
+        }
+
+        // The most common pattern: add has options but remove omits them entirely
+        // Flag this as a style warning so the LLM doesn't hallucinate it as the bug
+        if (add.optionsNode && !match.optionsNode) {
+            const hasRealCapture = addCapture === true; // passive-only: not a bug
+            findings.push({
+                type: hasRealCapture ? 'listener_capture_mismatch' : 'listener_options_omitted',
+                description: `addEventListener('${add.eventType}', ${add.listenerName}) added with options ${add.optionsNode.text} but removeEventListener omits options — ${hasRealCapture ? '⚠ capture:true will prevent removal' : 'passive/once omission is harmless (spec: only capture affects identity)'}`,
+                addLine: add.line,
+                removeLine: match.line,
+                fn: add.enclosingFn,
+            });
+        }
+    }
+
+    return findings;
+}
+
+// ═══════════════════════════════════════════════════
+// FEATURE 4c: Direct State Mutation Detection
+// Finds useState-derived variables that are mutated
+// in-place (arr.push, obj.key = val) instead of going
+// through the setter — React won't detect these as
+// changes and the component won't re-render.
+// ═══════════════════════════════════════════════════
+
+// In-place array/object mutation methods — calling any of these on a
+// useState variable is a bug. Excludes non-mutating methods (.map, .filter etc.)
+const STATE_MUTATION_METHODS = new Set([
+    'push', 'pop', 'shift', 'unshift', 'splice',
+    'sort', 'reverse', 'fill', 'copyWithin',
+    'delete',           // Map/Set
+    'set', 'add',       // Map/Set (context-dependent, included for coverage)
+    'clear',            // Map/Set
+]);
+
+/**
+ * Detect direct in-place mutations of React useState variables.
+ * Returns findings when state (derived from useState) is mutated with methods
+ * like .push()/.splice()/.sort() or via direct property assignment (state.x = y).
+ * React's reconciler only triggers re-renders when the state *reference* changes
+ * via the setter — in-place mutations are invisible to it.
+ *
+ * @param {import('web-tree-sitter').Tree} tree
+ * @returns {Array<{type: string, description: string, line: number, fn: string, stateVar: string}>}
+ */
+export function detectDirectStateMutations(tree) {
+    const findings = [];
+    if (!tree) return findings;
+    const root = tree.rootNode;
+
+    // ── Step 1: collect all state variable names from useState() calls ──
+    // Pattern: const [value, setValue] = useState(...)
+    // We want the first identifier in the array destructuring.
+    const stateVars = new Set();
+    const calls = root.descendantsOfType('call_expression');
+    for (const call of calls) {
+        const fnNode = call.childForFieldName('function');
+        if (!fnNode) continue;
+        // Allow both `useState(...)` and `React.useState(...)`
+        const name = fnNode.type === 'identifier' ? fnNode.text
+            : fnNode.type === 'member_expression' ? fnNode.childForFieldName('property')?.text
+            : null;
+        if (name !== 'useState' && name !== 'useReducer') continue;
+
+        // Walk up to find the variable_declarator
+        let cur = call.parent;
+        while (cur && cur.type !== 'variable_declarator') cur = cur.parent;
+        if (!cur) continue;
+
+        const nameNode = cur.childForFieldName('name');
+        if (!nameNode) continue;
+
+        // Array destructuring: const [state, setState] = useState(...)
+        if (nameNode.type === 'array_pattern') {
+            const first = nameNode.namedChildren[0];
+            if (first && first.type === 'identifier') {
+                stateVars.add(first.text);
+            }
+        }
+        // Bare assignment: const state = useState(...) — less common but valid
+        if (nameNode.type === 'identifier') {
+            stateVars.add(nameNode.text);
+        }
+    }
+
+    if (stateVars.size === 0) return findings;
+
+    // ── Step 2: scan for mutations of those variables ──
+
+    // 2a. Method calls: stateVar.push(...), stateVar.splice(...) etc.
+    for (const call of calls) {
+        const fnNode = call.childForFieldName('function');
+        if (!fnNode || fnNode.type !== 'member_expression') continue;
+        const obj  = fnNode.childForFieldName('object');
+        const prop = fnNode.childForFieldName('property');
+        if (!obj || !prop) continue;
+        if (obj.type !== 'identifier') continue;
+        if (!stateVars.has(obj.text)) continue;
+        if (!STATE_MUTATION_METHODS.has(prop.text)) continue;
+
+        const line = call.startPosition.row + 1;
+        const enclosingFn = getEnclosingFunction(call);
+        findings.push({
+            type: 'react_direct_state_mutation',
+            description: `\`${obj.text}.${prop.text}()\` mutates state in-place — React will NOT re-render. Use \`set${obj.text.charAt(0).toUpperCase() + obj.text.slice(1)}([...${obj.text}, ...])\` or spread/copy instead.`,
+            line,
+            fn: enclosingFn,
+            stateVar: obj.text,
+        });
+    }
+
+    // 2b. Direct property assignment: stateVar.key = val OR stateVar[key] = val
+    const assignments = root.descendantsOfType('assignment_expression');
+    for (const assign of assignments) {
+        const left = assign.childForFieldName('left');
+        if (!left) continue;
+        // Must be a member expression (stateVar.prop = ... or stateVar[key] = ...)
+        if (left.type !== 'member_expression' && left.type !== 'subscript_expression') continue;
+        const obj = left.childForFieldName('object');
+        if (!obj || obj.type !== 'identifier') continue;
+        if (!stateVars.has(obj.text)) continue;
+        // Exclude setter-call-like patterns (stateVar = ... would be caught above)
+        const prop = left.childForFieldName('property') ?? left.childForFieldName('index');
+        const propText = prop?.text ?? '?';
+
+        const line = assign.startPosition.row + 1;
+        const enclosingFn = getEnclosingFunction(assign);
+        findings.push({
+            type: 'react_direct_state_mutation',
+            description: `\`${obj.text}.${propText} = ...\` directly mutates state — React will NOT detect this change. Use the state setter with a new object copy: \`set${obj.text.charAt(0).toUpperCase() + obj.text.slice(1)}({ ...${obj.text}, ${propText}: newValue })\`.`,
+            line,
+            fn: enclosingFn,
+            stateVar: obj.text,
+        });
     }
 
     return findings;
@@ -1519,7 +1866,7 @@ function detectMultiSourceRace(chains) {
 // FORMAT: Same output format as the old engine
 // ═══════════════════════════════════════════════════
 
-function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = []) {
+function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = []) {
     const lines = [];
     lines.push('VERIFIED STATIC ANALYSIS — deterministic, not hallucinated');
     lines.push('══════════════════════════════════════════════════════════');
@@ -1605,12 +1952,27 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
         lines.push('');
     }
 
-    // React patterns
-    if (reactPatterns.length > 0) {
+    // React patterns — split into unstable deps (own section) and other patterns
+    const unstableDeps    = reactPatterns.filter(p => p.type === 'react_unstable_dep');
+    const otherReactPats  = reactPatterns.filter(p => p.type !== 'react_unstable_dep');
+
+    if (otherReactPats.length > 0) {
         lines.push('React Patterns Detected:');
-        for (const p of reactPatterns) {
+        for (const p of otherReactPats) {
             lines.push(`  [${p.type}] ${p.description}  [L${p.line}]`);
         }
+        lines.push('');
+    }
+
+    // Unstable useEffect deps — own section for clarity.
+    // Each entry means the dep produces a new reference every render,
+    // causing the effect to re-run and accumulate listeners/subscriptions.
+    if (unstableDeps.length > 0) {
+        lines.push('Unstable useEffect Dependencies (new reference each render):');
+        for (const p of unstableDeps) {
+            lines.push(`  [${p.dep || p.fn}] ${p.description}  [L${p.line}]`);
+        }
+        lines.push('  → Wrap with useMemo/useCallback in the parent, or remove from deps if stable.');
         lines.push('');
     }
 
@@ -1673,8 +2035,41 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
         }
     }
 
+    // Listener options parity issues
+    if (listenerParity.length > 0) {
+        // Separate breaking issues (capture mismatch) from style warnings (passive asymmetry)
+        const breaking = listenerParity.filter(p => p.type === 'listener_capture_mismatch');
+        const styleWarn = listenerParity.filter(p => p.type !== 'listener_capture_mismatch');
+
+        if (breaking.length > 0) {
+            lines.push('Event Listener Removal Failures (capture flag mismatch):');
+            for (const p of breaking) {
+                lines.push(`  ${p.description}  [addL${p.addLine} / removeL${p.removeLine}]`);
+            }
+            lines.push('');
+        }
+        if (styleWarn.length > 0) {
+            lines.push('Event Listener Options Notes (style, does not affect removal):');
+            for (const p of styleWarn) {
+                lines.push(`  ${p.description}  [addL${p.addLine} / removeL${p.removeLine}]`);
+            }
+            lines.push('');
+        }
+    }
+
+    // Direct state mutations (React useState variables mutated in-place)
+    if (stateMutations.length > 0) {
+        lines.push('Direct State Mutations (React will NOT re-render):');
+        for (const m of stateMutations) {
+            lines.push(`  ${m.description}  [L${m.line}]`);
+        }
+        lines.push('  ⚠ React only detects state changes via the setter (setState). In-place mutations are invisible to the reconciler.');
+        lines.push('');
+    }
+
     if (mutatedVars.length === 0 && timing.length === 0 && captureEntries.length === 0
-        && reactPatterns.length === 0 && floatingPromises.length === 0) {
+        && reactPatterns.length === 0 && floatingPromises.length === 0 && listenerParity.length === 0
+        && stateMutations.length === 0) {
         lines.push('No significant mutation chains, timing nodes, or closure captures detected.');
         lines.push('The LLM should analyze the code without AST hints.');
         lines.push('');

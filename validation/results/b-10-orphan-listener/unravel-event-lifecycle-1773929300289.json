@@ -1,0 +1,112 @@
+{
+  "aiPrompt": "Fix the `window.removeEventListener` call in `src/hooks/useScrollAnalytics.ts` to include the `{ passive: true }` option, matching the `addEventListener` call, to ensure proper cleanup of the scroll event listener.",
+  "bugType": "EVENT_LIFECYCLE",
+  "codeLocation": "src/hooks/useScrollAnalytics.ts L25",
+  "conceptExtraction": {
+    "bugCategory": "EVENT_LIFECYCLE",
+    "concept": "Event Listener Cleanup Identity",
+    "patternToAvoid": "Always ensure `removeEventListener` is called with the *exact same function reference and options object* that were used with `addEventListener`. If you use an options object (like `{ passive: true }`, `{ capture: true }`, or `{ once: true }`), you must provide the identical options object to `removeEventListener` for it to work.",
+    "realWorldAnalogy": "Imagine you check out a library book (add listener) and the librarian records its title, author, and edition (the function reference and options). When you return the book (remove listener), if you only tell the librarian the title and author but forget the edition, they might not find the exact book you borrowed, and it will remain \"checked out\" in the system, preventing others from borrowing it and cluttering the library's records. You need to provide all the exact details to \"undo\" the action.",
+    "whyItMatters": "Incorrect event listener cleanup leads to memory leaks, performance degradation, and unexpected behavior like duplicate event firing. In React, it's particularly insidious as components re-render or unmount, creating new listeners while old ones persist."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/hooks/useScrollAnalytics.ts L25\n-    return () => window.removeEventListener('scroll', onScroll);\n+    return () => window.removeEventListener('scroll', onScroll, { passive: true });",
+  "evidence": [
+    "src/hooks/useScrollAnalytics.ts L23: window.addEventListener('scroll', onScroll, { passive: true });",
+    "src/hooks/useScrollAnalytics.ts L25: return () => window.removeEventListener('scroll', onScroll);"
+  ],
+  "hypotheses": [
+    "H1: AnalyticsService.track() has no deduplication.",
+    "H2: useEffect dependencies are incorrect, causing re-runs without proper cleanup.",
+    "H3: window.removeEventListener fails due to mismatched options object."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "AnalyticsService.ts L28: eventLog.push",
+      "id": "H1",
+      "reason": "The `track()` method in `AnalyticsService` is a pure logging function designed to record every event it receives; it correctly processes every call. The problem is upstream, where `track()` is being called excessively, not in the `AnalyticsService` itself. AST confirms track() only READS state and simply pushes to an array.",
+      "status": "eliminated",
+      "text": "AnalyticsService.track() has no deduplication."
+    },
+    {
+      "eliminatedBy": "useScrollAnalytics.ts L26: return () => window.removeEventListener('scroll', onScroll);",
+      "id": "H2",
+      "reason": "The `useEffect` dependencies `[pageId, analyticsService]` are correctly specified for the variables captured by the `onScroll` closure. When `pageId` changes (e.g., on navigation), the effect correctly re-runs, and its cleanup function *is* called. The problem isn't that cleanup isn't called, but that it's ineffective.",
+      "status": "eliminated",
+      "text": "useEffect dependencies incorrect causing re-runs."
+    },
+    {
+      "eliminatedBy": "",
+      "id": "H3",
+      "reason": "The `window.addEventListener` call at `src/hooks/useScrollAnalytics.ts L23` includes the `{ passive: true }` options object. However, the corresponding `window.removeEventListener` call at `src/hooks/useScrollAnalytics.ts L25` in the cleanup function *omits* this options object. For `removeEventListener` to successfully unregister an event listener, it must be called with the *exact same function reference and options object* as `addEventListener`. This mismatch causes the cleanup to fail, leading to listeners accumulating with each component re-render or remount, and explains the observed StrictMode behavior of 2 events from the first page load.",
+      "status": "survived",
+      "text": "removeEventListener fails due to mismatched options."
+    }
+  ],
+  "invariants": [
+    "For every `addEventListener` call, there must be a corresponding `removeEventListener` call with the exact same function reference and options object.",
+    "React `useEffect` cleanup functions must reliably unregister any resources (like event listeners) registered in the effect's setup phase.",
+    "The `AnalyticsService` `track` method should only be called once per intended event, relying on upstream logic to ensure event uniqueness, not on the service itself for deduplication (unless explicitly designed to do so and configured via `rateLimitMs`).",
+    "The `useScrollAnalytics` hook should ensure only one scroll listener is active on `window` per mounted instance of the hook."
+  ],
+  "minimalFix": "The fix involves updating the `window.removeEventListener` call in `src/hooks/useScrollAnalytics.ts` to include the `{ passive: true }` options object. This ensures that the arguments provided to `removeEventListener` exactly match those used for `addEventListener`, allowing the browser to correctly identify and remove the event listener.",
+  "proximate_crash_site": "AnalyticsService.track() L28 — Excessive calls to track() due to multiple active listeners.",
+  "reproduction": [
+    "1. Render the `PageView` component for any page (e.g., `pageId=\"home\"`).",
+    "2. Scroll the page. Observe `scroll_depth` events firing once per scroll (in production) or twice (in StrictMode).",
+    "3. Navigate to a different page (e.g., `pageId=\"about\"`), which will cause the `PageView` component to either unmount and remount or re-render with new `pageId` props.",
+    "4. Scroll the new page. Observe `scroll_depth` events firing multiple times per scroll (e.g., 2x in production after one navigation, 3x after two navigations, etc.), demonstrating listener accumulation.",
+    "5. (Optional, for StrictMode): With React StrictMode enabled, simply loading the first page and scrolling will immediately show 2 `scroll_depth` events per scroll."
+  ],
+  "rootCause": "The `window.removeEventListener` call at `src/hooks/useScrollAnalytics.ts L25` fails to remove the event listener because it does not provide the `{ passive: true }` options object that was used during the `window.addEventListener` call at `L23`. This mismatch causes the browser to not find the specific listener to remove, leading to event listeners accumulating with each navigation.",
+  "symptom": "The analytics dashboard shows `scroll_depth` events firing 3–8 times per actual scroll gesture, and the count grows with session length. In development (React StrictMode) we saw 2 events per scroll from the first page load.",
+  "timeline": [],
+  "timelineEdges": [
+    {
+      "from": "PageView",
+      "isBugPoint": false,
+      "label": "mounts/re-renders with new pageId",
+      "to": "useScrollAnalytics hook"
+    },
+    {
+      "from": "useScrollAnalytics hook",
+      "isBugPoint": false,
+      "label": "useEffect runs cleanup (previous render)",
+      "to": "window.removeEventListener"
+    },
+    {
+      "from": "window.removeEventListener",
+      "isBugPoint": true,
+      "label": "FAILS to remove listener (options mismatch)",
+      "to": "window event system"
+    },
+    {
+      "from": "useScrollAnalytics hook",
+      "isBugPoint": false,
+      "label": "useEffect runs setup (current render)",
+      "to": "window.addEventListener"
+    },
+    {
+      "from": "window.addEventListener",
+      "isBugPoint": false,
+      "label": "adds NEW listener with passive: true",
+      "to": "window event system"
+    },
+    {
+      "from": "window event system",
+      "isBugPoint": false,
+      "label": "has N active listeners for scroll",
+      "to": "AnalyticsService.track"
+    },
+    {
+      "from": "user scroll gesture",
+      "isBugPoint": false,
+      "label": "triggers N scroll events",
+      "to": "AnalyticsService.track"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [],
+  "variableStateEdges": [],
+  "whyFixWorks": "The fix ensures that `window.removeEventListener` is called with the *exact same arguments*, including the options object (`{ passive: true }`), that were used during `window.addEventListener`. The browser's `removeEventListener` API requires the `listener` function and the `options` object to be identical for successful removal of a registered event listener. By providing the `{ passive: true }` option during cleanup, the browser can correctly identify and detach the previously added scroll event listener, preventing listener accumulation and resolving the issue of duplicate analytics events."
+}

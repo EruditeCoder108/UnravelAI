@@ -1,0 +1,136 @@
+{
+  "aiPrompt": "The `useRealtimeComments` hook in `src/hooks/useRealtimeComments.ts` contains two identical `useEffect` blocks that both subscribe to `wsClient` for the same channel. This causes duplicate subscriptions and comments to appear multiple times. Remove the redundant `useEffect` block, ensuring only one subscription is active at a time.",
+  "bugType": "DATA_FLOW",
+  "codeLocation": "src/hooks/useRealtimeComments.ts",
+  "conceptExtraction": {
+    "bugCategory": "React Hook Misuse",
+    "concept": "Redundant useEffect for Side Effects",
+    "patternToAvoid": "Never declare two identical `useEffect` blocks to manage the same side effect (like subscriptions) with the same dependencies. A single `useEffect` with correct dependencies is sufficient for handling setup, cleanup, and re-execution on dependency changes.",
+    "realWorldAnalogy": "Imagine you have a single doorbell for your house. If you install two identical doorbells right next to each other, and someone presses the button once, both doorbells will ring. Similarly, having two `useEffect`s for the same subscription means a single message triggers two identical handler calls, leading to duplicate actions.",
+    "whyItMatters": "Redundant `useEffect`s create unnecessary resource consumption (multiple subscriptions, listeners, timers), can lead to unexpected side effects (like duplicate data, race conditions, or performance issues), and often signal a misunderstanding of how React's lifecycle and dependency arrays work, making the code harder to debug and maintain."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/hooks/useRealtimeComments.ts L26\n-  // Ensures subscription stays active after re-renders\n-  useEffect(() => {\n-    const handleMessage = (msg: WsMessage) => {\n-      if (msg.channelId !== channelId) return;\n-      setComments((prev) => [...prev, msg.comment]);\n-    };\n-    wsClient.subscribe(channelId, handleMessage);\n-    return () => wsClient.unsubscribe(channelId, handleMessage);\n-  }, [channelId]);\n",
+  "evidence": [
+    "src/hooks/useRealtimeComments.ts L18-L24: First useEffect block subscribes a handler.",
+    "src/hooks/useRealtimeComments.ts L27-L33: Second, identical useEffect block subscribes another distinct handler for the same channel.",
+    "src/ws/WebSocketClient.ts L43: The `receive` method iterates through *all* registered handlers for a channel, leading to multiple executions of `setComments` for a single message."
+  ],
+  "hypotheses": [
+    "The core bug is the presence of two identical `useEffect` blocks, leading to duplicate subscriptions and comments.",
+    "`wsClient.unsubscribe` is failing to remove handlers, causing accumulation.",
+    "The `setComments` setter is stale, leading to incorrect state updates."
+  ],
+  "hypothesisTree": [
+    {
+      "id": "H1",
+      "text": "Two identical useEffects cause duplicate subscriptions. This is the root cause for the initial duplication on mount and after unmount/remount cycles. The user's observation of 'climbs again' might be due to an actual `channelId` change that triggers both effects, or multiple mount/unmount cycles that are perceived as re-renders, adding two subscriptions each time. However, the fundamental structural problem is the redundant `useEffect` itself, which causes 2 duplicates from the start. A `useEffect` with primitive dependencies (like `channelId` string) should not re-run its setup without `channelId` changing, so the 'climbs' part of the symptom for static `channelId` is likely a misunderstanding of `useEffect` behavior or how component re-renders are being triggered (e.g. parent force updates). But the base problem of 2 duplicates on mount and reset is fully explained by the duplicate `useEffect`s, and the architectural fix addresses the core misunderstanding."
+    },
+    {
+      "id": "H2",
+      "text": "Unsubscribe is failing to remove handlers, causing accumulation. The `wsClient.unsubscribe` implementation (src/ws/WebSocketClient.ts L35) correctly uses `Array.prototype.indexOf` for strict function reference equality and `splice` to remove the handler. The `useEffect` cleanup function correctly captures the exact `handleMessage` reference that was subscribed, ensuring successful removal. This hypothesis is eliminated because the `unsubscribe` logic is sound and correctly implemented to remove the specific handler reference provided by the `useEffect` cleanup."
+    },
+    {
+      "id": "H3",
+      "text": "Stale setComments setter causes incorrect updates. The `setComments` calls (src/hooks/useRealtimeComments.ts L21 and L30) use the functional update form (`setComments((prev) => ...)`) which receives the latest state (`prev`) as an argument. This pattern intrinsically avoids stale closure issues related to the state value. This hypothesis is eliminated because the functional update form of `setComments` prevents stale state values from being used."
+    }
+  ],
+  "invariants": [
+    "For any given `channelId`, `wsClient` must have exactly one subscription handler from `useRealtimeComments` active at any time.",
+    "The `handleMessage` function passed to `wsClient.subscribe` must be the same function reference passed to `wsClient.unsubscribe` for a given effect lifecycle.",
+    "React `useEffect` hooks with primitive dependencies like `[channelId]` should only re-run their setup/cleanup when the dependency *value* changes, not on every component re-render if the value is stable."
+  ],
+  "minimalFix": "The `useRealtimeComments` hook contains two `useEffect` blocks that perform identical subscription logic. This redundancy leads to duplicate subscriptions to the `wsClient`. Remove one of these `useEffect` blocks, as a single `useEffect` with correct dependencies is sufficient to manage the subscription lifecycle.",
+  "proximate_crash_site": "setComments() L21, L30 — Calling `setComments` twice for a single message adds the same comment object multiple times to the comments array.",
+  "reproduction": [
+    "Mount the `CommentFeed` component with any `channelId` (e.g., `<CommentFeed channelId='test-channel' />`).",
+    "Simulate receiving a message for `test-channel` via `wsClient.receive({ channelId: 'test-channel', comment: { id: '1', author: 'User', text: 'Hello' } })`.",
+    "Observe that the comment 'Hello' appears twice in the rendered list, and the `comments` array in the `useRealtimeComments` hook contains two identical comment objects."
+  ],
+  "rootCause": "The `useRealtimeComments` hook (src/hooks/useRealtimeComments.ts) contains two distinct, but functionally identical, `useEffect` blocks (L18-L24 and L27-L33) that both attempt to subscribe a handler to the `wsClient` for the same `channelId`. Each `useEffect` block creates its own `handleMessage` closure and registers it, resulting in two separate active subscriptions for every message channel. When a message arrives, `wsClient` invokes both subscribed handlers, causing the `setComments` state updater to be called twice, thereby adding each comment two times to the component's state.",
+  "symptom": "Every comment received via WebSocket appears 2–4 times in the feed, depending on how many times the parent component has re-rendered. A freshly mounted feed shows duplicates from the first message. After navigating away and back (unmount/remount cycle) the duplication count resets to 2, then climbs again. `setComments` fires 2–4 times per received message.",
+  "timelineEdges": [
+    {
+      "from": "CommentFeed",
+      "isBugPoint": false,
+      "label": "mounts",
+      "to": "useRealtimeComments"
+    },
+    {
+      "from": "useRealtimeComments",
+      "isBugPoint": false,
+      "label": "initializes state comments: []",
+      "to": "useState"
+    },
+    {
+      "from": "useRealtimeComments (Effect 1)",
+      "isBugPoint": false,
+      "label": "subscribes handleMessageA to channelId",
+      "to": "wsClient"
+    },
+    {
+      "from": "useRealtimeComments (Effect 2)",
+      "isBugPoint": false,
+      "label": "subscribes handleMessageB to channelId",
+      "to": "wsClient"
+    },
+    {
+      "from": "wsClient",
+      "isBugPoint": false,
+      "label": "receives WsMessage",
+      "to": "wsClient"
+    },
+    {
+      "from": "wsClient",
+      "isBugPoint": false,
+      "label": "invokes handleMessageA",
+      "to": "handleMessageA"
+    },
+    {
+      "from": "handleMessageA",
+      "isBugPoint": true,
+      "label": "calls setComments(prev => [...prev, comment])",
+      "to": "setComments"
+    },
+    {
+      "from": "wsClient",
+      "isBugPoint": false,
+      "label": "invokes handleMessageB",
+      "to": "handleMessageB"
+    },
+    {
+      "from": "handleMessageB",
+      "isBugPoint": true,
+      "label": "calls setComments(prev => [...prev, comment]) again",
+      "to": "setComments"
+    },
+    {
+      "from": "setComments",
+      "isBugPoint": false,
+      "label": "updates comments state with duplicate entry",
+      "to": "comments state"
+    },
+    {
+      "from": "comments state",
+      "isBugPoint": false,
+      "label": "comments prop passed to CommentFeed",
+      "to": "CommentFeed"
+    },
+    {
+      "from": "CommentFeed",
+      "isBugPoint": false,
+      "label": "renders duplicate comment in UI",
+      "to": "UI"
+    }
+  ],
+  "uncertainties": [],
+  "variableStateEdges": [
+    {
+      "variable": "comments"
+    },
+    {
+      "variable": "wsClient"
+    }
+  ],
+  "whyFixWorks": "Removing the redundant `useEffect` block ensures that only a single subscription handler is registered with `wsClient` for any given `channelId`. This means that when a message is received, `wsClient` will invoke the `handleMessage` callback only once. Consequently, `setComments` will be called only once per message, correctly adding each comment to the state array without duplicates, and resolving the symptom."
+}

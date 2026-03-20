@@ -482,6 +482,28 @@ function getEnclosingFunction(node) {
     return '(module scope)';
 }
 
+/**
+ * Check if a node is inside a conditional branch (if/switch/ternary/try/catch).
+ * Walks up from the node to its enclosing function scope boundary.
+ * Returns true if ANY ancestor between node and scope is a branch-type body.
+ */
+const BRANCH_BODY_TYPES = new Set([
+    'if_statement', 'else_clause', 'switch_case', 'switch_default',
+    'ternary_expression', 'try_statement', 'catch_clause',
+    'conditional_expression',
+]);
+
+function isConditionalContext(node) {
+    let current = node.parent;
+    while (current) {
+        // Stop at function scope boundary
+        if (SCOPE_NODE_TYPES.has(current.type)) return false;
+        if (BRANCH_BODY_TYPES.has(current.type)) return true;
+        current = current.parent;
+    }
+    return false;
+}
+
 function _getFunctionName(fnNode) {
     // function foo() {}
     const nameField = fnNode.childForFieldName('name');
@@ -536,7 +558,13 @@ function getMemberExpressionName(node) {
 // ═══════════════════════════════════════════════════
 
 export function extractMutationChains(tree) {
-    const mutations = {};
+    // Object.create(null) gives a map with NO inherited properties.
+    // A plain {} inherits Object.prototype — so keys like 'constructor',
+    // 'toString', 'valueOf', 'hasOwnProperty' already exist and are functions,
+    // not undefined. On large TypeScript files (VS Code, chatServiceImpl.ts)
+    // constructor parameters or destructure bindings hit these names and
+    // mutations['constructor'].writes.push() throws "is not a function".
+    const mutations = Object.create(null);
     if (!tree) return mutations;
     const root = tree.rootNode;
 
@@ -551,11 +579,12 @@ export function extractMutationChains(tree) {
         if (!left) continue;
         const fn = getEnclosingFunction(node);
         const line = node.startPosition.row + 1;
+        const conditional = isConditionalContext(node);
 
         if (left.type === 'identifier') {
             const name = left.text;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-            mutations[name].writes.push({ fn, line, type: 'reassigned' });
+            mutations[name].writes.push({ fn, line, type: 'reassigned', conditional });
         }
         if (left.type === 'array_pattern' || left.type === 'object_pattern') {
             // Use the recursive helper that handles nested patterns, aliases, rest elements.
@@ -567,7 +596,7 @@ export function extractMutationChains(tree) {
             const name = getMemberExpressionName(left);
             if (name) {
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written' });
+                mutations[name].writes.push({ fn, line, type: 'written', conditional });
             }
         }
         // subscript_expression: cache[key] = value → track as cache[]
@@ -576,7 +605,7 @@ export function extractMutationChains(tree) {
             if (obj?.type === 'identifier') {
                 const name = `${obj.text}[]`;
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written' });
+                mutations[name].writes.push({ fn, line, type: 'written', conditional });
             }
         }
     }
@@ -594,15 +623,16 @@ export function extractMutationChains(tree) {
         if (!left) continue;
         const fn = getEnclosingFunction(node);
         const line = node.startPosition.row + 1;
+        const conditional = isConditionalContext(node);
         if (left.type === 'identifier') {
             const name = left.text;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-            mutations[name].writes.push({ fn, line, type: 'reassigned' });
+            mutations[name].writes.push({ fn, line, type: 'reassigned', conditional });
         } else if (left.type === 'member_expression') {
             const name = getMemberExpressionName(left);
             if (name) {
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written' });
+                mutations[name].writes.push({ fn, line, type: 'written', conditional });
             }
         }
     }
@@ -615,19 +645,20 @@ export function extractMutationChains(tree) {
         const fn = getEnclosingFunction(node);
         const line = node.startPosition.row + 1;
         const col  = node.startPosition.column; // used in dedup key — multiple stmts can share a line
+        const conditionalB = isConditionalContext(node);
         if (left.type === 'identifier') {
             const name = left.text;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
             // Avoid double-counting if Strategy A already found it (match on line+col+fn)
             if (!mutations[name].writes.some(w => w.line === line && w.col === col && w.fn === fn)) {
-                mutations[name].writes.push({ fn, line, col, type: 'reassigned' });
+                mutations[name].writes.push({ fn, line, col, type: 'reassigned', conditional: conditionalB });
             }
         } else if (left.type === 'member_expression') {
             const name = getMemberExpressionName(left);
             if (name) {
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
                 if (!mutations[name].writes.some(w => w.line === line && w.col === col && w.fn === fn)) {
-                    mutations[name].writes.push({ fn, line, col, type: 'written' });
+                    mutations[name].writes.push({ fn, line, col, type: 'written', conditional: conditionalB });
                 }
             }
         }
@@ -640,16 +671,17 @@ export function extractMutationChains(tree) {
         if (!arg) continue;
         const fn = getEnclosingFunction(node);
         const line = node.startPosition.row + 1;
+        const conditional = isConditionalContext(node);
         if (arg.type === 'identifier') {
             const name = arg.text;
             if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-            mutations[name].writes.push({ fn, line, type: 'reassigned' });
+            mutations[name].writes.push({ fn, line, type: 'reassigned', conditional });
         } else if (arg.type === 'member_expression') {
             // obj.count++  — property is mutated in-place → 'written'
             const name = getMemberExpressionName(arg);
             if (name) {
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written' });
+                mutations[name].writes.push({ fn, line, type: 'written', conditional });
             }
         } else if (arg.type === 'subscript_expression') {
             // obj[expr]++  — computed property mutation. We can't know which element
@@ -658,7 +690,7 @@ export function extractMutationChains(tree) {
             if (obj?.type === 'identifier') {
                 const name = `${obj.text}[]`;
                 if (!mutations[name]) mutations[name] = { writes: [], reads: [] };
-                mutations[name].writes.push({ fn, line, type: 'written', computed: true });
+                mutations[name].writes.push({ fn, line, type: 'written', computed: true, conditional });
             }
         }
     }
@@ -710,7 +742,7 @@ export function extractMutationChains(tree) {
 // ═══════════════════════════════════════════════════
 
 export function trackClosureCaptures(tree) {
-    const captures = {};
+    const captures = Object.create(null); // null prototype — function names can collide with Object.prototype
     if (!tree) return captures;
 
     const scopeMap = buildScopeMap(tree);
@@ -845,7 +877,7 @@ export async function runFullAnalysis(code, filename = '') {
         };
     }
 
-    let mutations = {}, closures = {}, timing = [], reactPatterns = [], floatingPromises = [];
+    let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [];
 
     try { mutations = extractMutationChains(tree); }
     catch (e) { console.warn('[AST-TS] Mutation analysis failed:', e.message); }
@@ -862,10 +894,16 @@ export async function runFullAnalysis(code, filename = '') {
     try { floatingPromises = detectFloatingPromises(tree); }
     catch (e) { console.warn('[AST-TS] Floating promise detection failed:', e.message); }
 
-    const formatted = formatAnalysis(mutations, closures, timing, reactPatterns, floatingPromises);
+    try { listenerParity = detectListenerParity(tree); }
+    catch (e) { console.warn('[AST-TS] Listener parity detection failed:', e.message); }
+
+    try { stateMutations = detectDirectStateMutations(tree); }
+    catch (e) { console.warn('[AST-TS] State mutation detection failed:', e.message); }
+
+    const formatted = formatAnalysis(mutations, closures, timing, reactPatterns, floatingPromises, listenerParity, stateMutations);
 
     tree.delete(); // Free WASM memory
-    return { raw: { mutations, closures, timingNodes: timing, reactPatterns, floatingPromises }, formatted };
+    return { raw: { mutations, closures, timingNodes: timing, reactPatterns, floatingPromises, listenerParity, stateMutations }, formatted };
 }
 
 // ═══════════════════════════════════════════════════
@@ -875,11 +913,13 @@ export async function runFullAnalysis(code, filename = '') {
 export async function runMultiFileAnalysis(files) {
     await initParser();
 
-    const mergedMutations = {};
-    const mergedClosures = {};
+    const mergedMutations = Object.create(null);
+    const mergedClosures = Object.create(null);
     const mergedTiming = [];
     const mergedReactPatterns = [];
     const mergedFloatingPromises = [];
+    const mergedListenerParity = [];
+    const mergedStateMutations = [];
     let totalParsed = 0;
     let totalFailed = 0;
     const failedFiles = [];
@@ -944,7 +984,7 @@ export async function runMultiFileAnalysis(files) {
             console.warn(`[AST-TS] Partial analysis for ${shortName}: error ratio ${(errorRatio * 100).toFixed(1)}% — results flagged in output`);
         }
 
-        let mutations = {}, closures = {}, timing = [], reactPatterns = [], floatingPromises = [];
+        let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [];
         let anySucceeded = false;
 
         try { mutations = extractMutationChains(tree); anySucceeded = true; }
@@ -961,6 +1001,12 @@ export async function runMultiFileAnalysis(files) {
 
         try { floatingPromises = detectFloatingPromises(tree); anySucceeded = true; }
         catch (e) { console.warn(`[AST-TS] Float promise failed for ${shortName}:`, e.message); }
+
+        try { listenerParity = detectListenerParity(tree); anySucceeded = true; }
+        catch (e) { console.warn(`[AST-TS] Listener parity failed for ${shortName}:`, e.message); }
+
+        try { stateMutations = detectDirectStateMutations(tree); anySucceeded = true; }
+        catch (e) { console.warn(`[AST-TS] State mutations failed for ${shortName}:`, e.message); }
 
         tree.delete(); // Free WASM memory
 
@@ -1005,6 +1051,12 @@ export async function runMultiFileAnalysis(files) {
         for (const p of floatingPromises) {
             mergedFloatingPromises.push({ ...p, file: shortName });
         }
+        for (const p of listenerParity) {
+            mergedListenerParity.push({ ...p, file: shortName });
+        }
+        for (const p of stateMutations) {
+            mergedStateMutations.push({ ...p, file: shortName });
+        }
     }
 
     if (totalParsed === 0) {
@@ -1014,7 +1066,7 @@ export async function runMultiFileAnalysis(files) {
         };
     }
 
-    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises);
+    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises, mergedListenerParity, mergedStateMutations);
     const header = `Files parsed: ${totalParsed}/${files.length}`;
     const failNote = totalFailed > 0
         ? ` (${totalFailed} failed: ${failedFiles.join(', ')})`
@@ -1026,7 +1078,8 @@ export async function runMultiFileAnalysis(files) {
 
     return {
         raw: { mutations: mergedMutations, closures: mergedClosures, timingNodes: mergedTiming,
-               reactPatterns: mergedReactPatterns, floatingPromises: mergedFloatingPromises },
+               reactPatterns: mergedReactPatterns, floatingPromises: mergedFloatingPromises,
+               listenerParity: mergedListenerParity, stateMutations: mergedStateMutations },
         formatted: fullFormatted,
         partialFiles,
     };
@@ -1035,12 +1088,39 @@ export async function runMultiFileAnalysis(files) {
 // ═══════════════════════════════════════════════════
 // FEATURE 4: React-Specific Pattern Detection
 // Detects useState stale closures, missing useEffect cleanup,
-// and useCallback/useMemo with missing deps.
+// useCallback/useMemo with missing deps, unstable deps (new X()
+// inline without useMemo), and listener options parity issues.
 // ═══════════════════════════════════════════════════
 
 const REACT_STATE_HOOKS = new Set(['useState', 'useReducer']);
 const REACT_EFFECT_HOOKS = new Set(['useEffect', 'useLayoutEffect']);
 const REACT_MEMO_HOOKS = new Set(['useCallback', 'useMemo']);
+
+/**
+ * Check whether a node is directly inside a useMemo() or useCallback() call.
+ * Used to avoid false-positives when a value that looks unstable is in fact memoized.
+ * @param {import('web-tree-sitter').Node} node
+ * @returns {boolean}
+ */
+function isWrappedInMemoHook(node) {
+    let cur = node.parent;
+    while (cur) {
+        if (cur.type === 'call_expression') {
+            const fnNode = cur.childForFieldName('function');
+            if (fnNode) {
+                const name = fnNode.type === 'identifier' ? fnNode.text
+                    : fnNode.type === 'member_expression' ? fnNode.childForFieldName('property')?.text
+                    : null;
+                if (name && REACT_MEMO_HOOKS.has(name)) return true;
+            }
+        }
+        // Stop at function/arrow boundaries — useMemo in a different component doesn't count
+        if (cur.type === 'function_declaration' || cur.type === 'function' ||
+            cur.type === 'arrow_function' || cur.type === 'method_definition') break;
+        cur = cur.parent;
+    }
+    return false;
+}
 
 /**
  * Detect React-specific patterns that are common sources of bugs.
@@ -1173,6 +1253,59 @@ export function detectReactPatterns(tree) {
                         fn: enclosingFn,
                     });
                 }
+
+                // ── Unstable dep detection ──
+                // A dep is "unstable" if it's a new X(), {}, [], or inline function
+                // created inside the component body without useMemo/useCallback.
+                // Such deps produce a new reference every render, causing the effect
+                // to re-run on EVERY render — adding a new listener each time.
+                //
+                // Strategy: for each identifier in the deps array, look for its
+                // declaration in the tree. If the RHS is an unstable expression and
+                // is NOT wrapped in useMemo/useCallback, flag it.
+                if (depsArray && depsArray.type === 'array') {
+                    for (const dep of depsArray.namedChildren) {
+                        if (dep.type !== 'identifier') continue;
+                        const depName = dep.text;
+
+                        // Search all variable_declarator nodes in the file
+                        const decls = root.descendantsOfType('variable_declarator');
+                        for (const decl of decls) {
+                            const nameNode = decl.childForFieldName('name');
+                            const valueNode = decl.childForFieldName('value');
+                            if (!nameNode || !valueNode) continue;
+                            // Only match the exact dep name
+                            if (nameNode.type !== 'identifier' || nameNode.text !== depName) continue;
+
+                            const isNewExpr       = valueNode.type === 'new_expression';
+                            const isObjectLiteral = valueNode.type === 'object';
+                            const isArrayLiteral  = valueNode.type === 'array';
+                            const isInlineArrow   = valueNode.type === 'arrow_function' ||
+                                                    valueNode.type === 'function_expression';
+
+                            if (isNewExpr || isObjectLiteral || isArrayLiteral || isInlineArrow) {
+                                // Skip if wrapped in useMemo / useCallback
+                                if (isWrappedInMemoHook(decl)) continue;
+
+                                const ctorName = isNewExpr
+                                    ? valueNode.childForFieldName('constructor')?.text || 'Object'
+                                    : null;
+                                const kind = isNewExpr      ? `new ${ctorName}()`
+                                           : isObjectLiteral ? '{}'
+                                           : isArrayLiteral  ? '[]'
+                                           : '() => ...';
+
+                                findings.push({
+                                    type: 'react_unstable_dep',
+                                    description: `${hookName}() dep \`${depName}\` is \`${kind}\` — new reference each render, effect re-runs every render → listener/subscription accumulation`,
+                                    line,
+                                    fn: enclosingFn,
+                                    dep: depName,
+                                });
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1194,6 +1327,252 @@ export function detectReactPatterns(tree) {
 }
 
 // ═══════════════════════════════════════════════════
+// FEATURE 4b: Listener Options Parity Detection
+// Checks that addEventListener and removeEventListener
+// use the same `capture` flag. Passive/once don't affect
+// listener identity (per DOM spec) — only capture does.
+// Also flags asymmetric passive/once as a style warning.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Extract boolean value from an options object property.
+ * Looks for { capture: true } or { capture: false } patterns.
+ * @param {import('web-tree-sitter').Node} optionsNode
+ * @param {string} propName
+ * @returns {boolean|null} — true/false if found, null if not present
+ */
+function extractOptionFlag(optionsNode, propName) {
+    if (!optionsNode || optionsNode.type !== 'object') return null;
+    for (const prop of optionsNode.namedChildren) {
+        if (prop.type !== 'pair' && prop.type !== 'shorthand_property_identifier_pattern') continue;
+        const key = prop.childForFieldName('key');
+        const val = prop.childForFieldName('value');
+        if (key?.text === propName && val) {
+            if (val.text === 'true')  return true;
+            if (val.text === 'false') return false;
+        }
+    }
+    return null;
+}
+
+/**
+ * Detect addEventListener / removeEventListener options parity issues.
+ * The capture flag MUST match between add and remove — this is the only flag
+ * that affects listener identity per the DOM Event Listener specification.
+ * Also warns about asymmetric passive/once as a style issue.
+ *
+ * @param {import('web-tree-sitter').Tree} tree
+ * @returns {Array<{type: string, description: string, addLine: number, removeLine: number, fn: string}>}
+ */
+export function detectListenerParity(tree) {
+    const findings = [];
+    if (!tree) return findings;
+    const root = tree.rootNode;
+
+    // Collect all addEventListener calls with their options
+    const addCalls = [];
+    const removeCalls = [];
+
+    const calls = root.descendantsOfType('call_expression');
+    for (const call of calls) {
+        const fnNode = call.childForFieldName('function');
+        if (!fnNode || fnNode.type !== 'member_expression') continue;
+        const prop = fnNode.childForFieldName('property');
+        if (!prop) continue;
+
+        const argsNode = call.childForFieldName('arguments');
+        const callArgs = argsNode?.namedChildren || [];
+        if (callArgs.length < 2) continue;
+
+        const eventType = callArgs[0]?.text?.replace(/['"`]/g, '') || '';
+        const listenerNode = callArgs[1];
+        const listenerName = listenerNode?.type === 'identifier' ? listenerNode.text : '(anonymous)';
+        const optionsNode  = callArgs[2] || null;
+        const line = call.startPosition.row + 1;
+        const enclosingFn = getEnclosingFunction(call);
+
+        if (prop.text === 'addEventListener') {
+            addCalls.push({ eventType, listenerName, optionsNode, line, enclosingFn });
+        } else if (prop.text === 'removeEventListener') {
+            removeCalls.push({ eventType, listenerName, optionsNode, line, enclosingFn });
+        }
+    }
+
+    // For each add, find a corresponding remove with the same (eventType, listenerName)
+    for (const add of addCalls) {
+        const match = removeCalls.find(r =>
+            r.eventType === add.eventType && r.listenerName === add.listenerName
+        );
+        if (!match) continue; // no remove found — missing cleanup detected elsewhere
+
+        const addCapture    = extractOptionFlag(add.optionsNode, 'capture') ?? false;
+        const removeCapture = extractOptionFlag(match.optionsNode, 'capture') ?? false;
+        const addPassive    = extractOptionFlag(add.optionsNode, 'passive');
+        const removePassive = extractOptionFlag(match.optionsNode, 'passive');
+
+        // capture mismatch — this WILL break listener removal (spec-defined)
+        if (addCapture !== removeCapture) {
+            findings.push({
+                type: 'listener_capture_mismatch',
+                description: `addEventListener('${add.eventType}', ${add.listenerName}) added with capture:${addCapture} but removed with capture:${removeCapture} — listener will NOT be removed (capture flag must match)`,
+                addLine: add.line,
+                removeLine: match.line,
+                fn: add.enclosingFn,
+            });
+        }
+
+        // passive/once mismatch — style warning only, does NOT affect removal
+        // but signals that the add/remove calls were written inconsistently
+        if (addPassive !== null && removePassive !== null && addPassive !== removePassive) {
+            findings.push({
+                type: 'listener_options_asymmetric',
+                description: `addEventListener('${add.eventType}', ${add.listenerName}) options differ between add (passive:${addPassive}) and remove (passive:${removePassive}) — passive does not affect removal but signals inconsistent cleanup code`,
+                addLine: add.line,
+                removeLine: match.line,
+                fn: add.enclosingFn,
+            });
+        }
+
+        // The most common pattern: add has options but remove omits them entirely
+        // Flag this as a style warning so the LLM doesn't hallucinate it as the bug
+        if (add.optionsNode && !match.optionsNode) {
+            const hasRealCapture = addCapture === true; // passive-only: not a bug
+            findings.push({
+                type: hasRealCapture ? 'listener_capture_mismatch' : 'listener_options_omitted',
+                description: `addEventListener('${add.eventType}', ${add.listenerName}) added with options ${add.optionsNode.text} but removeEventListener omits options — ${hasRealCapture ? '⚠ capture:true will prevent removal' : 'passive/once omission is harmless (spec: only capture affects identity)'}`,
+                addLine: add.line,
+                removeLine: match.line,
+                fn: add.enclosingFn,
+            });
+        }
+    }
+
+    return findings;
+}
+
+// ═══════════════════════════════════════════════════
+// FEATURE 4c: Direct State Mutation Detection
+// Finds useState-derived variables that are mutated
+// in-place (arr.push, obj.key = val) instead of going
+// through the setter — React won't detect these as
+// changes and the component won't re-render.
+// ═══════════════════════════════════════════════════
+
+// In-place array/object mutation methods — calling any of these on a
+// useState variable is a bug. Excludes non-mutating methods (.map, .filter etc.)
+const STATE_MUTATION_METHODS = new Set([
+    'push', 'pop', 'shift', 'unshift', 'splice',
+    'sort', 'reverse', 'fill', 'copyWithin',
+    'delete',           // Map/Set
+    'set', 'add',       // Map/Set (context-dependent, included for coverage)
+    'clear',            // Map/Set
+]);
+
+/**
+ * Detect direct in-place mutations of React useState variables.
+ * Returns findings when state (derived from useState) is mutated with methods
+ * like .push()/.splice()/.sort() or via direct property assignment (state.x = y).
+ * React's reconciler only triggers re-renders when the state *reference* changes
+ * via the setter — in-place mutations are invisible to it.
+ *
+ * @param {import('web-tree-sitter').Tree} tree
+ * @returns {Array<{type: string, description: string, line: number, fn: string, stateVar: string}>}
+ */
+export function detectDirectStateMutations(tree) {
+    const findings = [];
+    if (!tree) return findings;
+    const root = tree.rootNode;
+
+    // ── Step 1: collect all state variable names from useState() calls ──
+    // Pattern: const [value, setValue] = useState(...)
+    // We want the first identifier in the array destructuring.
+    const stateVars = new Set();
+    const calls = root.descendantsOfType('call_expression');
+    for (const call of calls) {
+        const fnNode = call.childForFieldName('function');
+        if (!fnNode) continue;
+        // Allow both `useState(...)` and `React.useState(...)`
+        const name = fnNode.type === 'identifier' ? fnNode.text
+            : fnNode.type === 'member_expression' ? fnNode.childForFieldName('property')?.text
+            : null;
+        if (name !== 'useState' && name !== 'useReducer') continue;
+
+        // Walk up to find the variable_declarator
+        let cur = call.parent;
+        while (cur && cur.type !== 'variable_declarator') cur = cur.parent;
+        if (!cur) continue;
+
+        const nameNode = cur.childForFieldName('name');
+        if (!nameNode) continue;
+
+        // Array destructuring: const [state, setState] = useState(...)
+        if (nameNode.type === 'array_pattern') {
+            const first = nameNode.namedChildren[0];
+            if (first && first.type === 'identifier') {
+                stateVars.add(first.text);
+            }
+        }
+        // Bare assignment: const state = useState(...) — less common but valid
+        if (nameNode.type === 'identifier') {
+            stateVars.add(nameNode.text);
+        }
+    }
+
+    if (stateVars.size === 0) return findings;
+
+    // ── Step 2: scan for mutations of those variables ──
+
+    // 2a. Method calls: stateVar.push(...), stateVar.splice(...) etc.
+    for (const call of calls) {
+        const fnNode = call.childForFieldName('function');
+        if (!fnNode || fnNode.type !== 'member_expression') continue;
+        const obj  = fnNode.childForFieldName('object');
+        const prop = fnNode.childForFieldName('property');
+        if (!obj || !prop) continue;
+        if (obj.type !== 'identifier') continue;
+        if (!stateVars.has(obj.text)) continue;
+        if (!STATE_MUTATION_METHODS.has(prop.text)) continue;
+
+        const line = call.startPosition.row + 1;
+        const enclosingFn = getEnclosingFunction(call);
+        findings.push({
+            type: 'react_direct_state_mutation',
+            description: `\`${obj.text}.${prop.text}()\` mutates state in-place — React will NOT re-render. Use \`set${obj.text.charAt(0).toUpperCase() + obj.text.slice(1)}([...${obj.text}, ...])\` or spread/copy instead.`,
+            line,
+            fn: enclosingFn,
+            stateVar: obj.text,
+        });
+    }
+
+    // 2b. Direct property assignment: stateVar.key = val OR stateVar[key] = val
+    const assignments = root.descendantsOfType('assignment_expression');
+    for (const assign of assignments) {
+        const left = assign.childForFieldName('left');
+        if (!left) continue;
+        // Must be a member expression (stateVar.prop = ... or stateVar[key] = ...)
+        if (left.type !== 'member_expression' && left.type !== 'subscript_expression') continue;
+        const obj = left.childForFieldName('object');
+        if (!obj || obj.type !== 'identifier') continue;
+        if (!stateVars.has(obj.text)) continue;
+        // Exclude setter-call-like patterns (stateVar = ... would be caught above)
+        const prop = left.childForFieldName('property') ?? left.childForFieldName('index');
+        const propText = prop?.text ?? '?';
+
+        const line = assign.startPosition.row + 1;
+        const enclosingFn = getEnclosingFunction(assign);
+        findings.push({
+            type: 'react_direct_state_mutation',
+            description: `\`${obj.text}.${propText} = ...\` directly mutates state — React will NOT detect this change. Use the state setter with a new object copy: \`set${obj.text.charAt(0).toUpperCase() + obj.text.slice(1)}({ ...${obj.text}, ${propText}: newValue })\`.`,
+            line,
+            fn: enclosingFn,
+            stateVar: obj.text,
+        });
+    }
+
+    return findings;
+}
+
+// ═══════════════════════════════════════════════════
 // FEATURE 5: Floating Promise Detection
 // Detects async calls that are NOT wrapped in await.
 // isAwaited guard: skips valid await fetch(...) calls.
@@ -1206,6 +1585,10 @@ const ASYNC_CALL_PATTERNS = new Set([
     'connect', 'query', 'findOne', 'save', 'create',
     'send', 'post', 'put', 'patch',
 ]);
+
+// Array iteration methods that do NOT handle Promise return values from callbacks.
+// Passing an async callback to any of these silently discards all Promises.
+const VOID_ITERATION_METHODS = new Set(['forEach', 'find', 'findIndex', 'some', 'every', 'filter', 'reduce']);
 
 /**
  * Check if a node is directly inside an await_expression.
@@ -1257,7 +1640,30 @@ export function detectFloatingPromises(tree) {
             }
         }
 
-        if (!apiName) continue;
+        if (!apiName) {
+            // forEach(async) / find(async) etc — the async callback IS internally awaited
+            // but the iteration method ignores the returned Promise entirely, so all
+            // background work runs fire-and-forget with no way to await completion.
+            if (fnNode.type === 'member_expression') {
+                const prop = fnNode.childForFieldName('property');
+                if (prop && VOID_ITERATION_METHODS.has(prop.text)) {
+                    const argsNode = call.childForFieldName('arguments');
+                    const firstArg = argsNode?.namedChildren?.[0];
+                    if (
+                        firstArg &&
+                        (firstArg.type === 'arrow_function' ||
+                         firstArg.type === 'function_expression' ||
+                         firstArg.type === 'function') &&
+                        firstArg.text.trimStart().startsWith('async ')
+                    ) {
+                        const line = call.startPosition.row + 1;
+                        const enclosingFn = getEnclosingFunction(call);
+                        floating.push({ api: `${prop.text}(async)`, line, fn: enclosingFn, kind: 'forEach_async' });
+                    }
+                }
+            }
+            continue;
+        }
 
         // The isAwaited guard — skip calls that are properly awaited
         if (isAwaited(call)) continue;
@@ -1293,7 +1699,7 @@ function buildCausalChains(timing, mutations, reactPatterns) {
     const chains = [];
 
     // Index: fn → writes [{name, line, type}]
-    const writesByFn = {};
+    const writesByFn = Object.create(null);
     for (const [key, data] of Object.entries(mutations)) {
         const varName = key.split(/\s*\[/)[0].trim();
         for (const w of data.writes) {
@@ -1303,7 +1709,7 @@ function buildCausalChains(timing, mutations, reactPatterns) {
     }
 
     // Index: fn → reads [{name, line}]  (for cancellation guard detection)
-    const readsByFn = {};
+    const readsByFn = Object.create(null);
     for (const [key, data] of Object.entries(mutations)) {
         const varName = key.split(/\s*\[/)[0].trim();
         for (const r of data.reads) {
@@ -1313,7 +1719,7 @@ function buildCausalChains(timing, mutations, reactPatterns) {
     }
 
     // Index: fn → writes (for detecting let cancelled = false; and cleanup return patterns)
-    const writeNamesByFn = {};
+    const writeNamesByFn = Object.create(null);
     for (const [key, data] of Object.entries(mutations)) {
         const varName = key.split(/\s*\[/)[0].trim();
         for (const w of data.writes) {
@@ -1420,10 +1826,47 @@ function buildCausalChains(timing, mutations, reactPatterns) {
 }
 
 // ═══════════════════════════════════════════════════
+// MULTI-SOURCE RACE DETECTOR
+// Post-processes buildCausalChains() output.
+// If 2+ distinct async triggers both write to the same
+// state variable without guards, that is a write race.
+// No new AST traversal — pure grouping of existing data.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Detect multi-source write races from an existing chains array.
+ * @param {Array} chains — result of buildCausalChains()
+ * @returns {Array<{varName: string, sources: Array}>}
+ */
+function detectMultiSourceRace(chains) {
+    const byWriteVar = Object.create(null);
+    for (const c of chains) {
+        if (c.guardPresent) continue; // guarded writes are intentionally safe
+        // Write field format: "setResults() in doSearch [L22]" → varName = "setResults"
+        const varName = c.write.split('(')[0].trim();
+        if (!byWriteVar[varName]) byWriteVar[varName] = [];
+        byWriteVar[varName].push(c);
+    }
+
+    const races = [];
+    for (const [varName, writingChains] of Object.entries(byWriteVar)) {
+        if (writingChains.length < 2) continue;
+        // Only a race if the writes come from at least 2 independent async triggers
+        const uniqueTriggers = new Set(writingChains.map(c => c.trigger));
+        if (uniqueTriggers.size < 2) continue;
+        races.push({
+            varName,
+            sources: writingChains.map(c => ({ trigger: c.trigger, write: c.write, file: c.file })),
+        });
+    }
+    return races;
+}
+
+// ═══════════════════════════════════════════════════
 // FORMAT: Same output format as the old engine
 // ═══════════════════════════════════════════════════
 
-function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = []) {
+function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = []) {
     const lines = [];
     lines.push('VERIFIED STATIC ANALYSIS — deterministic, not hallucinated');
     lines.push('══════════════════════════════════════════════════════════');
@@ -1466,13 +1909,13 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
                 const reassigned = data.writes.filter(w => w.type === 'reassigned' || (!w.type && !isPropertyMutation));
                 const written    = data.writes.filter(w => w.type === 'written'    || (!w.type && isPropertyMutation));
                 if (reassigned.length > 0) {
-                    lines.push(`    reassigned: ${reassigned.map(w => `${w.fn} L${w.line}`).join(', ')}`);
+                    lines.push(`    reassigned: ${reassigned.map(w => `${w.fn} L${w.line}${w.conditional ? ' [CONDITIONAL]' : ''}`).join(', ')}`);
                 }
                 if (written.length > 0) {
                     const annotation = name.includes('[]')
                         ? (written.some(w => w.computed) ? ' ← computed property write' : ' ← array element')
                         : ' ← property write';
-                    lines.push(`    written: ${written.map(w => `${w.fn} L${w.line}`).join(', ')}${annotation}`);
+                    lines.push(`    written: ${written.map(w => `${w.fn} L${w.line}${w.conditional ? ' [CONDITIONAL]' : ''}`).join(', ')}${annotation}`);
                 }
                 if (reassigned.length === 0 && written.length === 0) {
                     // Fallback — shouldn't occur after full migration but keeps output safe
@@ -1509,20 +1952,46 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
         lines.push('');
     }
 
-    // React patterns
-    if (reactPatterns.length > 0) {
+    // React patterns — split into unstable deps (own section) and other patterns
+    const unstableDeps    = reactPatterns.filter(p => p.type === 'react_unstable_dep');
+    const otherReactPats  = reactPatterns.filter(p => p.type !== 'react_unstable_dep');
+
+    if (otherReactPats.length > 0) {
         lines.push('React Patterns Detected:');
-        for (const p of reactPatterns) {
+        for (const p of otherReactPats) {
             lines.push(`  [${p.type}] ${p.description}  [L${p.line}]`);
         }
         lines.push('');
     }
 
-    // Floating promises
-    if (floatingPromises.length > 0) {
+    // Unstable useEffect deps — own section for clarity.
+    // Each entry means the dep produces a new reference every render,
+    // causing the effect to re-run and accumulate listeners/subscriptions.
+    if (unstableDeps.length > 0) {
+        lines.push('Unstable useEffect Dependencies (new reference each render):');
+        for (const p of unstableDeps) {
+            lines.push(`  [${p.dep || p.fn}] ${p.description}  [L${p.line}]`);
+        }
+        lines.push('  → Wrap with useMemo/useCallback in the parent, or remove from deps if stable.');
+        lines.push('');
+    }
+
+    // Floating promises — split by kind for targeted output
+    const trueFloating    = floatingPromises.filter(p => p.kind !== 'forEach_async');
+    const forEachAsyncCalls = floatingPromises.filter(p => p.kind === 'forEach_async');
+
+    if (trueFloating.length > 0) {
         lines.push('Floating Promises (unawaited async calls):');
-        for (const p of floatingPromises) {
+        for (const p of trueFloating) {
             lines.push(`  ${p.api}()  in ${p.fn}  [L${p.line}]  ← not awaited`);
+        }
+        lines.push('');
+    }
+
+    if (forEachAsyncCalls.length > 0) {
+        lines.push('forEach(async) — Promises silently discarded by iteration method:');
+        for (const p of forEachAsyncCalls) {
+            lines.push(`  ${p.api}  in ${p.fn}  [L${p.line}]  ← use Promise.all(array.map(async ...)) instead`);
         }
         lines.push('');
     }
@@ -1551,8 +2020,56 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
         }
     }
 
+    // Multi-source write races — two unguarded async paths writing to the same state var
+    const multiSourceRaces = detectMultiSourceRace(chains);
+    if (multiSourceRaces.length > 0) {
+        lines.push('Multi-Source Write Races:');
+        for (const race of multiSourceRaces) {
+            lines.push(`  ${race.varName} — written by ${race.sources.length} independent async sources`);
+            for (const src of race.sources) {
+                const fileTag = src.file ? ` [${src.file}]` : '';
+                lines.push(`    ${src.trigger}${fileTag}  →  ${src.write}`);
+            }
+            lines.push(`  ⚠ unguarded — last to resolve silently overwrites all prior results`);
+            lines.push('');
+        }
+    }
+
+    // Listener options parity issues
+    if (listenerParity.length > 0) {
+        // Separate breaking issues (capture mismatch) from style warnings (passive asymmetry)
+        const breaking = listenerParity.filter(p => p.type === 'listener_capture_mismatch');
+        const styleWarn = listenerParity.filter(p => p.type !== 'listener_capture_mismatch');
+
+        if (breaking.length > 0) {
+            lines.push('Event Listener Removal Failures (capture flag mismatch):');
+            for (const p of breaking) {
+                lines.push(`  ${p.description}  [addL${p.addLine} / removeL${p.removeLine}]`);
+            }
+            lines.push('');
+        }
+        if (styleWarn.length > 0) {
+            lines.push('Event Listener Options Notes (style, does not affect removal):');
+            for (const p of styleWarn) {
+                lines.push(`  ${p.description}  [addL${p.addLine} / removeL${p.removeLine}]`);
+            }
+            lines.push('');
+        }
+    }
+
+    // Direct state mutations (React useState variables mutated in-place)
+    if (stateMutations.length > 0) {
+        lines.push('Direct State Mutations (React will NOT re-render):');
+        for (const m of stateMutations) {
+            lines.push(`  ${m.description}  [L${m.line}]`);
+        }
+        lines.push('  ⚠ React only detects state changes via the setter (setState). In-place mutations are invisible to the reconciler.');
+        lines.push('');
+    }
+
     if (mutatedVars.length === 0 && timing.length === 0 && captureEntries.length === 0
-        && reactPatterns.length === 0 && floatingPromises.length === 0) {
+        && reactPatterns.length === 0 && floatingPromises.length === 0 && listenerParity.length === 0
+        && stateMutations.length === 0) {
         lines.push('No significant mutation chains, timing nodes, or closure captures detected.');
         lines.push('The LLM should analyze the code without AST hints.');
         lines.push('');

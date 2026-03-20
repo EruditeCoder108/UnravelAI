@@ -199,28 +199,25 @@
   boxed title style={colback=white, colframe=rulecolor, arc=3pt}]
 
 Every LLM debugging session ends at the crash site. The bug rarely lives there.
-We present \textbf{Unravel}, a debugging engine built on the thesis that LLM-assisted
-debugging must be reframed as \textit{constraint satisfaction}, not inference. Before any
-LLM sees the code, a deterministic AST pre-analysis layer (web-tree-sitter, WebAssembly)
-extracts every variable mutation chain, closure capture, async boundary, floating promise,
-and cross-file call graph as verified structural facts injected as ground truth into the
-prompt. The model cannot hallucinate about what does not exist in these facts. It cannot
-guess. It must trace. These constraints are enforced architecturally: a post-generation
-Claim Verifier deterministically rejects any output fabricating file names, line numbers,
-or variable references, independently of what the model was instructed. A two-pass LLM
-router selects diagnostically relevant files from large repositories. An 8-phase structured
-reasoning pipeline enforces hypothesis generation followed by evidence-based elimination.
-Seven anti-sycophancy rules, embedded as hard prompt constraints rather than suggestions,
-include formally defined guards against \textit{Proximate Fixation} (attributing failure to
-the nearest code to the crash site rather than the state corruption origin) and the
-\textit{Name-Behavior Fallacy} (trusting identifier semantics over actual execution paths).
-A Fix Completeness Verifier uses the already-built call graph to detect uncovered downstream
-callers in proposed patches at zero added latency. Real-world validation is provided by two
-merged pull requests in major open-source repositories: tldraw (PR~\#8161, 8,000+~file
-TypeScript monorepo) and cal.com (PR~\#28296), where Unravel produced structured diagnoses
-used to construct patches accepted by maintainers, with the causal mechanism credited by the
-issue reporter by name. All experiments were conducted using Gemini~2.5~Flash on the free
-API tier.
+We present \textbf{Unravel}, a debugging engine that addresses a specific architectural
+failure in LLM-based debugging: without verified structural facts as ground truth, models
+pattern-match from symptom to the nearest familiar-looking code rather than tracing state
+backward through actual mutation sequences. Before any model sees the code, a deterministic
+AST pre-analysis layer (web-tree-sitter, WebAssembly) extracts every variable mutation
+chain, closure capture, async boundary, floating promise, and cross-file call graph as
+verified structural facts. These become ground truth injected into the reasoning context.
+The model cannot hallucinate about entities not present in these facts. It cannot guess at
+mutation sequences. It must trace them. A post-generation Claim Verifier then
+deterministically rejects any output fabricating file names, line numbers, or variable
+references -- independently of what the model was instructed. A two-pass file router, an
+8-phase structured reasoning pipeline, and seven anti-sycophancy rules including formally
+defined guards against Proximate Fixation and the Name-Behavior Fallacy complete the
+architecture. This reduces structured entity hallucination to zero on verified fields; it
+does not prevent reasoning errors or wrong causal chains, and does not claim to. Real-world
+validation: two pull requests accepted by maintainers of tldraw (PR~\#8161, 8,000+~file
+TypeScript monorepo) and cal.com (PR~\#28296). Benchmark: 59/60 (98.3\%) on UDB-20
+B-01--B-10 vs.\ 52/60 (86.7\%) for an unaugmented baseline.
+All experiments used Gemini~2.5~Flash on the free API tier.
 
 \vspace{6pt}
 \noindent\textbf{Keywords:} automated debugging, multi-file defect localization, static
@@ -244,11 +241,12 @@ state backward through the actual mutation sequence~\cite{arora2026, debuggingde
 
 The root cause of this failure is architectural. The model receives a \textit{description}
 of what the code should do and a natural language account of the symptom. The structural
-facts it needs (which variables are mutated at which lines, which closures capture stale
-state, which callers will be affected by a proposed fix) are present in the code but are
+facts it needs -- which variables are mutated at which lines, which closures capture stale
+state, which callers will be affected by a proposed fix -- are present in the code but are
 not surfaced in a machine-verifiable form. Without these facts as explicit constraints, the
 model is free to confabulate plausible-sounding evidence for whichever hypothesis is most
-consistent with its training distribution~\cite{liu2023}.
+consistent with its training distribution~\cite{liu2023}. The problem is not that models
+are insufficiently capable; it is that the reasoning is unconstrained.
 
 On SWE-bench (2,294 real GitHub issues), the best single-model baseline achieved a 1.96\%
 resolution rate~\cite{jimenez2024}. Agentic improvements have raised resolution to 40--55\%
@@ -257,26 +255,36 @@ successfully resolved SWE-bench issues required modifying only a single
 file~\cite{swebench2509}. Multi-file bugs, which constitute the majority of
 non-trivial production defects, remain largely unresolved.
 
-We present \textbf{Unravel}, which addresses this problem through a four-layer architecture.
-The central thesis is that LLM-assisted debugging is most productively understood not as
-\textit{inference} (pattern-matching from symptom to likely code) but as \textit{constraint
-satisfaction}: facts extracted deterministically from the AST constrain the hypothesis
-space, and the LLM's role is to find an explanation consistent with those constraints
-rather than one consistent merely with its training distribution. Layer~0 implements the
-constraint extraction; Layer~3's Claim Verifier enforces adherence post-generation. The
-result is a system that reduces structured entity hallucination to zero on verified fields,
-enables correct diagnosis on multi-file bugs where unaugmented models fail, and has produced
-structured diagnoses used to construct pull requests reviewed and merged in two major
-open-source production repositories.
+We present \textbf{Unravel}. Before any model sees the code, a deterministic AST
+pre-analysis layer runs first. It extracts every variable mutation chain, every closure
+capture, every async boundary, every floating promise, every cross-file call graph -- as
+verified structural facts. These become ground truth injected into the reasoning context.
+The model cannot hallucinate about entities that do not appear in these facts. It cannot
+guess at mutation sequences. It must trace them.
+
+The contribution is not that the model is given more information. It is that it is
+prevented from reasoning inconsistently with information already known to be true.
+
+This is enforced architecturally: a post-generation Claim Verifier deterministically
+rejects any output that fabricates file names, line numbers, or variable references --
+independently of what the model was instructed. An 8-phase structured pipeline requires
+every hypothesis elimination to cite the exact verified code fragment that contradicts it.
+The result is exact file, exact line, exact mechanism, with evidence at every step. The
+system reduces structured entity hallucination to zero on verified fields. It does not
+eliminate reasoning errors or wrong causal chains; it narrows the space in which they can
+hide and makes them attributable when they occur.
 
 \vspace{6pt}
 \begin{contribbox}
 \textbf{Contributions:}
 \begin{enumerate}[leftmargin=1.8em, itemsep=4pt]
-  \item A \textbf{four-layer architecture} (deterministic AST pre-analysis, pre-reasoning
-        guards, graph-frontier file routing, 8-phase structured LLM pipeline, and
-        multi-component verification) that reframes debugging as constraint satisfaction
-        over verified AST facts, enabling correct diagnosis on complex multi-file bugs.
+  \item \textbf{Constraint-Enforced Debugging Architecture:} a four-layer system in which
+        deterministic AST facts are extracted before any model call, injected as verified
+        ground truth, and enforced post-generation by a Claim Verifier that structurally
+        rejects outputs contradicting those facts. Unlike prior work that augments prompts
+        with additional context, Unravel enforces consistency between model output and
+        known structural program facts independently of model instruction. The contribution
+        is architectural: correctness is enforced, not encouraged.
   \item \textbf{Seven Anti-Sycophancy Rules:} formally specified guardrails targeting the
         two most prevalent reasoning failures: Proximate Fixation (tendency to attribute
         failure to the nearest code) and the Name-Behavior Fallacy (assuming execution
@@ -399,6 +407,7 @@ diagnosis, fix lives in a different repository).}
 
 % ─── 3.1 Layer 0 ─────────────────────────────────────────────────────────────
 \subsection{Layer 0 — AST Pre-Analysis Engine}
+\label{sec:layer0}
 
 \begin{l0box}[title={Layer 0: Deterministic AST Pre-Analysis}]
 \small
@@ -447,10 +456,34 @@ before an \code{expression\_statement}, the call is properly awaited. If it reac
 \code{expression\_statement} first, the promise is floating: the operation runs but its
 result and any rejection are discarded.
 
-\textbf{\code{detectReactPatterns(tree)}} identifies three React anti-patterns:
-\code{setState} inside a timer without the state variable in the dependency array;
-\code{useEffect} with side effects but no cleanup return; missing dependency array entries
-in \code{useMemo}/\code{useCallback}.
+\textbf{\code{detectReactPatterns(tree)}} identifies React anti-patterns that are
+syntactically valid JavaScript but semantically incorrect in React's rendering model.
+Three patterns are detected: \code{setState} inside a timer without the state variable
+in the dependency array; \code{useEffect} with side effects but no cleanup return; missing
+dependency array entries in \code{useMemo}/\code{useCallback}.
+
+\textbf{\code{detectDirectStateMutations(tree)}} specifically targets direct mutation of
+React state variables -- the primary cause of stale UI bugs where data changes in memory
+but the component does not re-render. The detection runs in two phases. First,
+\textit{identity extraction}: the engine queries all \code{useState} call expressions and
+walks the \code{variable\_declarator} parent to extract the state variable identifier from
+the array destructuring pattern (from \code{const [items, setItems] = useState([])},
+it captures \code{"items"}). Second, \textit{conflict scanning}: for each tracked state
+variable, the engine performs a method scan (checking every call expression whose object
+matches the state variable against a set of known in-place mutating methods: \code{push},
+\code{pop}, \code{splice}, \code{sort}, \code{reverse}, \code{shift}, \code{unshift},
+\code{fill}, and \code{copyWithin}) and a property scan (checking every
+\code{member\_expression} on the left-hand side of an assignment, such as
+\code{items.user = value}).
+
+When either scan fires, the engine emits a verified annotation:
+\textit{``Direct state mutation: \code{items.push()} mutates state in-place -- React will
+NOT re-render. Use \code{setItems([...items, newItem])} instead.''}
+This converts a structurally invisible bug (valid JavaScript, wrong React semantics) into
+an explicit verified fact in the ground-truth block, preventing the model from treating
+the mutation as benign side-effectful code. LLMs reliably overlook \code{items.push(x)}
+because it is syntactically unremarkable; the AST annotation makes the React semantic
+violation explicit before any token is generated.
 
 \textbf{Cross-file resolution (\code{ast-project.js}).} After per-file analysis, a
 cross-file pass builds the module map, resolves symbol origins across import/export
@@ -588,11 +621,11 @@ Explain, Security). Phases~5--8 are mode-specific. Phase~5 (DIAGNOSE) requires e
 hypothesis elimination to populate \code{eliminatedBy} with the exact AST-verified
 file and line that contradicts it; a hypothesis without a citation is flagged as
 unverified reasoning. Phase~6 (MINIMAL FIX) produces a \code{diffBlock} field
-containing a unified diff (\texttt{--- file:line / - old / + new}) in addition to
+containing a unified diff (\texttt{-- file:line / - old / + new}) in addition to
 prose explanation.
 
 Phase~6 defaults to the smallest possible surgical change. An \textit{architectural note}
-is added --- never instead of the surgical fix, always in addition to it --- in any of
+is added -- never instead of the surgical fix, always in addition to it -- in any of
 three cases: (A)~the patch suppresses the visible error but does not eliminate the
 underlying incorrect state (a null-check around a crash site when null should never reach
 there); (B)~the patch technically works but violates framework best practices or creates
@@ -621,7 +654,7 @@ Phase~5 branches by mode; Debug mode continues through Phase~8. The
 \code{eliminatedBy} field (new) requires each hypothesis elimination in Phase~5
 to cite the exact AST-verified file and line that contradicts it; a hypothesis
 without a citation is flagged as unverified reasoning. The \code{diffBlock} field
-(new) in Phase~6 produces a unified diff (\texttt{--- file:line / - old / + new})
+(new) in Phase~6 produces a unified diff (\texttt{-- file:line / - old / + new})
 for every fix.}
 \label{fig:pipeline}
 \end{figure}
@@ -641,7 +674,7 @@ app, VS Code extension, and future clients:
     "AST confirms: duration written at pause() L69",
     "AST confirms: duration read at tick() L55 -- receives corrupted value"
   ],
-  "diffBlock": "--- script.js L69\n-    duration = remaining\n+    lastActiveRemaining = remaining",
+  "diffBlock": "-- script.js L69\n-    duration = remaining\n+    lastActiveRemaining = remaining",
   "hypotheses": [
     { "id": "H1", "text": "Stale closure in tick() captures duration
                             at initialization",
@@ -703,16 +736,57 @@ only on signature-breaking changes (removed parameters visible in \code{diffBloc
 changes such as adding a guard or early return never trigger it, since callers require no
 updates when the function's interface is unchanged.
 
-\textbf{Claim Verifier precision improvements.} Three false-positive patterns were
-identified and resolved during UDB-20 grading. (1)~\textit{Class property matching:}
-TypeScript class properties are stored in the AST as \code{this.propName}; the verifier
-now registers the bare name (\code{propName}) in addition to the prefixed form so that
-AI-reported \code{currentConfig} correctly matches \code{this.currentConfig}. (2)~\textit{Array subscript
-stripping:} variables reported as \code{serverLikeCounts[]} are now normalized by stripping
-the bracket suffix before lookup. (3)~\textit{Fix Completeness scope:} the completeness
-check previously fired on any internal change; it now fires exclusively on diffs containing
-removed lines with function parameter signatures. These three fixes prevent incorrect
-confidence penalties on correct diagnoses and are reflected in B-06 onward.
+\textbf{Claim Verifier precision improvements.} Five false-positive patterns were
+identified and resolved across UDB-20 grading sessions. (1)~\textit{Class property
+matching (B-05):} TypeScript class properties are stored in the AST as \code{this.propName};
+the verifier now registers the bare name (\code{propName}) in addition to the prefixed
+form so that AI-reported \code{currentConfig} correctly matches \code{this.currentConfig}.
+(2)~\textit{Array subscript stripping (B-05):} variables reported as \code{serverLikeCounts[]}
+are now normalized by stripping the bracket suffix before lookup.
+(3)~\textit{Fix Completeness scope (B-05):} the completeness check previously fired on any
+internal change; it now fires exclusively on diffs containing removed lines with function
+parameter signatures -- backward-compatible additions (guards, early returns) do not
+trigger it. (4)~\textit{Claim-side \code{this.} stripping (B-06):} the verifier
+previously stripped \code{this.} only when building \code{knownVars}; it now also strips
+it from the AI's claimed variable name at match time, so \code{this.isReady} in the
+output correctly matches \code{isReady} in the AST. (5)~\textit{Empty-mutations skip
+(B-07):} when \code{astRaw.mutations} is empty (no top-level variable mutations in the
+scanned file set), Check~4 is skipped entirely -- previously, an empty \code{knownVars}
+caused every claim to fail, generating false warnings on stable service registries.
+
+\textbf{AST engine additions.} Four detection capabilities were added to
+\code{ast-engine-ts.js} and are now active on all runs.
+
+\textit{(1) \code{react\_unstable\_dep}:} Detects when a \code{useEffect} dependency
+is created unstably inside a component body -- \code{new Service()}, \code{[]},
+\code{\{\}}, or an arrow function -- without being wrapped in \code{useMemo} or
+\code{useCallback}. This class of bug causes the effect to re-run on every render as
+the object reference changes, accumulating subscriptions or side effects over time.
+
+\textit{(2) \code{detectListenerParity()}:} Compares each \code{addEventListener} /
+\code{removeEventListener} pair and emits a structured annotation. Mismatches in the
+\code{capture} flag (which the DOM specification uses as part of listener identity) are
+flagged as breaking. Mismatches in \code{passive} or \code{once} are flagged as
+informational style warnings only, with the annotation explicitly stating:
+\textit{``passive/once omission is harmless (spec: only capture affects identity).''}
+This annotation directly prevented the pre-fix misdiagnosis on B-10 (\S\ref{sec:b10-two-runs}).
+
+\textit{(3) \code{isWrappedInMemoHook()}:} Before flagging an object or function as
+unstably created, the engine checks whether it is wrapped in \code{useMemo} or
+\code{useCallback}. If it is, no instability flag is emitted. This prevents false
+positives in codebases that correctly stabilize dependencies with memoization.
+
+\textit{(4) \code{detectDirectStateMutations()}:} Targets direct in-place mutation of
+React state variables -- the primary cause of stale UI bugs where data changes in memory
+but the screen does not update. The detection uses two-phase identity-then-scan logic
+described in \S\ref{sec:layer0}: state variable names are extracted from \code{useState}
+destructuring, then each is checked against known in-place mutating methods (\code{push},
+\code{splice}, \code{sort}, etc.) and direct property assignments. The emitted annotation
+converts a structurally invisible bug (valid JavaScript, violated React rendering contract)
+into an explicit verified fact: \textit{``Direct state mutation: \code{items.push()}
+mutates state in-place -- React will NOT re-render.''} This is the final major piece of
+Unravel's React pattern coverage, completing detection of stale closures, missing
+dependencies, unstable effect deps, listener lifecycle errors, and direct state mutation.
 
 \subsection{Layer Boundary Detector}
 
@@ -795,8 +869,8 @@ depth.}
 
 \textbf{Preset-invariant diagnostic core.} The 8-phase reasoning pipeline executes
 identically across all presets. Critically, the output fields that enforce hypothesis
-elimination --- \code{hypothesisTree}, \code{eliminatedBy}, \code{evidence[]},
-\code{proximate\_crash\_site}, and \code{diffBlock} --- are bundled into the \code{rootCause}
+elimination -- \code{hypothesisTree}, \code{eliminatedBy}, \code{evidence[]},
+\code{proximate\_crash\_site}, and \code{diffBlock} -- are bundled into the \code{rootCause}
 schema group and cannot be removed by any preset. This is an architectural invariant:
 a Quick Fix run and a Full Report run receive the same system prompt, the same 8-phase
 reasoning instructions, and the same diagnostic output requirements. The only difference
@@ -807,13 +881,13 @@ a prompt construction defect, not expected behavior. The UDB-20 mode parity poli
 (\S\ref{sec:udb20}) explicitly grades for this.
 
 \textbf{Level-scope constraint.} The user experience level (Beginner through Developer)
-governs the \textit{explanation style} of text fields --- the warmth of the analogy,
+governs the \textit{explanation style} of text fields -- the warmth of the analogy,
 the jargon density of \code{whyFixWorks}, the complexity of \code{conceptExtraction}.
 It does not govern the diagnostic fields. The level instructions are explicitly prefixed
 with a diagnostic precision mandate: evidence citations, line numbers, mutation chains,
 and hypothesis eliminations are produced at full technical accuracy regardless of
 audience. The model is instructed to \textit{do expert-level tracing first, then translate
-the explanation} --- not to simplify the tracing itself. A beginner user receives the same
+the explanation} -- not to simplify the tracing itself. A beginner user receives the same
 root cause, the same evidence, and the same fix as an intermediate developer; they receive
 it explained differently.
 
@@ -911,13 +985,14 @@ where maintainer acceptance provides an external correctness signal. We addition
 provide: (a)~a comparative evaluation against unaugmented frontier models on two
 hand-constructed test cases, and (b)~UDB-20, a reproducible 20-bug benchmark evaluated
 on three axes designed to directly measure the failure modes Unravel targets.
-Preliminary results for five completed bugs (B-01--B-05) show Unravel scoring
-29/30 vs.~baseline 25/30, with all four points of advantage concentrated on
-Causal Flow Reconstruction (CFR) --- the multi-hop causal chain explanation axis.
+Results for ten completed bugs (B-01--B-10) show Unravel scoring
+59/60 (98.3\%) vs.~baseline 52/60 (86.7\%), a delta of~$+$7 points across
+all three axes -- with the largest gap on Causal Flow Reconstruction (CFR),
+the multi-hop causal chain explanation axis (20/20 vs.~14/20).
 
 UDB-11 (the original 11-bug internal benchmark) is retained as historical context for
 the Claim Verifier design but is not presented as a primary benchmark result. Its
-limitations --- self-referential construction, single-axis scoring, LLM-only grading ---
+limitations -- self-referential construction, single-axis scoring, LLM-only grading --
 are superseded by UDB-20's design. The UDB-11 data appears in \S\ref{sec:udb11-historical}
 for completeness.
 
@@ -963,7 +1038,7 @@ confident-wrong outputs on harder bugs where the correct location is less obviou
 
 The CFR axis captures a failure mode complementary to PFR: an engine can identify the
 correct root cause file and mechanism, then fail to explain \textit{how} that cause produces
-the observed symptom. A CFR~$=0$ answer is effectively unactionable --- the developer
+the observed symptom. A CFR~$=0$ answer is effectively unactionable -- the developer
 cannot verify the diagnosis or trust the fix without independently retracing the causal chain.
 
 \textbf{Hallucination penalty.} If an engine cites a line number that does not exist in
@@ -993,9 +1068,9 @@ Hard   & B-15 to B-20 & Multi-hop causal chain. Trap structurally similar to roo
 \end{center}
 
 \textbf{Ground truth and verifiability.} Each bug in UDB-20 ships with:
-(a)~\code{bug.test.*} --- a test that fails before the fix, confirming the bug is real;
-(b)~\code{fixed.test.*} --- a test that passes after the ground truth fix, confirming the
-fix is correct; (c)~\code{ground-truth.md} --- exact root cause file, lines, mechanism,
+(a)~\code{bug.test.*} -- a test that fails before the fix, confirming the bug is real;
+(b)~\code{fixed.test.*} -- a test that passes after the ground truth fix, confirming the
+fix is correct; (c)~\code{ground-truth.md} -- exact root cause file, lines, mechanism,
 proximate trap, and correct fix. Ground truth is locked before any model sees the code.
 Any researcher can independently run \code{pnpm test} to verify both the bug and the fix.
 This is external validity by construction rather than author assertion.
@@ -1108,97 +1183,157 @@ flip the UI immediately.
 \textbf{Validation rate:} 2/2 (100\%). Both diagnoses used to construct patches that were accepted by maintainers, updated as additional cases are validated.
 
 % ─── 6.3 UDB-20 Results ──────────────────────────────────────────────────────
-\subsection{UDB-20 Preliminary Results (B-01 to B-05)}
+\subsection{UDB-20 Results (B-01 to B-10)}
 \label{sec:udb20-results}
 
-UDB-20 construction is ongoing (B-01 through B-05 fully built and graded;
-B-06 through B-20 in progress). All five completed bugs were graded on
-2026-03-19 against the locked ground truth in \code{ground-truth.md}.
-Baseline is Claude~Sonnet~4.6 at temperature~$=0$, no AST pre-analysis.
+B-01 through B-10 have been fully constructed, run, and graded against locked
+ground truth. Baseline is Claude~Sonnet~4.6 at temperature~$=0$, no AST
+pre-analysis. B-10 was run twice: once before and once after the
+\code{detectListenerParity()} AST improvement; both runs are reported
+(\S\ref{sec:b10-two-runs}).
 
 \vspace{6pt}
 \begin{table}[H]
 \centering\small
 \setlength{\tabcolsep}{4pt}
 \resizebox{\linewidth}{!}{%
-\begin{tabular}{@{}l r *{3}{c} c @{\hspace{4pt}} *{3}{c} c@{}}
+\begin{tabular}{@{}l l l *{3}{c} c @{\hspace{4pt}} *{3}{c} c@{}}
 \toprule
-& & \multicolumn{4}{c}{\textbf{Unravel (Gemini~2.5 Flash + AST)}}
-  & \multicolumn{4}{c}{\textbf{Baseline (Claude~Sonnet~4.6)}} \\
-\cmidrule(lr){3-6}\cmidrule(lr){7-10}
-\textbf{Bug} & \textbf{Tier}
+& & & \multicolumn{4}{c}{\textbf{Unravel (Gemini~2.5 Flash + AST)}}
+    & \multicolumn{4}{c}{\textbf{Baseline (Claude~Sonnet~4.6)}} \\
+\cmidrule(lr){4-7}\cmidrule(lr){8-11}
+\textbf{Bug} & \textbf{Tier} & \textbf{Category}
   & \textbf{RCA} & \textbf{PFR} & \textbf{CFR} & \textbf{/6}
   & \textbf{RCA} & \textbf{PFR} & \textbf{CFR} & \textbf{/6} \\
 \midrule
-B-01 \textit{invisible-update}   & Easy   & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 1 & 5 \\
-B-02 \textit{phantom-preference} & Hard   & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 1 & 5 \\
-B-03 \textit{loyal-closure}      & Medium & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 1 & 5 \\
-B-04 \textit{deaf-plugin}        & Hard   & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 1 & 5 \\
-B-05 \textit{fickle-like}        & Medium & 1 & 2 & 2 & 5          & 2 & 2 & 1 & 5 \\
+B-01 \textit{invisible-update}   & Easy   & STATE\_MUTATION   & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 1 & 5 \\
+B-02 \textit{phantom-preference} & Hard   & STATE\_MUTATION   & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 1 & 5 \\
+B-03 \textit{loyal-closure}      & Medium & STALE\_CLOSURE    & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 1 & 5 \\
+B-04 \textit{deaf-plugin}        & Hard   & STALE\_CLOSURE    & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 1 & 5 \\
+B-05 \textit{fickle-like}        & Medium & ASYNC\_ORDERING   & 1 & 2 & 2 & 5          & 2 & 2 & 1 & 5 \\
+B-06 \textit{silent-await}       & Easy   & ASYNC\_ORDERING   & 2 & 2 & 2 & \textbf{6} & 2 & 1 & 2 & 5 \\
+B-07 \textit{ghost-ref}          & Medium & ASYNC\_ORDERING   & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 2 & \textbf{6} \\
+B-08 \textit{twin-effect}        & Medium & EVENT\_LIFECYCLE  & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 2 & \textbf{6} \\
+B-09 \textit{trusted-input}      & Hard   & TYPE\_COERCION    & 2 & 2 & 2 & \textbf{6} & 2 & 2 & 2 & \textbf{6} \\
+B-10 \textit{orphan-listener}    & Hard   & EVENT\_LIFECYCLE  & 2 & 2 & 2 & \textbf{6}$^\dagger$ & 1 & 2 & 1 & 4 \\
 \midrule
-\textbf{Total /30} & & \textbf{9} & \textbf{10} & \textbf{10} & \textbf{29}
-                   & 10 & 10 & 5 & \textbf{25} \\
+\textbf{Total /60} & & & \textbf{19} & \textbf{20} & \textbf{20} & \textbf{59}
+                          & 19 & 19 & 14 & \textbf{52} \\
 \bottomrule
 \end{tabular}%
-}% end resizebox
-\caption{UDB-20 preliminary results (B-01--B-05). RCA, PFR, CFR each scored 0--2;
-per-bug max~6, five-bug max~30. Unravel: 29/30. Baseline: 25/30. Delta: $+$4.
-Full grade sheets: \code{validation/results/b-XX-<n>/grade.md}.}
-\label{tab:udb20-preliminary}
+}
+\vspace{2pt}
+{\small $^\dagger$B-10 score reflects the post-fix run after \code{detectListenerParity()} was added to the AST engine.
+Pre-fix Unravel scored 4/6 on B-10 (wrong mechanism). Both runs are reported in \S\ref{sec:b10-two-runs}.}
+\caption{UDB-20 results (B-01--B-10). RCA, PFR, CFR each scored 0--2; per-bug max~6, ten-bug max~60.
+Unravel: 59/60 (98.3\%). Baseline: 52/60 (86.7\%). Delta: $+$7.
+Grade sheets: \code{validation/results/b-XX-<n>/grade.md}.}
+\label{tab:udb20}
 \end{table}
 
-\vspace{4pt}
-\begin{findingbox}
-\textbf{Key findings from B-01--B-05.}
-
-\textbf{CFR is the consistent differentiator.} Unravel scored CFR~$=2$ on all five bugs
-(10/10). The baseline scored CFR~$=1$ on all five bugs (5/10). The gap is not in root
-cause identification --- both engines scored RCA~$\geq 1$ on every bug --- but in
-\textit{explaining how} the root cause produces the observed symptom end-to-end. On B-04
-(4-file causal chain: Application $\to$ PluginRegistry $\to$ NotificationPlugin $\to$
-handler closure $\to$ stale config), Unravel traced all four hops with file/line evidence;
-the baseline traced three, omitting the PluginRegistry step. This pattern repeated on every
-multi-hop bug.
-
-\textbf{PFR is tied.} Both engines scored PFR~$=2$ on all five bugs (10/10 each).
-The planted proximate traps were explicitly eliminated by both. This confirms that PFR
-failure --- pure fixation on the crash site --- is addressable by either approach for
-bugs of this difficulty tier. The harder question (whether PFR degrades on trickier traps
-in B-15--B-20) remains to be measured.
-
-\textbf{B-05 is the outlier.} Unravel correctly identified the mechanism (unconditional
-overwrite via missing version guard) but diagnosed \code{optimisticStore.ts} rather than
-\code{likeService.ts} (the ground truth caller file). The baseline identified the exact
-correct file and fix location. This is the first bug where caller-side guard placement
-required design-intent reasoning that AST evidence alone could not fully constrain. RCA
-score: Unravel~1, Baseline~2.
-
-\textbf{Three verifier false-positives were fixed during this grading session.}
-B-05 exposed: (1)~\code{this.propName} class property matching (\code{this.currentConfig}
-not matching AI-reported \code{currentConfig}); (2)~array subscript suffix stripping
-(\code{serverLikeCounts[]} not matching \code{serverLikeCounts}); (3)~Fix Completeness
-firing on internal-only changes (backward-compatible guard additions incorrectly penalized
-as signature-breaking). All three are addressed in \code{orchestrate.js} and will not
-recur in B-06 onward.
-\end{findingbox}
-
-\vspace{4pt}
-\textbf{Aggregate per-axis analysis (5 bugs):}
-
-\begin{center}
-\small
-\begin{tabular}{@{}l cc c p{5.8cm}@{}}
+\vspace{6pt}
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}l ccc c p{7cm}@{}}
 \toprule
-\textbf{Axis} & \textbf{Unravel /10} & \textbf{Baseline /10} & \textbf{$\Delta$} & \textbf{Pattern} \\
+\textbf{Axis} & \textbf{Unravel /20} & \textbf{Baseline /20} & \textbf{$\Delta$} & \textbf{Pattern} \\
 \midrule
-RCA & 9 & 10 & $-1$ & Tied on 4/5; B-05 inverted (right mechanism, wrong file) \\
-PFR & 10 & 10 & 0   & Both engines eliminated planted traps on all 5 bugs \\
-CFR & 10 & 5  & $+5$ & Unravel traces full multi-hop chains; baseline drops hops \\
+RCA & 19 & 17 & $+$2 & Unravel wrong file on B-05 (right mechanism); baseline wrong mechanism on B-10. \\
+PFR & 20 & 19 & $+$1 & Baseline half-credit on B-06: trap acknowledged but not formally eliminated. \\
+CFR & 20 & 14 & $+$6 & Unravel full multi-hop chains on all 10; baseline dropped hops on B-01--B-05, B-10. \\
 \midrule
-\textbf{Total} & \textbf{29} & \textbf{25} & $\mathbf{+4}$ & \\
+\textbf{Total} & \textbf{59} & \textbf{52} & $\mathbf{+7}$ & \\
 \bottomrule
 \end{tabular}
-\end{center}
+\caption{Per-axis aggregate across B-01--B-10. CFR is the dominant differentiator.}
+\label{tab:udb20-axes}
+\end{table}
+
+\begin{findingbox}
+\textbf{Key findings from B-01--B-10.}
+
+\textbf{CFR is the dominant differentiator.} Unravel scored CFR~$=2$ on all ten bugs
+(20/20); the baseline scored 14/20. The gap is not in identifying the root cause file
+-- both engines locate the correct file on most bugs -- but in tracing the complete
+causal chain from root mutation to observed symptom. On B-04 (four-file chain:
+Application $\to$ PluginRegistry $\to$ NotificationPlugin $\to$ handler closure $\to$
+stale config read), Unravel traced all four hops with file and line evidence; the baseline
+omitted the PluginRegistry step. This pattern repeated on every multi-hop bug in
+B-01--B-05 and on B-10.
+
+\textbf{PFR held for both engines across all difficulty tiers.} Both engines scored
+PFR~$\geq 1$ on every bug. The planted proximate traps were recognized and rebuffed
+in nearly every case, with the single exception of B-06 where the baseline acknowledged
+the trap but did not formally eliminate it (PFR~$=1$ vs Unravel's PFR~$=2$).
+
+\textbf{B-05 and B-10 are the two non-perfect Unravel scores, and they are instructive
+in opposite ways.} B-05: Unravel found the correct mechanism (unconditional overwrite via
+missing version guard) but diagnosed the wrong file (\code{optimisticStore.ts} vs ground
+truth \code{likeService.ts}). The baseline found the correct file. This is the case where
+caller-side design intent was not visible in the AST. B-10: the pre-fix Unravel diagnosed
+the correct file but anchored on a visually asymmetric but mechanically irrelevant detail
+-- the missing \code{\{passive: true\}} options in \code{removeEventListener}. The
+baseline correctly dismissed this. One 47-word AST annotation (\S\ref{sec:b10-two-runs})
+eliminated the false anchor entirely.
+
+\textbf{B-09 fix quality: the baseline wins.} Both engines scored 6/6 on all three axes
+for B-09, but the fix quality differed. Unravel used \code{parseFloat(String(total).replace(non-numeric chars, '')) || 0} --
+the \code{|| 0} fallback silently converts completely invalid input to zero rather than
+rejecting it, which can produce misleading validation outcomes. The baseline used
+\code{parseFloat(total)} with an explicit \code{isNaN} guard returning HTTP~400, and
+replaced \code{as unknown as CartSummary} with \code{satisfies CartSummary} for
+compile-time safety. The rubric scores diagnosis, not fix quality; this distinction is
+noted for completeness.
+\end{findingbox}
+
+\subsubsection{B-10: Two Runs and What One AST Annotation Changed}
+\label{sec:b10-two-runs}
+
+B-10 (\textit{orphan-listener}) is the only bug in UDB-20 where the AST engine was
+modified between runs. Both runs are reported in full; only the post-fix score
+appears in the aggregate table, and the pre-fix score is explicitly noted.
+
+\textbf{Pre-fix run (Unravel 4/6, Baseline 4/6).} The ground truth root cause is
+accumulated scroll listeners from \code{PageView} components not being properly unmounted
+during SPA navigation -- each navigation adds a listener without the previous one being
+removed, producing exactly $N$ listeners after $N$ navigations. Unravel (pre-fix) scored
+RCA~$=1$: it identified the correct file (\code{useScrollAnalytics.ts}) but diagnosed the
+wrong mechanism, fixating on the syntactic asymmetry between
+\code{addEventListener('scroll', fn, \{passive: true\})} and
+\code{removeEventListener('scroll', fn)} (no options object). This is a \textit{visual
+proximate fixation} failure: the code \textit{looked} asymmetric, so the model treated
+the asymmetry as evidence before checking whether it was mechanically significant. Per
+the DOM specification, \code{passive} is not part of the listener identity key for
+removal; only \code{capture} is. The proposed fix (extracting the options object into a
+\code{const}) was a no-op.
+
+The baseline (Claude~Sonnet~4.6) also scored 4/6 on B-10, but for structurally different
+reasons: it correctly dismissed the \code{passive} mismatch, correctly hypothesized
+concurrent mounted \code{PageView} instances as the accumulation mechanism, but was
+unable to confirm the hypothesis from the three provided files and explicitly flagged its
+diagnosis as inconclusive. Correct reasoning, insufficient context.
+
+\textbf{Post-fix run (Unravel 6/6).} One function was added to \code{ast-engine-ts.js}:
+\code{detectListenerParity()}, which compares each \code{addEventListener}/\code{removeEventListener}
+pair and outputs a structured annotation. When the options objects differ only in
+\code{passive} or \code{once} (not \code{capture}), the annotation explicitly states:
+\textit{``passive/once omission is harmless (spec: only capture affects identity).''}
+This annotation is 47 words. It appears in the verified AST ground-truth block before
+the LLM sees the code.
+
+On the post-fix run, hypothesis~H1 (\code{passive} mismatch) was eliminated in Phase~5
+immediately, citing the AST annotation verbatim. Hypothesis~H3 (multiple
+\code{PageView} instances not unmounting) survived elimination and was confirmed as the
+root cause. The full causal chain -- mount A, navigate, router fails to unmount A,
+mount B, both \code{onScroll} closures fire, duplicate \code{track()} calls -- was
+traced correctly with \code{isBugPoint: true} placed at the missed unmount edge.
+
+The lesson is direct: the LLM did not hallucinate about \code{passive} because it was
+careless or underpowered -- it hallucinated because the visual evidence pointed to a
+plausible-looking mismatch and no authoritative counter-fact was available. Once the AST
+provided the counter-fact as a verified ground-truth annotation, the hallucination did
+not occur. Deterministic structural knowledge does not merely help the LLM reason better;
+it eliminates entire categories of false hypothesis before they can anchor.
 
 
 % ─── 6.4 Comparative Evaluation ──────────────────────────────────────────────
@@ -1321,8 +1456,8 @@ and are not representative of a distribution. Statistical conclusions cannot be 
 
 UDB-11 was the original 11-bug internal benchmark used during Claim Verifier design.
 It is retained here as historical context, not as a primary benchmark result.
-Its design limitations --- self-referential construction, single-axis scoring,
-and author selection bias --- are superseded by UDB-20.
+Its design limitations -- self-referential construction, single-axis scoring,
+and author selection bias -- are superseded by UDB-20.
 
 \vspace{4pt}
 \begin{center}
@@ -1347,6 +1482,11 @@ real-world merged PRs (\S6.2) constitute the primary correctness evidence.
 
 % ─── 7. DISCUSSION ───────────────────────────────────────────────────────────
 \section{Discussion}
+
+The results across B-01--B-10 are best understood through a single observation:
+the contribution is not that the model is given more information, but that it is
+prevented from reasoning inconsistently with information already known to be true.
+Everything else in Unravel's architecture follows from this.
 
 \subsection{Structural Understanding as a General Primitive}
 
@@ -1444,14 +1584,15 @@ scheduling may not be statically identifiable.
 cases but can produce false positives in complex chained callback expressions where upward
 parent traversal encounters ambiguous scope boundaries.
 
-\textbf{Benchmark scale and methodology.} Five of UDB-20's 20 bugs have been graded
-at time of writing. The preliminary results (29/30 vs.~25/30) provide directional
-signal but not statistical power; conclusions must be treated as preliminary pending
-completion of all 20 bugs. All 20 bugs are constructed by the same author who designed
-the system. The grading is human against a pre-locked ground truth, not independently
-replicated. The planted proximate traps were not independently validated as genuinely
-misleading to humans before being embedded --- they were designed to be traps based on
-the author's judgment. A fully independent benchmark construction and grading would
+\textbf{Benchmark scale and methodology.} Ten of UDB-20's 20 bugs have been graded at time of writing.
+The results (59/60 Unravel vs.~52/60 baseline) provide directional signal;
+the remaining ten bugs (B-11--B-20) are required for full statistical coverage.
+All 20 bugs are constructed by the same author who designed the system; grading
+is human against pre-locked ground truth, not independently replicated. The planted
+proximate traps were designed by the author and not independently validated as
+genuinely misleading before embedding. B-10 was re-run after an AST improvement;
+only the post-fix score appears in the aggregate, with the pre-fix score reported
+separately (\ S\ref{sec:b10-two-runs}). A fully independent replication would
 substantially strengthen all quantitative claims.
 
 \textbf{Failure case: scheduling-dependent race condition.} In one analysis involving a
@@ -1479,7 +1620,7 @@ was unexpected: both Unravel and unaugmented frontier models solved nearly all o
 reliably, and the performance delta was small. Post-analysis identified the reason. The
 bugs, despite their architectural sophistication, were contained in small, focused
 codebases specifically written to isolate the defect. With minimal surrounding code,
-the root cause was effectively visible in the files provided --- there was nowhere else
+the root cause was effectively visible in the files provided -- there was nowhere else
 to look. Unravel's structural grounding still produced a measurable advantage, but the
 signal was weak because the alternative hypothesis space was small. A system built
 specifically for large codebases does not reveal its edge when tested on small ones.
@@ -1495,7 +1636,7 @@ external validation signal the synthetic bugs could not provide.
 
 However, GitHub issues introduce a different evaluation problem. Obtaining a PR
 acceptance for each additional case requires submitting patches to real repositories and
-waiting for maintainer review --- a process that may take days to weeks per case, is
+waiting for maintainer review -- a process that may take days to weeks per case, is
 subject to factors entirely outside diagnostic quality (maintainer availability, competing
 PRs, project roadmap), and cannot be run in controlled comparative conditions. Two cases
 provide proof of concept; they do not provide a repeatable, ablation-ready benchmark.
@@ -1508,11 +1649,11 @@ a ground truth locked before any model runs. The test suite verifies both the bu
 fix independently via \code{pnpm test}. The three-axis rubric (RCA, PFR, CFR) is designed
 to directly measure the failure modes Unravel addresses rather than binary pass/fail.
 
-The preliminary results (Unravel 29/30 vs.\ baseline 25/30 on B-01--B-05) confirm a
-consistent advantage on CFR --- the causal chain reconstruction axis --- while showing
-near-parity on RCA and PFR at this difficulty tier. The author's assessment is that
-this delta, while real, understates Unravel's advantage on genuinely large-scale
-real-world bugs. UDB-20's bugs, despite deliberate effort to make them structurally
+The results across B-01--B-10 (Unravel 59/60 vs.\ baseline 52/60, delta~$+$7) confirm
+a consistent advantage on CFR -- the causal chain reconstruction axis (20/20 vs.~14/20)
+-- while showing near-parity on RCA (19/20 vs.~17/20) and PFR (20/20 vs.~19/20).
+The author's assessment is that this delta, while real, understates Unravel's
+advantage on genuinely large-scale real-world bugs. UDB-20's bugs, despite deliberate effort to make them structurally
 realistic, remain smaller and more self-contained than a typical multi-file issue in a
 production codebase with tens of thousands of lines of surrounding context. The
 hypothesis space is still narrower than in the wild. The structural grounding layer
@@ -1524,8 +1665,8 @@ by different routes.
 The three tiers of evidence in this paper should be read as measuring different things.
 The GitHub PR case studies (\S6.2) measure whether Unravel produces correct, actionable
 diagnoses on real production bugs at the scale and complexity of codebases with thousands
-of files --- they do not support comparative claims. UDB-20 (\S6.3) measures a repeatable
-performance delta against a controlled baseline --- it does not yet reflect the full
+of files -- they do not support comparative claims. UDB-20 (\S6.3) measures a repeatable
+performance delta against a controlled baseline -- it does not yet reflect the full
 difficulty distribution of real-world bugs. The expected pattern, consistent with both
 theoretical motivation and preliminary results, is that Unravel's advantage grows with
 bug complexity, codebase size, and causal chain length. Validating this prediction
@@ -1596,12 +1737,14 @@ The meaningful empirical record is tldraw PR~\#8161 and cal.com PR~\#28296: real
 production bugs in repositories with thousands of files, diagnosed correctly using
 Gemini~2.5~Flash on the free API tier, with the exact causal mechanism confirmed by
 maintainer acceptance. UDB-20 (\S\ref{sec:udb20}) provides a reproducible three-axis
-evaluation framework --- RCA, Proximate Fixation Resistance (PFR), and Causal Flow
-Reconstruction (CFR) --- designed to directly measure the failure modes Unravel targets.
-Preliminary results from the first five bugs (29/30 Unravel vs.~25/30 baseline) show the
-advantage concentrated entirely on CFR: Unravel traced complete multi-hop causal chains
-on all five bugs; the baseline dropped at least one hop on every bug. The full 20-bug
-results are forthcoming.
+evaluation framework -- RCA, Proximate Fixation Resistance (PFR), and Causal Flow
+Reconstruction (CFR) -- designed to directly measure the failure modes Unravel targets.
+Results from the first ten bugs (59/60 Unravel vs.~52/60 baseline, delta~$+$7) show
+Unravel's advantage concentrated on CFR (20/20 vs.~14/20): complete multi-hop causal
+chains traced on all ten bugs versus the baseline dropping hops on six. B-10 additionally
+demonstrated that a 47-word deterministic AST annotation eliminated an entire false
+hypothesis category -- converting a 4/6 pre-fix run to 6/6 -- without any change
+to the prompt or model. The remaining ten bugs (B-11--B-20) are forthcoming.
 
 Larger models will continue to improve at pattern matching over code. The structural
 reasoning gap (knowing which variables are mutated at which lines, which callers break if

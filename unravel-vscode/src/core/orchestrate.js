@@ -12,6 +12,8 @@ import {
     PRESETS,
     buildDynamicSchema, buildDynamicSchemaInstruction,
     LAYER_BOUNDARY_VERDICT,
+    EXTERNAL_FIX_TARGET_VERDICT,
+    classifyErrorType,
 } from './config.js';
 import { runMultiFileAnalysis, initParser } from './ast-engine-ts.js';
 import { runCrossFileAnalysis, selectFilesByGraph } from './ast-project.js';
@@ -158,6 +160,20 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
             + '\nSome files may be truncated. Do NOT make assertions about missing elements '
             + 'if the file appears incomplete. Flag any such claims as UNCERTAIN.\n\n';
         astContext = warningBlock + astContext;
+    }
+
+    // ── Phase 1c: Symptom Contradiction Check ──
+    // Detects mismatches between user's symptom description and AST evidence.
+    // Injected as alerts into astContext — never blocks the analysis.
+    if (mode === 'debug' && astRaw && symptom) {
+        const contradictions = checkSymptomContradictions(symptom, astRaw, codeFiles);
+        if (contradictions.length > 0) {
+            const alertBlock = '\n⚠ SYMPTOM CONTRADICTION ALERTS (user symptom vs AST evidence)\n'
+                + contradictions.map(c => `  ⚡ ${c}`).join('\n')
+                + '\nThe user\'s symptom report may be inaccurate. Investigate these contradictions before accepting the symptom framing at face value.\n\n';
+            astContext += alertBlock;
+            console.log('[CONTRADICTION]', contradictions);
+        }
     }
 
     // Frame AST as verified ground truth (not a checklist)
@@ -344,17 +360,30 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
 
     // ── Phase 5: Claim Verification ──
     onProgress?.({ stage: 'verify', label: 'Verifying Claims', complete: false, elapsed: elapsed() });
-    const verification = verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode);
+    const verification = verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode, symptom);
     if (verification.failures.length > 0) {
         result._verification = verification;
         console.warn('[Verify] Claim failures:', verification.failures);
     }
     // Hard reject: if rootCause evidence is fabricated, reject the analysis
+    if (verification.failures.length > 0) {
+        result._verification = verification;
+        console.group(`[Verify] ${verification.failures.length} claim failure(s):`);
+        for (const f of verification.failures) {
+            console.warn('  ✗', f.reason, '\n    claim:', (f.claim || '').slice(0, 120));
+        }
+        console.groupEnd();
+    }
     if (verification.rootCauseRejected) {
-        console.warn('[Verify] Root cause evidence fabricated — hard rejecting');
+        console.warn('[Verify] ❌ Root cause HARD REJECTED — rootCauseRejected=true');
+        console.warn('[Verify]    Penalty total:', verification.confidencePenalty);
         result.needsMoreInfo = true;
         result._verificationRejected = true;
         result._rejectionReason = 'Root cause references code that does not exist in provided files.';
+    } else if (verification.failures.length > 0) {
+        console.log('[Verify] ⚠ Soft failures only — continuing with confidence penalty:', verification.confidencePenalty);
+    } else {
+        console.log('[Verify] ✓ All claims passed');
     }
     // Security mode: enforce confidence → severity mapping
     if (mode === 'security' && result.vulnerabilities && Array.isArray(result.vulnerabilities)) {
@@ -492,8 +521,54 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
         }
     }
 
+    // ── Phase 5.7: External Fix Target Verdict ──
+    // If verifyClaims detected a cross-repo reference (not hallucination), the diagnosis
+    // may be correct but the fix lives in a different repository.
+    // We surface this as a structured EXTERNAL_FIX_TARGET verdict:
+    //   - Full diagnosis is preserved so the user knows exactly what to fix
+    //   - A clear banner tells them which repo to apply it in
+    //   - We do NOT enter the self-heal loop (the file is in a different repo)
+    if (mode === 'debug' && result._crossRepoFixTarget && !result._verificationRejected) {
+        const { package: targetPkg, file: targetFile } = result._crossRepoFixTarget;
+        const report = result.report || result;
+        const diagnosisConfidence = report.confidence ?? result.confidence ?? 0.8;
+
+        console.warn(`[ExternalFixTarget] Fix lives in external repo: "${targetPkg}" / "${targetFile}"`);
+        onProgress?.({ stage: 'complete', label: 'Analysis Complete', complete: true, elapsed: elapsed() });
+
+        return {
+            verdict: EXTERNAL_FIX_TARGET_VERDICT,
+            schemaVersion: '1.0',
+            targetRepository: targetPkg,
+            targetFile: targetFile,
+            // Preserve the full diagnosis — the user needs to know what to fix
+            diagnosis: report,
+            confidence: diagnosisConfidence,
+            reason: `The root cause is correct, but the fix must be applied in the "${targetPkg}" repository, ` +
+                    `not in the currently analyzed codebase. The file "${targetFile}" is not part of this repository.`,
+            suggestedAction: `Apply the fix described in the diagnosis to the "${targetFile}" file in the "${targetPkg}" repository.`,
+            symptom: report.symptom || result.symptom || symptom,
+            _mode: mode,
+            _provenance: {
+                engineVersion: '3.3',
+                astVersion: '2.2',
+                routerStrategy: _routerStrategy,
+                crossFileAnalysis: !!crossFileRaw,
+                model: options.model || 'unknown',
+                provider: options.provider || 'unknown',
+                timestamp: new Date().toISOString(),
+            },
+        };
+    }
+
     // ── Phase 6: Handle missing files or return ──
-    if (result.needsMoreInfo && result.missingFilesRequest && onMissingFiles && _depth < 2) {
+    // Skip self-heal entirely if we already know the fix target is in a different repo.
+    // Attempting to fetch cross-repo files from the scanned tree would always fail silently.
+    if (result._crossRepoFixTarget) {
+        // Phase 5.7 should have caught this, but guard here too in case verdict wasn't returned
+        // (e.g. if verificationRejected was set after cross-repo tagging)
+        console.warn('[SelfHeal] Skipping: fix target is in external repo, self-heal cannot help.');
+    } else if (result.needsMoreInfo && result.missingFilesRequest && onMissingFiles && _depth < 2) {
         onProgress?.(`SELF-HEAL: Engine requesting additional files (attempt ${_depth + 1}/2)...`);
         const additionalFiles = await onMissingFiles(result.missingFilesRequest);
         if (additionalFiles && additionalFiles.length > 0) {
@@ -674,6 +749,16 @@ function checkSolvability(result, verification, codeFiles, symptom) {
     const rootCause = report.rootCause || '';
     if (!rootCause) return NOT_BOUNDARY;
 
+    // ── Guard: package/build errors are NEVER layer boundaries ──
+    // These error types are always fixable via config changes.
+    // No package resolution error is caused by an upstream OS layer —
+    // it's always a missing dependency declaration or misconfigured workspace.
+    const errorType = classifyErrorType(symptom);
+    if (errorType === 'PACKAGE_RESOLUTION' || errorType === 'BUILD_CONFIG') {
+        console.log(`[Solvability] Skipping layer-boundary check — error type is ${errorType} (always config-fixable)`);
+        return NOT_BOUNDARY;
+    }
+
     // ── Primary gate (deterministic): did rootCause cite any provided file? ──
     //
     // verifyClaims already walks all file references in rootCause.
@@ -714,10 +799,14 @@ function checkSolvability(result, verification, codeFiles, symptom) {
     );
     if (rootCauseFailuresWithProvidedFile) return NOT_BOUNDARY;
 
-    // ── Secondary gate (heuristic): upstream layer keywords in evidence+symptom ──
+    // ── Secondary gate (heuristic): upstream layer keywords ──
+    // IMPORTANT: We intentionally scan only rootCause + evidence text here.
+    // The raw symptom text often contains OS/platform info from the bug report
+    // metadata (e.g. "Operating system: macOS 25.3.0") that would falsely trigger
+    // the OS-layer classification for bugs that have nothing to do with the OS.
+    // Only words in the LLM's own analysis (rootCause, evidence) should count.
     const evidenceText = (Array.isArray(report.evidence) ? report.evidence.join(' ') : '').toLowerCase();
-    const symptomText = (symptom || '').toLowerCase();
-    const fullText = `${rootCause.toLowerCase()} ${evidenceText} ${symptomText}`;
+    const fullText = `${rootCause.toLowerCase()} ${evidenceText}`;
     const matchedKeywords = UPSTREAM_LAYER_KEYWORDS.filter(kw => fullText.includes(kw));
 
     // Require at least one keyword to avoid false positives on cross-file bugs
@@ -805,7 +894,7 @@ function checkSolvability(result, verification, codeFiles, symptom) {
 //   - RootCause fails    → hard reject (needsMoreInfo = true)
 // ═══════════════════════════════════════════════════
 
-function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
+function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode, symptom = '') {
     const failures = [];
     let rootCauseRejected = false;
     let confidencePenalty = 0;
@@ -822,6 +911,29 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
         const noExt = shortName.replace(/\.[^.]+$/, '');
         if (!fileLookup[noExt]) fileLookup[noExt] = fileLookup[shortName];
     }
+    console.log('[Verify] Provided files:', codeFiles.map(f => f.name.split(/[\\/]/).pop()).join(', '));
+
+    // ── Symptom file whitelist ──
+    // Files mentioned in the original error/issue/stack trace are real paths the model
+    // READ from the symptom text — not fabricated. Quoting them in evidence or rootCause
+    // is correct (it's describing the problem). We should not penalise these citations.
+    //
+    // Example: error says "Cannot find package imported from .../extensions/imessage/src/channel.runtime.ts"
+    // → model correctly references channel.runtime.ts in its diagnosis
+    // → without whitelist: verifier hard-rejects (file not in provided inputs)
+    // → with whitelist: silently skipped — model is accurately describing the error, not hallucinating
+    const symptomFilePattern = /[\w\-./\\]+\.(js|jsx|ts|tsx|json|html|css|py|vue|svelte)\b/gi;
+    const symptomFileMentions = new Set();
+    let _sfm;
+    const _symptomText = symptom || '';
+    while ((_sfm = symptomFilePattern.exec(_symptomText)) !== null) {
+        // Index by both full path and short name
+        const fullPath = _sfm[0];
+        const shortName = fullPath.split(/[\\/]/).pop();
+        symptomFileMentions.add(shortName.toLowerCase());
+        symptomFileMentions.add(fullPath.toLowerCase());
+    }
+    console.log('[Verify] Symptom whitelist:', [...symptomFileMentions].filter(s => s.includes('.')).join(', ') || '(none)');
 
     // Helper: find a file in lookup by partial name
     function findFile(name) {
@@ -867,12 +979,20 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
     // Helper: extract file references from text
     function extractFileRefs(text) {
         if (!text) return [];
+        // Stop-list: product/framework names that end in .js/.ts but are never actual file paths.
+        // "Node.js", "Vue.js" etc. appear in LLM prose but are not file references.
+        const PRODUCT_STOPLIST = new Set([
+            'node.js', 'vue.js', 'react.js', 'next.js', 'nuxt.js', 'express.js',
+            'angular.js', 'ember.js', 'backbone.js', 'jquery.js', 'deno.js',
+            'bun.js', 'electron.js', 'socket.io', 'three.js', 'p5.js',
+        ]);
         const refs = [];
-        // Pattern: common file extensions
         const filePattern = /[\w\-./\\]+\.(js|jsx|ts|tsx|json|html|css|py|vue|svelte)\b/gi;
         let m;
         while ((m = filePattern.exec(text)) !== null) {
-            refs.push(m[0].split(/[\\/]/).pop());
+            const shortName = m[0].split(/[/\\]/).pop();
+            if (PRODUCT_STOPLIST.has(shortName.toLowerCase())) continue;
+            refs.push(shortName);
         }
         return [...new Set(refs)];
     }
@@ -960,72 +1080,124 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
     const report = result.report || result; // report may be nested or flat
     const evidenceList = report.evidence || result.evidence;
     if (Array.isArray(evidenceList)) {
+        console.log('[Verify] Check1: Evidence array');
         for (const e of evidenceList) {
             if (typeof e !== 'string') continue;
             const fileRefs = extractFileRefs(e);
+            if (fileRefs.length > 0) console.log('[Verify] Check1 refs:', fileRefs.join(', '));
             for (const fileName of fileRefs) {
                 const fileData = findFile(fileName);
                 if (!fileData) {
+                    if (symptomFileMentions.has(fileName.toLowerCase())) {
+                        console.log(`[Verify] Check1 SKIP (symptom-mentioned): "${fileName}"`);
+                        continue;
+                    }
+                    console.warn(`[Verify] Check1 FAIL: "${fileName}" not in provided files (+0.2 penalty)`);
                     failures.push({ claim: e, reason: `references file "${fileName}" not in provided inputs` });
                     confidencePenalty += 0.2;
+                } else {
+                    console.log(`[Verify] Check1 OK: "${fileName}"`);
                 }
-                // Line number check intentionally removed — narrative evidence strings
-                // have unreliable line citations. Only codeLocation and rootCause are checked.
             }
         }
     }
 
     // === Check 2: codeLocation ===
-    // Checks file existence AND line numbers, but only pairs each line with its own file.
-    // Uses extractFileLinePairs() to avoid the cross-contamination bug where line 32 from
-    // "useSessionData.js L32" was being checked against sessionStore.js (20 lines).
     const codeLocation = report.codeLocation || result.codeLocation;
     if (codeLocation && typeof codeLocation === 'string') {
-        // File existence check (unpaired)
+        console.log('[Verify] Check2 codeLocation:', codeLocation.slice(0, 120));
         const locFileRefs = extractFileRefs(codeLocation);
         for (const fileName of locFileRefs) {
             if (!findFile(fileName)) {
-                failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `file "${fileName}" not in inputs` });
-                confidencePenalty += 0.3;
+                if (symptomFileMentions.has(fileName.toLowerCase())) {
+                    console.log(`[Verify] Check2 SKIP (symptom-mentioned): "${fileName}"`);
+                } else {
+                    console.warn(`[Verify] Check2 FAIL: codeLocation cites "${fileName}" -- not in provided files (+0.3 penalty)`);
+                    failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `file "${fileName}" not in inputs` });
+                    confidencePenalty += 0.3;
+                }
+            } else {
+                console.log(`[Verify] Check2 OK: "${fileName}"`);
             }
         }
-        // Line validation — only check each line against its paired file
         const locPairs = extractFileLinePairs(codeLocation);
         for (const { file, line } of locPairs) {
             const fileData = findFile(file);
-            if (!fileData) continue; // Already caught above
+            if (!fileData) continue;
             if (line > fileData.lines.length + 6) {
+                console.warn(`[Verify] Check2 LINE FAIL: ${file} line ${line} > maxLine ${fileData.lines.length}`);
                 failures.push({ claim: `codeLocation: ${codeLocation}`, reason: `line ${line} in ${file} exceeds file length (${fileData.lines.length})` });
                 confidencePenalty += 0.3;
             }
         }
     }
 
-    // === Check 3: rootCause — hard reject if file is fabricated, soft penalty if line is fabricated ===
-    // Uses extractFileLinePairs() so line numbers are only checked against their own file.
-    // Example: "sessionStore.js L8, useSessionData.js L32"
-    //   → pair (sessionStore.js, 8)   checked against sessionStore.js  (20 lines) → OK
-    //   → pair (useSessionData.js, 32) checked against useSessionData.js (20 lines) → fails +10 slack
-    // Without pairing, both 8 and 32 would be checked against sessionStore.js → false failure.
+    // === Check 3: rootCause -- hard reject if file is fabricated, soft penalty if line is fabricated ===
     const rootCause = report.rootCause || result.rootCause;
+    console.log('[Verify] Check3 rootCause (first 200):', (rootCause || '').slice(0, 200));
     if (rootCause && typeof rootCause === 'string') {
         const rcFileRefs = extractFileRefs(rootCause);
+        console.log('[Verify] Check3 file refs found:', rcFileRefs.join(', ') || '(none)');
         for (const fileName of rcFileRefs) {
             const fileData = findFile(fileName);
             if (!fileData) {
-                // Hard reject: file doesn't exist at all — clear hallucination
-                failures.push({ claim: `rootCause: ${rootCause.slice(0, 100)}`, reason: `references nonexistent file "${fileName}"` });
-                rootCauseRejected = true;
+                // 1. Symptom mention? -- the model is accurately quoting the error, not fabricating
+                if (symptomFileMentions.has(fileName.toLowerCase())) {
+                    console.log(`[Verify] Check3 SKIP (symptom-mentioned): "${fileName}"`);
+                    continue;
+                }
+                // 2. Cross-repo reference (not the same package as scanned repo)?
+                const rawFileName = (() => {
+                    const fileRe = /[\w\-./ \\]+\.(js|jsx|ts|tsx|json|html|css|py|vue|svelte)\b/gi;
+                    let m;
+                    while ((m = fileRe.exec(rootCause)) !== null) {
+                        if (m[0].split(/[/\\]/).pop().toLowerCase() === fileName.toLowerCase()) return m[0];
+                    }
+                    return fileName;
+                })();
+                const pathParts = rawFileName.replace(/\\/g, '/').split('/');
+                const citedPackage = pathParts.length > 1 ? pathParts[0] : '';
+                const scannedRepoPrefix = codeFiles.length > 0 ? codeFiles[0].name.replace(/\\/g, '/').split('/')[0] : '';
+
+                // Paste/upload mode guard: in paste mode, file names have no '/' path separator.
+                // scannedRepoPrefix ends up being the full filename (e.g. "utils.ts"), not a repo name.
+                // Cross-repo detection is meaningless in this context — skip it and fall through to hard-reject.
+                const isGitHubMode = codeFiles.some(f => f.name.includes('/') || f.name.includes('\\'));
+
+                const fullText = [
+                    result.report?.codeLocation || result.codeLocation || '',
+                    (result.report?.evidence || result.evidence || []).join(' '),
+                ].join(' ').toLowerCase();
+                const isCrossRepo = isGitHubMode && (
+                    citedPackage.length > 2 &&
+                    citedPackage !== scannedRepoPrefix &&
+                    (fullText.includes(citedPackage.toLowerCase()) || symptom.toLowerCase().includes(citedPackage.toLowerCase()))
+                );
+                if (isCrossRepo) {
+                    console.warn(`[Verify] Check3 CROSS-REPO: "${fileName}" -> package "${citedPackage}" (not in scanned repo, not a hallucination)`);
+                    failures.push({
+                        claim: `rootCause: ${rootCause.slice(0, 100)}`,
+                        reason: `cross-repo reference: "${fileName}" is in package "${citedPackage}" (not in scanned repo)`,
+                    });
+                    confidencePenalty += 0.05;
+                    result._crossRepoFixTarget = { package: citedPackage, file: rawFileName, detectedFrom: 'rootCause' };
+                } else {
+                    // 3. Genuine hallucination
+                    console.warn(`[Verify] Check3 HARD-REJECT: "${fileName}" not in any provided file (not symptom-mentioned, not cross-repo)`);
+                    failures.push({ claim: `rootCause: ${rootCause.slice(0, 100)}`, reason: `references nonexistent file "${fileName}"` });
+                    rootCauseRejected = true;
+                }
+            } else {
+                console.log(`[Verify] Check3 OK: "${fileName}"`);
             }
         }
-        // Line validation — soft penalty only, each line checked against its own file only
+        // Line validation -- soft penalty only, each line checked against its own file only
         const rcPairs = extractFileLinePairs(rootCause);
         for (const { file, line } of rcPairs) {
             const fileData = findFile(file);
-            if (!fileData) continue; // Already caught above
+            if (!fileData) continue;
             if (line > fileData.lines.length + 10) {
-                // Soft failure — line is clearly wrong but file exists.
-                // NOT rootCauseRejected: diagnosis may still be correct, model just miscounted.
+                console.warn(`[Verify] Check3 LINE FAIL: ${file} line ${line} > maxLine ${fileData.lines.length} (+0.15 penalty)`);
                 failures.push({ claim: `rootCause: ${file} line ${line}`, reason: `line ${line} exceeds file length (${fileData.lines.length}) by more than 10` });
                 confidencePenalty += 0.15;
             }
@@ -1037,22 +1209,56 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
     // A match fires if the claimed name equals, starts, or ends with a known AST var.
     // This is a WARNING only — no confidencePenalty, no rootCauseRejected.
     const varEdges = report.variableStateEdges || result.variableStateEdges;
-    if (Array.isArray(varEdges) && astRaw?.mutations) {
+    // Only run Check 4 when the AST actually produced mutation data.
+    // If mutations is empty ({}), knownVars would be empty too — every claim
+    // would fail, producing guaranteed false positives for correct analyses.
+    if (Array.isArray(varEdges) && astRaw?.mutations && Object.keys(astRaw.mutations).length > 0) {
         const knownVars = new Set();
         for (const key of Object.keys(astRaw.mutations)) {
-            // Keys are like "varName [filename]" or "obj.prop [filename]"
+            // Keys are like "varName [filename]" or "obj.prop [filename]" or "this.prop [filename]" or "arr[] [filename]"
             const varName = key.split(/\s*\[/)[0].trim();
             knownVars.add(varName);
             // Also add the root name (before first dot) for fuzzy matching
             const rootName = varName.split('.')[0];
             if (rootName !== varName) knownVars.add(rootName);
+            // Strip 'this.' prefix — TypeScript class properties are tracked as
+            // 'this.propName' in AST mutation chains but the AI outputs just 'propName'.
+            // Without this, all class property variableStateEdge claims produce false-positive warnings.
+            if (varName.startsWith('this.')) {
+                const propName = varName.slice(5); // remove 'this.'
+                knownVars.add(propName);
+                // also add root of the prop (e.g. 'this.state.x' → 'state')
+                const propRoot = propName.split('.')[0];
+                if (propRoot !== propName) knownVars.add(propRoot);
+            }
+            // Also add the [] array-subscript form — AST tracks 'arr[]' for computed writes
+            // and the AI correctly uses 'arr[]' in variableState, so add both stripped and with suffix.
+            if (varName.endsWith('[]')) {
+                knownVars.add(varName); // already added above, but explicit for clarity
+                knownVars.add(varName.slice(0, -2)); // also add root without []
+            }
         }
         for (const vEdge of varEdges) {
             if (!vEdge.variable) continue;
             const claimed = vEdge.variable.trim();
-            // Fuzzy: exact match OR claimed is a prefix of a known var OR known var is a prefix of claimed
+            // Also try matching without [] suffix — the AST key split on /\s*\[/ strips the first '['
+            // so 'serverLikeCounts[]' in the AI output becomes 'serverLikeCounts' in knownVars.
+            // Stripping [] from claimed at match-time is the correct fix.
+            const claimedBase = claimed.replace(/\[\]$/, '');
+            // Also strip 'this.' prefix from the claim — the AI sometimes outputs 'this.isReady'
+            // but the AST tracks class properties without the prefix (just 'isReady').
+            const claimedNoPfx = claimed.startsWith('this.') ? claimed.slice(5) : claimed;
+            const claimedBaseNoPfx = claimedBase.startsWith('this.') ? claimedBase.slice(5) : claimedBase;
+            // Fuzzy: exact match OR [] -stripped match OR this.-stripped match OR dot-prefix match
             const matched = knownVars.has(claimed) ||
-                [...knownVars].some(k => k.startsWith(claimed + '.') || claimed.startsWith(k + '.'));
+                knownVars.has(claimedBase) ||
+                knownVars.has(claimedNoPfx) ||
+                knownVars.has(claimedBaseNoPfx) ||
+                [...knownVars].some(k =>
+                    k.startsWith(claimed + '.') || claimed.startsWith(k + '.') ||
+                    k.startsWith(claimedBase + '.') || claimedBase.startsWith(k + '.') ||
+                    k.startsWith(claimedNoPfx + '.') || claimedNoPfx.startsWith(k + '.')
+                );
             if (!matched) {
                 // Soft warning only — non-JS variables (CSS props, Python attrs) legitimately
                 // won't appear in JS AST mutations. Don't penalize confidence.
@@ -1060,6 +1266,7 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
             }
         }
     }
+
 
     // === Check 5: Security mode — verify vulnerability file references ===
     if (mode === 'security' && Array.isArray(result.vulnerabilities)) {
@@ -1076,18 +1283,30 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
         }
     }
     // === Check 6: Fix Completeness (Cross-File Call Graph) ===
-    // Flags when a fix modifies a function but omits a co-dependent caller that
-    // would also need updating. Example: changing a shared store function's signature
-    // without updating all callers.
+    // Flags when a fix modifies a function's SIGNATURE in a way that requires updating callers.
+    // Does NOT fire for internal-only changes (adding guards, early returns, logging)
+    // since those are backward-compatible and callers need no changes.
     //
-    // INTENTIONALLY does NOT fire when the caller is a leaf UI component (*.jsx, *.tsx
-    // with React component naming convention — PascalCase). Fixing a custom hook or
-    // utility correctly does not require mentioning every consumer component in the fix.
-    // That would be a false positive — encapsulation is working as intended.
+    // INTENTIONALLY does NOT fire when:
+    //   - The caller is a React component file (*.jsx, *.tsx / PascalCase) — leaf consumers
+    //   - The fix only adds lines (additive diff) — backward-compatible internal change
+    //   - No function parameters are removed in the diffBlock
     const callGraph = crossFileRaw?.callGraph;
     const minimalFix = report.minimalFix || result.minimalFix;
     if (callGraph?.length > 0 && minimalFix && typeof minimalFix === 'string') {
         const fixText = minimalFix.toLowerCase();
+
+        // Detect if the diffBlock contains signature-breaking changes:
+        // A change is signature-breaking only if function parameters are removed (-) from the diff.
+        // Pattern: diff lines starting with '-' that contain 'function' or a parameter-looking removal.
+        const diffBlock = report.diffBlock || result.diffBlock || '';
+        const removedLines = diffBlock.split('\n').filter(l => l.startsWith('-'));
+        const hasSignatureBreakingRemoval = removedLines.some(l => {
+            const stripped = l.slice(1).trim();
+            // A signature removal modifies the function declaration line itself
+            // (contains the function name + parentheses in a removal line)
+            return /function\s*\w+\s*\(|\(\s*\w+\s*[:,]/.test(stripped) && stripped.includes('(');
+        });
 
         // A function is "modified" if the fix explicitly mentions both the function AND its file
         const modifiedFunctions = new Set();
@@ -1099,34 +1318,36 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
             }
         }
 
-        for (const edge of callGraph) {
-            if (!modifiedFunctions.has(edge.function)) continue;
+        // Only run caller-check if there's a signature-breaking change.
+        // Internal-only fixes (adding guards, version checks, early returns) are backward-compatible.
+        if (hasSignatureBreakingRemoval) {
+            for (const edge of callGraph) {
+                if (!modifiedFunctions.has(edge.function)) continue;
 
-            const callerBase = edge.caller.split(/[\\/]/).pop().toLowerCase();
-            if (fixText.includes(callerBase)) continue; // caller is already mentioned — fine
+                const callerBase = edge.caller.split(/[\\/]/).pop().toLowerCase();
+                if (fixText.includes(callerBase)) continue; // caller already mentioned — fine
 
-            // Skip if caller is a React component file (PascalCase filename or .jsx/.tsx extension).
-            // These are leaf consumers — they don't need to be modified when a hook/utility is fixed.
-            const callerFileName = edge.caller.split(/[\\/]/).pop();
-            const isReactComponentFile =
-                /\.(jsx|tsx)$/i.test(callerFileName) ||          // JSX/TSX files are almost always components
-                /^[A-Z]/.test(callerFileName.replace(/\.[^.]+$/, '')); // PascalCase filename
+                // Skip React component files
+                const callerFileName = edge.caller.split(/[\\/]/).pop();
+                const isReactComponentFile =
+                    /\.(jsx|tsx)$/i.test(callerFileName) ||
+                    /^[A-Z]/.test(callerFileName.replace(/\.[^.]+$/, ''));
+                if (isReactComponentFile) continue;
 
-            if (isReactComponentFile) continue;
+                // Skip self-referential edges
+                const calleeBase = edge.callee.split(/[\\/]/).pop().toLowerCase();
+                if (callerBase === calleeBase) continue;
 
-            // Also skip if the caller is the file being fixed (self-referential call graph edge)
-            const calleeBase = edge.callee.split(/[\\/]/).pop().toLowerCase();
-            if (callerBase === calleeBase) continue;
+                failures.push({
+                    claim: `Fix Completeness: ${edge.function}`,
+                    reason: `Fix modifies ${edge.function} in ${edge.callee} but misses updates to caller ${edge.caller}`
+                });
+                confidencePenalty += 0.15;
 
-            failures.push({
-                claim: `Fix Completeness: ${edge.function}`,
-                reason: `Fix modifies ${edge.function} in ${edge.callee} but misses updates to caller ${edge.caller}`
-            });
-            confidencePenalty += 0.15;
-
-            const uncerts = report.uncertainties || result.uncertainties;
-            if (Array.isArray(uncerts)) {
-                uncerts.push(`AST Guard: Fix modifies '${edge.function}' but misses updates to downstream caller '${callerBase}'`);
+                const uncerts = report.uncertainties || result.uncertainties;
+                if (Array.isArray(uncerts)) {
+                    uncerts.push(`AST Guard: Fix modifies '${edge.function}' but misses updates to downstream caller '${callerBase}'`);
+                }
             }
         }
     }
@@ -1149,3 +1370,103 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode) {
     return { failures, rootCauseRejected, confidencePenalty };
 }
 
+// ═══════════════════════════════════════════════════
+// Symptom Contradiction Check — Pre-Pipeline Guard
+// Detects mismatches between what the user reports
+// and what the AST factually shows. Purely advisory —
+// injected as alerts into the prompt, never blocks.
+// ═══════════════════════════════════════════════════
+
+/**
+ * @param {string} symptom       - User's bug description
+ * @param {Object} astRaw        - { mutations, closures, timingNodes, ... }
+ * @param {Array}  codeFiles     - [{name, content}]
+ * @returns {string[]} Array of contradiction alert strings (empty = none found)
+ */
+function checkSymptomContradictions(symptom, astRaw, codeFiles) {
+    const alerts = [];
+    if (!symptom || !astRaw) return alerts;
+    const symptomLower = symptom.toLowerCase();
+
+    // ── Check 1: Listener Gap ──
+    // User says "not firing" / "event not" / "never triggered" / "doesn't work"
+    // but AST shows addEventListener IS wired for that event type.
+    const listenerPhrases = [
+        'not firing', 'never fires', 'never triggered', 'not triggered',
+        'event not', "doesn't fire", "doesn't trigger", 'not called',
+        'not working', "doesn't work", 'never called',
+    ];
+    const hasListenerComplaint = listenerPhrases.some(p => symptomLower.includes(p));
+    if (hasListenerComplaint && astRaw.timingNodes) {
+        const listenerNodes = astRaw.timingNodes.filter(t =>
+            t.api && t.api.includes('addEventListener')
+        );
+        if (listenerNodes.length > 0) {
+            // Check if the specific event type from symptom matches
+            const eventTypes = listenerNodes
+                .map(t => {
+                    const match = t.api.match(/addEventListener\("([^"]+)"\)/);
+                    return match ? match[1] : null;
+                })
+                .filter(Boolean);
+            const mentionedEvent = eventTypes.find(ev => symptomLower.includes(ev));
+            if (mentionedEvent) {
+                alerts.push(
+                    `LISTENER GAP: User says "${listenerPhrases.find(p => symptomLower.includes(p))}" but AST confirms addEventListener("${mentionedEvent}") IS wired at ` +
+                    listenerNodes.filter(t => t.api.includes(mentionedEvent)).map(t => `L${t.line}`).join(', ') +
+                    `. The listener exists — the bug may be in the handler logic, not the binding.`
+                );
+            } else if (eventTypes.length > 0) {
+                alerts.push(
+                    `LISTENER PRESENT: User reports event issues but AST confirms addEventListener is wired for [${eventTypes.join(', ')}]. ` +
+                    `Verify the event type and handler logic rather than assuming binding is missing.`
+                );
+            }
+        }
+    }
+
+    // ── Check 2: Accused Function Has No Writes ──
+    // User names a specific function as the bug source, but AST mutations
+    // show that function makes no state writes — it may be a symptom site,
+    // not the root cause.
+    if (astRaw.mutations) {
+        // Extract function names mentioned in symptom
+        const fnPattern = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(\)/g;
+        let match;
+        const accusedFns = [];
+        while ((match = fnPattern.exec(symptom)) !== null) {
+            accusedFns.push(match[1]);
+        }
+
+        for (const fn of accusedFns) {
+            // Check if this function is an author of any writes
+            let hasWrites = false;
+            for (const key of Object.keys(astRaw.mutations)) {
+                const data = astRaw.mutations[key];
+                if (data.writes && data.writes.some(w => w.fn === fn)) {
+                    hasWrites = true;
+                    break;
+                }
+            }
+            if (!hasWrites) {
+                // Check if it at least reads state (it's a consumer, not a producer)
+                let hasReads = false;
+                for (const key of Object.keys(astRaw.mutations)) {
+                    const data = astRaw.mutations[key];
+                    if (data.reads && data.reads.some(r => r.fn === fn)) {
+                        hasReads = true;
+                        break;
+                    }
+                }
+                if (hasReads) {
+                    alerts.push(
+                        `CRASH SITE ≠ ROOT CAUSE: User names ${fn}() as buggy, but AST shows ${fn}() only READS state — it makes no writes. ` +
+                        `This is likely the crash site (where failure is visible), not the root cause (where state was corrupted).`
+                    );
+                }
+            }
+        }
+    }
+
+    return alerts;
+}

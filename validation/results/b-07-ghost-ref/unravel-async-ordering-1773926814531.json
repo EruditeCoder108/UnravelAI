@@ -1,0 +1,187 @@
+{
+  "aiPrompt": "The `PluginManager.buildRegistry` method is not correctly waiting for all asynchronous plugin registrations to complete. It uses `Array.prototype.forEach` with an `async` callback, which causes `buildRegistry` to resolve its own promise prematurely. This leaves the `this.registry` empty when `AppBootstrapper`'s `run()` method continues, leading to `EventDispatcher` not finding any handlers. Modify `buildRegistry` to use `Promise.all` with `Array.prototype.map` to ensure all plugin `getSupportedEvents` promises are awaited before `buildRegistry` resolves. Make this change in `src/core/PluginManager.ts`.",
+  "bugType": "ASYNC_ORDERING",
+  "codeLocation": "src/core/PluginManager.ts L13",
+  "conceptExtraction": {
+    "bugCategory": "Asynchronous Control Flow",
+    "concept": "Correctly awaiting asynchronous operations within array iterations.",
+    "patternToAvoid": "Using `Array.prototype.forEach` with an `async` callback when the outer function needs to wait for all inner asynchronous tasks to complete. `forEach` is synchronous and does not wait for Promises returned by its callback, leading to premature resolution of the outer Promise.",
+    "realWorldAnalogy": "Imagine you're a project manager (the `buildRegistry` function) who needs to collect status reports from several team members (the plugins). You assign the task to each team member (using `forEach`), telling them to go gather their data (an `async` task). If you immediately declare your own task 'complete!' *without waiting for each team member to actually return with their completed report*, then when someone asks for a summary, you'll have nothing because you returned too early. The correct approach is to wait for *all* team members to return with their reports (using `Promise.all`) before you declare your own task complete.",
+    "whyItMatters": "This pattern frequently leads to race conditions or incorrect program state, where subsequent code that relies on asynchronous work being finished will operate on incomplete or stale data. It's a common pitfall when mixing synchronous array iteration methods with asynchronous operations in JavaScript/TypeScript."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/core/PluginManager.ts L13\n-    plugins.forEach(async (plugin) => {\n+    const registrationPromises = plugins.map(async (plugin) => {\n       const events = await plugin.getSupportedEvents();\n       events.forEach((event) => {\n         this.registry[event] = plugin;\n         this.registrationLog.push(`${event} → ${plugin.name}`);\n       });\n     });\n+    await Promise.all(registrationPromises);",
+  "evidence": [
+    "src/core/PluginManager.ts L13: `plugins.forEach(async (plugin) => { ... })` does not await its async callbacks.",
+    "src/core/PluginManager.ts L14: `await plugin.getSupportedEvents()` is an async operation occurring within a callback that `forEach` does not wait for.",
+    "src/app/AppBootstrapper.ts L27: `[Bootstrap] Registry size after buildRegistry: ${this.manager.getRegistrySize()}` logs 0, confirming the registry is empty after `await this.manager.buildRegistry(plugins);` resolves."
+  ],
+  "hypotheses": [
+    "forEach with async callback silently discards promises.",
+    "Stale reference to PluginManager or registry.",
+    "Event name mismatch or type coercion issue."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "id": "H1",
+      "reason": "The `PluginManager.buildRegistry` at `PluginManager.ts L13` uses `plugins.forEach(async (plugin) => { ... })`. `Array.prototype.forEach` does not wait for Promises returned by its callback. Thus, `buildRegistry` resolves its own `Promise<void>` prematurely, before `await plugin.getSupportedEvents()` (L14 `PluginManager.ts`) and subsequent registry population complete. This is directly evidenced by `AppBootstrapper.ts L27` logging a registry size of 0 immediately after `buildRegistry` is awaited.",
+      "status": "survived",
+      "text": "forEach with async callback silently discards promises"
+    },
+    {
+      "eliminatedBy": "AppBootstrapper.ts L19: this.manager = new PluginManager();",
+      "id": "H2",
+      "reason": "`AppBootstrapper.constructor()` (L19, L20 `AppBootstrapper.ts`) instantiates `PluginManager` and `EventDispatcher` once, passing the same manager instance. No code reassigns `this.manager` or `this.dispatcher`, ensuring they always refer to the same objects.",
+      "status": "eliminated",
+      "text": "Stale reference to PluginManager or registry"
+    },
+    {
+      "eliminatedBy": "AuditPlugin.ts L15: return ['user:login', 'user:logout', 'user:permission_change'];",
+      "id": "H3",
+      "reason": "`AuditPlugin.getSupportedEvents()` (L15 `AuditPlugin.ts`) returns event strings like `user:login`. The `EventDispatcher` warning message (L20 `EventDispatcher.ts`) explicitly states `No handler registered for event: \"user:login\"`, confirming the event names are consistent and no transformation is expected.",
+      "status": "eliminated",
+      "text": "Event name mismatch or type coercion issue"
+    }
+  ],
+  "invariants": [
+    "After `PluginManager.buildRegistry()` resolves, `PluginManager.registry` MUST be fully populated with all events supported by the provided plugins.",
+    "The `PluginManager.getRegistrySize()` method MUST accurately reflect the number of unique events registered at any given time.",
+    "The `AppBootstrapper.run()` method MUST ensure that `PluginManager.buildRegistry()` has completed all its asynchronous work BEFORE any event dispatch attempts are made by `EventDispatcher`."
+  ],
+  "minimalFix": "The `buildRegistry` method in `src/core/PluginManager.ts` needs to be updated. The current implementation uses `Array.prototype.forEach` with an `async` callback. While the callback function itself is asynchronous, `forEach` does not wait for the Promises returned by these callbacks to resolve. This means `buildRegistry` resolves its own promise prematurely, before the `registry` is actually populated.\n\nTo fix this, we need to collect all the promises generated by the asynchronous registration work and then `await Promise.all()` on them. This ensures that `buildRegistry` will only resolve once all plugins have reported their supported events and the registry is fully built.",
+  "proximate_crash_site": "EventDispatcher.dispatch() L20 — No handler found, logs a warning.",
+  "reproduction": [
+    "1. Instantiate `AppBootstrapper`.",
+    "2. Call `await appBootstrapper.run()`.",
+    "3. Call `await appBootstrapper.emitEvent('user:login', { userId: 123 })`.",
+    "4. Observe the console warning: `[EventDispatcher] No handler registered for event: \"user:login\"`.",
+    "5. Observe that `AuditPlugin.auditLog` remains empty."
+  ],
+  "rootCause": "The `PluginManager.buildRegistry` function (src/core/PluginManager.ts L13) uses `Array.prototype.forEach` with an `async` callback. `forEach` executes the callback for each item but does not await the Promises returned by the `async` callback. Consequently, `buildRegistry` returns its own `Promise<void>` which resolves immediately, *before* the asynchronous work of calling `plugin.getSupportedEvents()` and populating `this.registry` has completed. This leads to an empty `registry` when `AppBootstrapper.run()` continues execution, even though `await buildRegistry()` was used.",
+  "symptom": "No events are being handled by the `EventDispatcher`, and console warnings like `[EventDispatcher] No handler registered for event: \"user:login\"` are logged. The `PluginManager`'s registry appears empty (`getRegistrySize()` returns 0) even after `buildRegistry()` has been called and awaited.",
+  "timelineEdges": [
+    {
+      "from": "AppBootstrapper",
+      "isBugPoint": false,
+      "label": "calls buildRegistry",
+      "to": "PluginManager.buildRegistry"
+    },
+    {
+      "from": "PluginManager.buildRegistry",
+      "isBugPoint": true,
+      "label": "iterates plugins with forEach(async)",
+      "to": "PluginManager.buildRegistry (forEach loop)"
+    },
+    {
+      "from": "PluginManager.buildRegistry (forEach loop)",
+      "isBugPoint": true,
+      "label": "schedules async work, but does not await it",
+      "to": "PluginManager.buildRegistry (returns Promise)"
+    },
+    {
+      "from": "PluginManager.buildRegistry (returns Promise)",
+      "isBugPoint": true,
+      "label": "resolves its Promise prematurely",
+      "to": "AppBootstrapper"
+    },
+    {
+      "from": "AppBootstrapper",
+      "isBugPoint": false,
+      "label": "continues execution, registry is empty",
+      "to": "EventDispatcher"
+    },
+    {
+      "from": "EventDispatcher",
+      "isBugPoint": false,
+      "label": "dispatches event, calls getHandler",
+      "to": "PluginManager.getHandler"
+    },
+    {
+      "from": "PluginManager.getHandler",
+      "isBugPoint": false,
+      "label": "finds empty registry, returns undefined",
+      "to": "EventDispatcher"
+    },
+    {
+      "from": "EventDispatcher",
+      "isBugPoint": false,
+      "label": "logs 'No handler registered'",
+      "to": "Console"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [
+    {
+      "meaning": "The map storing event name to plugin handler mappings.",
+      "variable": "this.registry",
+      "whereChanged": "src/core/PluginManager.ts L15"
+    },
+    {
+      "meaning": "List of strings logging successful event registrations.",
+      "variable": "this.registrationLog",
+      "whereChanged": "src/core/PluginManager.ts L16"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "initialized L10",
+          "to": "constructor",
+          "type": "write"
+        },
+        {
+          "from": "buildRegistry",
+          "label": "mutated L15",
+          "to": "buildRegistry",
+          "type": "mutate"
+        },
+        {
+          "from": "getHandler",
+          "label": "read L22",
+          "to": "getHandler",
+          "type": "read"
+        },
+        {
+          "from": "getRegistrySize",
+          "label": "read L26",
+          "to": "getRegistrySize",
+          "type": "read"
+        },
+        {
+          "from": "clearRegistry",
+          "label": "written L30",
+          "to": "clearRegistry",
+          "type": "write"
+        }
+      ],
+      "variable": "this.registry"
+    },
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "initialized L11",
+          "to": "constructor",
+          "type": "write"
+        },
+        {
+          "from": "buildRegistry",
+          "label": "mutated L16",
+          "to": "buildRegistry",
+          "type": "mutate"
+        },
+        {
+          "from": "clearRegistry",
+          "label": "written L31",
+          "to": "clearRegistry",
+          "type": "write"
+        }
+      ],
+      "variable": "this.registrationLog"
+    }
+  ],
+  "whyFixWorks": "The original implementation of `buildRegistry` (PluginManager.ts L13) used `plugins.forEach(async (plugin) => { ... })`. `Array.prototype.forEach` is a synchronous iteration method; it executes its callback for each item in the array but does not wait for any Promises returned by an `async` callback to resolve. This caused `buildRegistry`'s own `Promise<void>` to resolve almost immediately, before the `await plugin.getSupportedEvents()` calls and subsequent `this.registry` population could complete.\n\nThe fix modifies `buildRegistry` to use `plugins.map(async (plugin) => { ... })`. This transforms the array of plugins into an array of Promises, where each Promise represents the completion of a single plugin's event registration. By then calling `await Promise.all(registrationPromises)`, `buildRegistry` is forced to wait for *all* these individual plugin registration Promises to settle. This guarantees that when `buildRegistry` finally resolves, `this.registry` is fully populated with all supported events, ensuring that `EventDispatcher` can correctly find and dispatch events to the registered handlers."
+}
