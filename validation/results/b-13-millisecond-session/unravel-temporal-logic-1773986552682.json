@@ -1,0 +1,129 @@
+{
+  "aiPrompt": "The `TokenValidator.isValid` function is comparing `payload.exp` (Unix timestamp in seconds) against `Date.now()` (Unix timestamp in milliseconds), causing all tokens to be prematurely invalidated. Additionally, there's a critical security flaw: the token signature is never actually verified. Please apply the minimal fix for the unit mismatch and, more importantly, implement robust signature verification in `TokenValidator.decode` to prevent token tampering. Ensure consistency with the signature generation logic in `TokenIssuer`.",
+  "bugType": "TEMPORAL_LOGIC",
+  "codeLocation": "src/auth/TokenValidator.ts:L23",
+  "conceptExtraction": {
+    "bugCategory": "Temporal Logic / Data Flow",
+    "concept": "Unit consistency in time-based calculations.",
+    "patternToAvoid": "Comparing or performing arithmetic on temporal values without explicitly ensuring they are in the same unit and epoch (e.g., seconds vs. milliseconds, UTC vs. local time).",
+    "realWorldAnalogy": "Imagine planning a trip where one person measures distance in kilometers and another in miles, but you both use the same map. If you're told to travel '100 units,' you might either undershoot or overshoot massively if you don't realize the unit difference. Similarly, when dealing with time, if a token says it expires in '3600 units' (seconds) and the validator thinks '3600 units' means milliseconds, it will wrongly consider the token expired almost instantly. You need to convert everything to a common unit (e.g., all miles, or all kilometers) before making comparisons or calculations.",
+    "whyItMatters": "Inconsistent units for time (seconds vs. milliseconds, days vs. hours, UTC vs. local time) are a common source of bugs, especially in authentication, scheduling, and distributed systems. Even small differences can lead to large, system-breaking errors, making applications unusable or insecure."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/auth/TokenValidator.ts L23\n-    return payload.exp > Date.now();\n+    return payload.exp * 1000 > Date.now();",
+  "evidence": [
+    "src/auth/TokenIssuer.ts:L20: The `exp` field is set as `now + ttlSeconds`, where `now` is `Math.floor(Date.now() / 1000)`, making `exp` a Unix timestamp in seconds.",
+    "src/auth/TokenValidator.ts:L23: The comparison `payload.exp > Date.now()` directly compares `payload.exp` (seconds) with `Date.now()` (milliseconds), leading to `false` for any valid token.",
+    "src/auth/AuthMiddleware.ts:L21: The `check` method relies on `this.validator.isValid(token)` to authorize requests, which then incorrectly evaluates token expiration."
+  ],
+  "hypotheses": [
+    "TokenIssuer's exp field is wrong.",
+    "TokenValidator decode returns bad payload.",
+    "isValid compares seconds to milliseconds."
+  ],
+  "hypothesisTree": [
+    {
+      "id": "H1",
+      "reason": "TokenIssuer.issue L20 calculates `exp` as `now + ttlSeconds` where `now` is `Math.floor(Date.now() / 1000)`. This produces a valid Unix timestamp in *seconds*, which is semantically correct for an `exp` field. The user also explicitly confirmed that the `payload.exp` value looks plausible (`~1,720,000,000`) and is `now + 3600` as expected.",
+      "status": "eliminated",
+      "text": "TokenIssuer's exp field is wrong."
+    },
+    {
+      "id": "H2",
+      "reason": "The user explicitly stated: \"I have confirmed that `TokenValidator.decode()` does return a payload (not null)\". This evidence contradicts the hypothesis that `decode` is failing or returning a malformed payload, as it confirms successful parsing of the token's body.",
+      "status": "eliminated",
+      "text": "TokenValidator decode returns bad payload."
+    },
+    {
+      "id": "H3",
+      "reason": "TokenIssuer.issue L20 calculates `exp` as `now + ttlSeconds`, which means `payload.exp` is a Unix timestamp in *seconds*. TokenValidator.isValid L23 compares `payload.exp` with `Date.now()`. `Date.now()` returns the current time in *milliseconds*. Therefore, `payload.exp` (seconds) will always be orders of magnitude smaller than `Date.now()` (milliseconds), making the comparison `payload.exp > Date.now()` always evaluate to `false`.",
+      "status": "survived",
+      "text": "isValid compares seconds to milliseconds."
+    }
+  ],
+  "invariants": [
+    "All time-based values (e.g., `iat`, `exp`, current time for comparison) MUST be represented in a consistent unit (e.g., milliseconds since Unix epoch) throughout the application's logic.",
+    "Any external input or internal calculation producing a time value in a different unit MUST be explicitly converted to the standard unit before use in comparisons or arithmetic.",
+    "Token signatures MUST always be verified to prevent tampering and ensure token authenticity. The signature generation and verification logic must be symmetric and use the same secret.",
+    "The `Authorization` header MUST conform to the `Bearer <token>` format.",
+    "`TokenPayload` MUST contain `sub` and `exp` fields for a token to be considered valid.",
+    "`TokenValidator.decode` MUST return `null` if the token is malformed, has an invalid signature, or cannot be parsed."
+  ],
+  "minimalFix": "The root cause is a unit mismatch when comparing token expiration. `TokenIssuer` creates `exp` as a Unix timestamp in *seconds*, but `TokenValidator.isValid` compares this value against `Date.now()`, which returns time in *milliseconds*. This causes `payload.exp > Date.now()` to always evaluate to `false` because the 'seconds' value is much smaller than the 'milliseconds' value, making all tokens appear expired instantly.\n\nTo fix this, we need to convert `payload.exp` from seconds to milliseconds before comparison, aligning the units:\n\n```typescript\n// src/auth/TokenValidator.ts\nexport class TokenValidator {\n  // ... other methods ...\n\n  isValid(token: string): boolean {\n    const payload = this.decode(token);\n    if (!payload) return false;\n    if (!payload.sub || !payload.exp) return false;\n    // FIX: Convert payload.exp from seconds to milliseconds for comparison\n    return payload.exp * 1000 > Date.now();\n  }\n}\n```\n\n### ARCHITECTURAL NOTE: Critical Security Flaw - Missing Signature Verification\n\nThe minimal fix above addresses the immediate expiration bug. However, your custom JWT implementation has a *critical security flaw*: `TokenValidator` *never* verifies the token's signature. The `TokenIssuer` does generate a signature (`src/auth/TokenIssuer.ts:L26`), but `TokenValidator`'s `decode` method only parses the payload (`parts[1]`) and does not check `parts[2]` (the signature) against a re-calculated expected signature. This means any attacker could forge a token, change the `userId` (`sub`) or `role`, set an `exp` in the future, and it would pass your current validation, leading to complete compromise.\n\n**The Correct Design:** A secure JWT implementation requires signature verification. The validator must re-compute the signature using the token's header, body, and the shared secret, then compare it to the received signature. If they don't match, the token is invalid.\n\n**The FULL Better Fix:**\n\n```typescript\n// src/auth/TokenValidator.ts\nimport { TokenPayload } from './TokenIssuer';\n\nexport class TokenValidator {\n  private secret: string;\n\n  constructor(secret: string) {\n    this.secret = secret;\n  }\n\n  // Helper to generate signature, matching TokenIssuer's logic\n  private generateSignature(header: string, body: string): string {\n    return btoa(`${this.secret}:${header}.${body}`);\n  }\n\n  decode(token: string): TokenPayload | null {\n    try {\n      const parts = token.split('.');\n      if (parts.length !== 3) return null;\n\n      const [header, body, signature] = parts;\n\n      // CRITICAL SECURITY FIX: Verify the token signature\n      const expectedSignature = this.generateSignature(header, body);\n      if (signature !== expectedSignature) {\n        console.warn('Token validation failed: Signature mismatch. Potential tampering detected.');\n        return null; // Invalid signature means an invalid token\n      }\n\n      // Proceed to parse payload only if signature is valid\n      return JSON.parse(atob(body)) as TokenPayload;\n    } catch (e) {\n      console.error('Error decoding or validating token:', e);\n      return null;\n    }\n  }\n\n  isValid(token: string): boolean {\n    // decode now implicitly includes signature validation\n    const payload = this.decode(token);\n    if (!payload) return false;\n    if (!payload.sub || !payload.exp) return false;\n\n    // UNIT FIX: Convert payload.exp from seconds to milliseconds for comparison\n    return payload.exp * 1000 > Date.now();\n  }\n}\n```\n\n**Files to Change for Better Fix:** `src/auth/TokenValidator.ts`",
+  "proximate_crash_site": "TokenValidator.isValid() L23 — `payload.exp > Date.now()` always returns `false` due to unit mismatch.",
+  "reproduction": [
+    "1. Issue a token using `TokenIssuer.issue()` with a `ttlSeconds` (e.g., 3600 for 1 hour).",
+    "2. Attempt to use this token in an authenticated request that passes through `AuthMiddleware.check()`.",
+    "3. The `AuthMiddleware` will call `TokenValidator.isValid()` on the token.",
+    "4. `TokenValidator.isValid()` will call `decode()` successfully, retrieving a `payload.exp` value in seconds (e.g., 1720000000).",
+    "5. The comparison `payload.exp > Date.now()` will always be `false` because 1.7 billion (seconds) is not greater than 1.7 trillion (milliseconds).",
+    "6. The request will be rejected with the reason 'Token is invalid or expired'."
+  ],
+  "rootCause": "The `TokenIssuer` sets the `exp` field in the JWT payload as a Unix timestamp in *seconds* (src/auth/TokenIssuer.ts:L20). However, the `TokenValidator.isValid` function (src/auth/TokenValidator.ts:L23) compares this `payload.exp` value directly with `Date.now()`, which returns the current time in *milliseconds*. This unit mismatch causes `payload.exp` (seconds) to always be significantly smaller than `Date.now()` (milliseconds), making every token appear expired immediately.",
+  "symptom": "Every authenticated request in production returns 401 Unauthorized with `\"Token is invalid or expired\"` for all logged-in users, even with freshly issued tokens. Login works, but subsequent requests fail. Tests pass. `payload.exp` in decoded tokens looks correct when logged, but `isValid()` still returns false.",
+  "timelineEdges": [
+    {
+      "from": "Client",
+      "isBugPoint": false,
+      "label": "Requests login with credentials",
+      "to": "Application"
+    },
+    {
+      "from": "Application",
+      "isBugPoint": false,
+      "label": "Calls TokenIssuer.issue()",
+      "to": "TokenIssuer"
+    },
+    {
+      "from": "TokenIssuer",
+      "isBugPoint": false,
+      "label": "Calculates exp in seconds (L20)",
+      "to": "TokenPayload"
+    },
+    {
+      "from": "TokenIssuer",
+      "isBugPoint": false,
+      "label": "Returns token and payload",
+      "to": "Application"
+    },
+    {
+      "from": "Client",
+      "isBugPoint": false,
+      "label": "Sends authenticated request with token",
+      "to": "AuthMiddleware"
+    },
+    {
+      "from": "AuthMiddleware",
+      "isBugPoint": false,
+      "label": "Calls TokenValidator.isValid() (L21)",
+      "to": "TokenValidator"
+    },
+    {
+      "from": "TokenValidator",
+      "isBugPoint": false,
+      "label": "Calls decode() to parse token body",
+      "to": "TokenValidator"
+    },
+    {
+      "from": "TokenValidator",
+      "isBugPoint": true,
+      "label": "Compares payload.exp (seconds) with Date.now() (milliseconds) (L23)",
+      "to": "TokenValidator"
+    },
+    {
+      "from": "TokenValidator",
+      "isBugPoint": false,
+      "label": "Returns false (token appears expired)",
+      "to": "AuthMiddleware"
+    },
+    {
+      "from": "AuthMiddleware",
+      "isBugPoint": false,
+      "label": "Returns { allowed: false, reason: 'Token is invalid or expired' }",
+      "to": "Client"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [],
+  "whyFixWorks": "The fix `payload.exp * 1000 > Date.now()` corrects the unit mismatch. `payload.exp` is stored in seconds by the `TokenIssuer`. By multiplying it by `1000`, we convert this value to milliseconds, making it directly comparable to the output of `Date.now()`, which is already in milliseconds. This ensures that the token's actual expiration time is correctly evaluated against the current time, resolving the premature invalidation. The token will now be considered valid until its true expiration timestamp in milliseconds is less than or equal to `Date.now()`."
+}

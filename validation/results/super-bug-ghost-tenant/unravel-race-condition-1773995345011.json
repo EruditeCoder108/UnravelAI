@@ -1,0 +1,283 @@
+{
+  "aiPrompt": "The Node.js application is experiencing a critical data exposure issue under concurrent load. Documents from one tenant are appearing in another tenant's API responses, and audit logs are misattributing access. This is caused by a race condition: a module-scoped variable `_activeTenant` is being used to store request-specific tenant context. When one request calls `setTenant(req.tenantId)` and then `await`s, a concurrent request can overwrite `_activeTenant` before the first request resumes. This leads to `getTenant()` returning the wrong tenant ID, causing data leakage and incorrect audit trails. The solution is to replace the global `_activeTenant` with Node.js's `AsyncLocalStorage` to ensure each asynchronous request maintains its own isolated tenant context. Modify `src/context/TenantContext.ts` to use `AsyncLocalStorage` and `src/middleware/TenantMiddleware.ts` to wrap the request processing in `tenantLocalStorage.run(req.tenantId, ...)`. Also, remove the `setTenant` and `clearTenant` functions from `TenantContext.ts` as they become incompatible with this pattern and their usage should be replaced by `tenantLocalStorage.run` or `withTenant`.",
+  "bugType": "RACE_CONDITION",
+  "codeLocation": "src/middleware/TenantMiddleware.ts L75-L76, src/context/TenantContext.ts L1",
+  "conceptExtraction": {
+    "bugCategory": "Race Condition / Asynchronous Ordering",
+    "concept": "Shared Mutable State in Asynchronous Environments",
+    "patternToAvoid": "Storing request-specific contextual data (like `tenantId`, `userId`, `requestId`) in global variables, module-scoped variables, or `process.env` in an asynchronous server.",
+    "realWorldAnalogy": "Imagine a multi-story hotel where each room needs its temperature set independently, but there's only one thermostat dial for the entire building. If guests from different rooms try to adjust the thermostat at the same time, the temperature in your room might end up being what another guest wanted, not what you set, causing discomfort and confusion. In a software system, this \"shared thermostat\" (the `_activeTenant` global variable) causes requests to receive data intended for another \"room\" (tenant). The fix, `AsyncLocalStorage`, is like giving each room its own private thermostat that only controls that room's temperature, even if the hotel staff (event loop) are juggling many rooms simultaneously.",
+    "whyItMatters": "In concurrent, asynchronous systems (like Node.js servers), using global or module-scoped mutable variables to store request-specific data is a critical anti-pattern. While seemingly convenient, it creates a single point of failure where concurrent requests can overwrite each other's state, leading to data corruption, leakage, and unpredictable behavior. This is especially insidious because it often only manifests under high load and is difficult to reproduce in development."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/context/TenantContext.ts\n+++ src/context/TenantContext.ts\n@@ -1,28 +1,22 @@\n-let _activeTenant: string | null = null;\n+import { AsyncLocalStorage } from 'async_hooks';\n+\n+export const tenantLocalStorage = new AsyncLocalStorage<string>();\n \n export function setTenant(tenantId: string): void {\n-  _activeTenant = tenantId;\n+  throw new Error(\"setTenant is deprecated. Use TenantMiddleware for request-scoped tenant context.\");\n }\n \n export function getTenant(): string {\n-  if (_activeTenant === null) {\n+  const tenantId = tenantLocalStorage.getStore();\n+  if (tenantId === undefined || tenantId === null) {\n     throw new Error(\n       'TenantContext accessed outside of a tenant-scoped request. ' +\n       'Ensure TenantMiddleware runs before any tenant-aware code.'\n     );\n   }\n-  return _activeTenant;\n+  return tenantId;\n }\n \n export function getTenantOrNull(): string | null {\n-  return _activeTenant;\n+  return tenantLocalStorage.getStore() ?? null;\n }\n \n export function clearTenant(): void {\n-  _activeTenant = null;\n+  throw new Error(\"clearTenant is deprecated. AsyncLocalStorage context is automatically managed.\");\n }\n \n export function withTenant<T>(tenantId: string, fn: () => T): T {\n-  const previous = _activeTenant;\n-  _activeTenant = tenantId;\n-  try {\n-    return fn();\n-  } finally {\n-    _activeTenant = previous;\n-  }\n+  return tenantLocalStorage.run(tenantId, fn);\n }\n---\n--- src/middleware/TenantMiddleware.ts\n+++ src/middleware/TenantMiddleware.ts\n@@ -1,4 +1,4 @@\n-import { setTenant, clearTenant } from '../context/TenantContext';\n+import { tenantLocalStorage } from '../context/TenantContext';\n \n export interface TenantRequest {\n   tenantId: string;\n@@ -69,12 +69,12 @@\n       throw new Error('Missing tenantId in request');\n     }\n \n-    setTenant(req.tenantId);\n-    await verifyTenantExists(req.tenantId);\n-\n-    try {\n-      await next();\n-    } finally {\n-      clearTenant();\n-    }\n+    await tenantLocalStorage.run(req.tenantId, async () => {\n+      await verifyTenantExists(req.tenantId);\n+      try {\n+        await next();\n+      } finally {\n+        // The AsyncLocalStorage context automatically ends when the callback completes\n+      }\n+    });\n   }\n }",
+  "evidence": [
+    "src/context/TenantContext.ts L1: `_activeTenant` is declared as a module-scoped mutable variable, making it global to the Node.js process.",
+    "src/middleware/TenantMiddleware.ts L75: `setTenant(req.tenantId)` writes the current request's tenant ID to the global `_activeTenant` variable.",
+    "src/middleware/TenantMiddleware.ts L76: `await verifyTenantExists(req.tenantId)` suspends the execution of the current request, yielding control to the Node.js event loop.",
+    "VERIFIED STATIC ANALYSIS: Global State Written Before Async Yield ⚠ CONCURRENT RACE RISK: `setTenant [TenantMiddleware.ts] written at L75 → await at L76 in handle`. This explicitly identifies the race condition.",
+    "User report: \"console.log(getTenant()) at the top of TenantCache.buildKey() — confirmed it returns the wrong tenant ID during affected requests\". This confirms that after the await, `getTenant()` reads a corrupted value."
+  ],
+  "hypotheses": [
+    "H1: `_activeTenant` overwritten by concurrent request during `await`.",
+    "H2: `_activeTenant` not reset, leading to stale value.",
+    "H3: `AuthMiddleware` sets wrong tenant on request."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "id": "H1",
+      "reason": "`TenantMiddleware.ts L75: setTenant(req.tenantId)` writes to the module-scoped `_activeTenant` variable. `TenantMiddleware.ts L76: await verifyTenantExists(req.tenantId)` suspends execution. During this suspension, a concurrent request can overwrite `_activeTenant`. When the first request resumes, `getTenant()` (used by `QueryBuilder` and `TenantCache`) will read the value set by the concurrent request. This perfectly explains all symptoms, including the `console.log` findings.",
+      "status": "survived",
+      "text": "`_activeTenant` overwritten by concurrent request during `await`"
+    },
+    {
+      "eliminatedBy": "TenantMiddleware.ts L78-L82: try...finally block ensures clearTenant() always runs.",
+      "id": "H2",
+      "reason": "`TenantMiddleware.ts L78-L82: try { await next() } finally { clearTenant() }`. The `finally` block guarantees `clearTenant()` is called even if `next()` throws an error. Thus, `_activeTenant` is reliably cleared after each request, preventing stale state from *persisting* to the *next* request. This hypothesis does not explain *concurrent* overwrites within the same processing window.",
+      "status": "eliminated",
+      "text": "`_activeTenant` not reset, leading to stale value"
+    },
+    {
+      "eliminatedBy": "User report: \"req.tenantId is correct at request entry.\" and \"AuthMiddleware.enrichRequest() correctly extracts tenantId\".",
+      "id": "H3",
+      "reason": "User's investigation explicitly states: \"Added `console.log(req.tenantId)` at the entry of each request handler — confirmed the incoming `req.tenantId` is correct (acme for acme requests)\" and \"Reviewed `AuthMiddleware.enrichRequest()` — correctly extracts tenantId from the JWT claim and attaches it to the request object\". This directly contradicts the hypothesis.",
+      "status": "eliminated",
+      "text": "`AuthMiddleware` sets wrong tenant on request"
+    }
+  ],
+  "invariants": [
+    "Tenant Isolation: For any given request, all data access (read, write, cache operations) and audit logging must be strictly scoped to the `tenantId` associated with that request.",
+    "Context Immutability: Once a `tenantId` context is established for an asynchronous request, it must remain consistent throughout that request's entire lifecycle, even across `await` boundaries.",
+    "Explicit Context Passing (or Isolation): Request-specific data, especially tenant identifiers, must either be explicitly passed through function arguments or managed by an asynchronous context isolation mechanism (like `AsyncLocalStorage`) to avoid implicit global state dependencies.",
+    "Middleware Responsibility: The `TenantMiddleware` is solely responsible for establishing and managing the tenant context for the duration of a request, ensuring it is correctly set at the beginning and cleanly handled (implicitly cleared) at the end."
+  ],
+  "minimalFix": "The core issue is that `_activeTenant` in `src/context/TenantContext.ts` is a module-scoped mutable variable, which means it's a global shared state. In an asynchronous, concurrent environment like Node.js, this leads to race conditions. When `TenantMiddleware.handle` sets `_activeTenant` (L75) and then `await`s (L76), another concurrent request can preemptively run and overwrite `_activeTenant`. When the first request resumes, it reads the tenant ID of the *second* request, leading to data leakage. The fix involves replacing this global mutable state with Node.js's `AsyncLocalStorage`.\n\n`AsyncLocalStorage` provides a way to create storage that is local to an asynchronous execution context. By wrapping the request's processing in `tenantLocalStorage.run(req.tenantId, ...)`, each request gets its own isolated `tenantId` that is automatically propagated through all `await` calls. This ensures that `getTenant()` always retrieves the correct `tenantId` for the current request, even under heavy concurrency.\n\n**Architectural Note:**\nThe original design used a module-scoped variable (`_activeTenant`) to hold request-specific information. This design, in an asynchronous, concurrent environment, becomes a single point of contention, causing race conditions where one request's data overwrites another's. This pattern of 'global mutable context' leads to data corruption, leakage, and unpredictable behavior that is hard to debug.\n\nThe correct design leverages Node.js's `AsyncLocalStorage` to bind contextual data (like `tenantId`) to the asynchronous call stack. This ensures that each concurrent request operates within its own isolated context. The provided 'minimal fix' is also the 'full better fix' in this scenario, as it directly implements this correct architectural pattern.",
+  "proximate_crash_site": "getTenant() in QueryBuilder.ts (L27, L59, L75, L89) and TenantCache.ts (L26, L52, L67) — returns incorrect tenant ID",
+  "reproduction": [
+    "1. Send a request from Tenant A (e.g., Acme) to `/documents` endpoint.",
+    "2. Concurrently, send another request from Tenant B (e.g., Globex) to `/documents` endpoint, ensuring it hits the server around the same time.",
+    "3. The `TenantMiddleware.handle` for Tenant A sets `_activeTenant` to 'acme' and then `await`s `verifyTenantExists`. During this `await` period, Tenant B's request executes.",
+    "4. Tenant B's `TenantMiddleware.handle` sets `_activeTenant` to 'globex', overwriting 'acme'.",
+    "5. Tenant A's request resumes. When `DocumentRepository.findAll()` calls `QueryBuilder.buildSelect()` or `TenantCache.buildKey()`, `getTenant()` now returns 'globex'.",
+    "6. Tenant A's response will contain documents from Globex, instead of Acme, and audit logs will reflect 'globex' access for the 'acme' request."
+  ],
+  "rootCause": "Race condition on shared mutable module-level state (`_activeTenant` in `src/context/TenantContext.ts`) where `TenantMiddleware.handle` (L75) writes the tenant ID before an `await` (L76), allowing a concurrent request to overwrite the state before the first request can resume and read its correct tenant context. This leads to `getTenant()` returning an incorrect `tenantId` for subsequent operations within the same logical request.",
+  "symptom": "Under production load, documents belonging to one tenant are appearing in another tenant's API responses (e.g., Acme users seeing Globex documents). Audit logs are also showing tenant misattribution. This occurs on approximately 1 in 300 requests under ~2,000 req/min peak load.",
+  "timeline": [
+    {
+      "event": "Request A (Acme) starts",
+      "time": "t0"
+    },
+    {
+      "event": "Tenant A's `TenantMiddleware.handle` is called",
+      "time": "t1"
+    },
+    {
+      "event": "Tenant A calls `setTenant('acme')` (writes to global `_activeTenant`)",
+      "time": "t2"
+    },
+    {
+      "event": "Tenant A calls `await verifyTenantExists('acme')` (yields control)",
+      "time": "t3"
+    },
+    {
+      "event": "Request B (Globex) starts (concurrently)",
+      "time": "t3.1"
+    },
+    {
+      "event": "Tenant B's `TenantMiddleware.handle` is called",
+      "time": "t3.2"
+    },
+    {
+      "event": "Tenant B calls `setTenant('globex')` (overwrites global `_activeTenant`)",
+      "time": "t3.3"
+    },
+    {
+      "event": "Tenant B calls `await verifyTenantExists('globex')` (yields or completes)",
+      "time": "t3.4"
+    },
+    {
+      "event": "Tenant A's `await` resolves, execution resumes",
+      "time": "t4"
+    },
+    {
+      "event": "Tenant A's `DocumentRepository` calls `QueryBuilder.buildSelect()` or `TenantCache.buildKey()`",
+      "time": "t5"
+    },
+    {
+      "event": "Tenant A calls `getTenant()` (reads 'globex' from `_activeTenant`)",
+      "time": "t6"
+    },
+    {
+      "event": "Tenant A retrieves/caches Globex documents",
+      "time": "t7"
+    },
+    {
+      "event": "Tenant A responds with Globex documents to Acme user",
+      "time": "t8"
+    }
+  ],
+  "timelineEdges": [
+    {
+      "from": "Client (Acme)",
+      "isBugPoint": false,
+      "label": "requests /documents",
+      "to": "TenantMiddleware (Acme)"
+    },
+    {
+      "from": "TenantMiddleware (Acme)",
+      "isBugPoint": true,
+      "label": "calls setTenant('acme')",
+      "to": "TenantContext (_activeTenant)"
+    },
+    {
+      "from": "TenantMiddleware (Acme)",
+      "isBugPoint": false,
+      "label": "awaits verifyTenantExists('acme')",
+      "to": "Node.js Event Loop"
+    },
+    {
+      "from": "Client (Globex)",
+      "isBugPoint": false,
+      "label": "requests /documents (concurrently)",
+      "to": "TenantMiddleware (Globex)"
+    },
+    {
+      "from": "TenantMiddleware (Globex)",
+      "isBugPoint": true,
+      "label": "calls setTenant('globex') (overwrites _activeTenant)",
+      "to": "TenantContext (_activeTenant)"
+    },
+    {
+      "from": "Node.js Event Loop",
+      "isBugPoint": false,
+      "label": "resumes Tenant A's execution",
+      "to": "TenantMiddleware (Acme)"
+    },
+    {
+      "from": "TenantMiddleware (Acme)",
+      "isBugPoint": false,
+      "label": "calls next() -> DocumentRepository",
+      "to": "DocumentRepository (Acme)"
+    },
+    {
+      "from": "DocumentRepository (Acme)",
+      "isBugPoint": false,
+      "label": "calls QueryBuilder.buildSelect()",
+      "to": "QueryBuilder"
+    },
+    {
+      "from": "QueryBuilder",
+      "isBugPoint": false,
+      "label": "calls getTenant()",
+      "to": "TenantContext (_activeTenant)"
+    },
+    {
+      "from": "TenantContext (_activeTenant)",
+      "isBugPoint": false,
+      "label": "returns 'globex' (incorrect)",
+      "to": "QueryBuilder"
+    },
+    {
+      "from": "QueryBuilder",
+      "isBugPoint": false,
+      "label": "builds SQL with globex tenant ID",
+      "to": "DocumentRepository (Acme)"
+    },
+    {
+      "from": "DocumentRepository (Acme)",
+      "isBugPoint": false,
+      "label": "filters DOCUMENT_STORE by 'globex'",
+      "to": "DOCUMENT_STORE"
+    },
+    {
+      "from": "DOCUMENT_STORE",
+      "isBugPoint": false,
+      "label": "returns Globex documents",
+      "to": "DocumentRepository (Acme)"
+    },
+    {
+      "from": "DocumentRepository (Acme)",
+      "isBugPoint": false,
+      "label": "returns Globex documents to DocumentService",
+      "to": "DocumentService (Acme)"
+    },
+    {
+      "from": "DocumentService (Acme)",
+      "isBugPoint": false,
+      "label": "returns Globex documents in response",
+      "to": "Client (Acme)"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [
+    {
+      "meaning": "The currently active tenant ID for the request context.",
+      "variable": "_activeTenant",
+      "whereChanged": "src/context/TenantContext.ts L4, L22, L28, L31"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "declared L1",
+          "to": "TenantContext.ts",
+          "type": "write"
+        },
+        {
+          "from": "setTenant",
+          "label": "written L4",
+          "to": "TenantContext.ts",
+          "type": "write"
+        },
+        {
+          "from": "getTenant",
+          "label": "read L8",
+          "to": "TenantContext.ts",
+          "type": "read"
+        },
+        {
+          "from": "getTenant",
+          "label": "read L14",
+          "to": "TenantContext.ts",
+          "type": "read"
+        },
+        {
+          "from": "getTenantOrNull",
+          "label": "read L18",
+          "to": "TenantContext.ts",
+          "type": "read"
+        },
+        {
+          "from": "clearTenant",
+          "label": "written L22",
+          "to": "TenantContext.ts",
+          "type": "write"
+        },
+        {
+          "from": "withTenant",
+          "label": "read L27",
+          "to": "TenantContext.ts",
+          "type": "read"
+        },
+        {
+          "from": "withTenant",
+          "label": "written L28",
+          "to": "TenantContext.ts",
+          "type": "write"
+        },
+        {
+          "from": "withTenant",
+          "label": "written L31 [CONDITIONAL]",
+          "to": "TenantContext.ts",
+          "type": "write"
+        }
+      ],
+      "variable": "_activeTenant"
+    }
+  ],
+  "whyFixWorks": "The fix replaces the global mutable `_activeTenant` variable with Node.js's `AsyncLocalStorage`. When `tenantLocalStorage.run(req.tenantId, async () => { ... })` is called, it establishes a distinct storage context for the current asynchronous operation, containing the `req.tenantId`. This context is automatically propagated across `await` calls and throughout any nested asynchronous operations initiated within that scope. Consequently, when `getTenant()` is called later in the request (e.g., by `QueryBuilder` or `TenantCache`), it retrieves the `tenantId` from *its own request's isolated context*, not from a globally shared variable. This prevents concurrent requests from overwriting each other's tenant context, thus eliminating the race condition and ensuring strict tenant data isolation."
+}

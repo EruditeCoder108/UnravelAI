@@ -1,0 +1,160 @@
+{
+  "aiPrompt": "The user avatar `avatarUrl` is consistently `undefined` in the frontend despite the external API providing `avatar_url`. After tracing the data flow through `ProfileService`, `ExternalMapper`, and `ProfileMapper`, it was found that the `ProfileMapper.toInternal` method at `src/mappers/ProfileMapper.ts:5` explicitly sets `avatarUrl` to `undefined` during the conversion from `UserProfile` to `InternalUser`. The `avatarUrl` field needs to be correctly propagated from the `UserProfile` object to the `InternalUser` object instead of being discarded and re-assigned `undefined`. Modify the `toInternal` method in `ProfileMapper` to correctly include `avatarUrl`.",
+  "bugType": "DATA_FLOW",
+  "codeLocation": "src/mappers/ProfileMapper.ts L5",
+  "conceptExtraction": {
+    "bugCategory": "Data Transformation & Loss",
+    "concept": "Unintended data transformation or loss during mapping between data models.",
+    "patternToAvoid": "Explicitly assigning `undefined` to a field that should inherently have a value, especially when a type assertion like `undefined as unknown as string` is used to suppress type errors. This often indicates a deeper misunderstanding or oversight in the data's lifecycle.",
+    "realWorldAnalogy": "Imagine you're moving houses, and you have a detailed inventory list for your belongings. You've packed all your furniture and boxes, but when you unpack, you realize a valuable painting is missing. It wasn't lost by the moving company; it was accidentally marked as 'empty frame' on your *own* checklist during packing and then discarded, even though it was present and valuable. The bug is in your internal processing, not the external transport.",
+    "whyItMatters": "When transforming data between different representations (e.g., from an external API format to an internal application format), it's crucial to ensure that all necessary fields are correctly mapped and not accidentally dropped or corrupted. Relying on type assertions to force an incorrect type can mask real issues, leading to silent data loss and unexpected behavior downstream without clear error messages."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/mappers/ProfileMapper.ts L6\n-    const { id, name, email } = profile;\n-    return { id, name, email, avatarUrl: undefined as unknown as string };\n+    const { id, name, email, avatarUrl } = profile;\n+    return { id, name, email, avatarUrl };",
+  "evidence": [
+    "src/services/ProfileService.ts L9: `fetchFromApi` correctly returns `avatar_url`.",
+    "src/mappers/ExternalMapper.ts L8: `ExternalMapper.toProfile` correctly maps `raw.avatar_url` to `UserProfile.avatarUrl`.",
+    "src/mappers/ProfileMapper.ts L6: `ProfileMapper.toInternal` omits `avatarUrl` from destructuring and explicitly sets `avatarUrl: undefined as unknown as string`."
+  ],
+  "hypotheses": [
+    "H1: External API response (mocked) is missing `avatar_url`.",
+    "H2: `ExternalMapper` drops or misnames the `avatarUrl` field.",
+    "H3: `ProfileMapper` explicitly sets `avatarUrl` to `undefined` during `UserProfile` to `InternalUser` conversion."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "src/services/ProfileService.ts L9: `avatar_url` is present in mock response.",
+      "id": "H1",
+      "reason": "The `fetchFromApi` function explicitly returns an `ExternalApiUser` object containing `avatar_url: 'https://cdn.example.com/avatars/ada.jpg'` (src/services/ProfileService.ts L9).",
+      "status": "eliminated",
+      "text": "External API response (mocked) is missing `avatar_url`."
+    },
+    {
+      "eliminatedBy": "src/mappers/ExternalMapper.ts L8: `avatarUrl: raw.avatar_url` is correctly assigned.",
+      "id": "H2",
+      "reason": "The `ExternalMapper.toProfile` method correctly maps `raw.avatar_url` to `avatarUrl` when transforming `ExternalApiUser` to `UserProfile` (src/mappers/ExternalMapper.ts L8).",
+      "status": "eliminated",
+      "text": "`ExternalMapper` drops or misnames the `avatarUrl` field."
+    },
+    {
+      "eliminatedBy": "",
+      "id": "H3",
+      "reason": "In `ProfileMapper.toInternal` (src/mappers/ProfileMapper.ts L6), the `avatarUrl` field is omitted from the destructuring of `profile` and then explicitly assigned `undefined` with a type assertion (`avatarUrl: undefined as unknown as string`) in the returned `InternalUser` object. This overrides any `avatarUrl` value from the `UserProfile`.",
+      "status": "survived",
+      "text": "`ProfileMapper` explicitly sets `avatarUrl` to `undefined` during `UserProfile` to `InternalUser` conversion."
+    }
+  ],
+  "invariants": [
+    "When transforming data between interfaces (e.g., `UserProfile` to `InternalUser`), all fields expected by the target interface that are present and relevant in the source interface must be explicitly mapped and propagated.",
+    "Type assertions (e.g., `undefined as unknown as string`) should be used sparingly and only when a value is genuinely meant to be `undefined` despite a stricter type, and never to mask a data flow error where a value should exist.",
+    "The `InternalUser` object returned by `ProfileService.fetchById` must contain a valid `avatarUrl` string if it was present in the upstream `ExternalApiUser`."
+  ],
+  "minimalFix": "To fix this, the `toInternal` method in `src/mappers/ProfileMapper.ts` needs to be updated to include `avatarUrl` in the destructuring from `profile` and then assign it directly to the returned `InternalUser` object. This ensures that the avatar URL, correctly propagated by `ExternalMapper`, is not discarded.\n\n```typescript\n// src/mappers/ProfileMapper.ts\nimport { UserProfile, InternalUser } from '../models/UserProfile';\n\nexport class ProfileMapper {\n  toInternal(profile: UserProfile): InternalUser {\n    // L6: Include avatarUrl in destructuring from profile\n    const { id, name, email, avatarUrl } = profile;\n    // L7: Assign the correctly propagated avatarUrl to the InternalUser object\n    return { id, name, email, avatarUrl };\n  }\n\n  toPublic(internal: InternalUser): Omit<InternalUser, 'id'> {\n    const { name, email, avatarUrl } = internal;\n    return { name, email, avatarUrl };\n  }\n}\n```",
+  "proximate_crash_site": "Any frontend component attempting to render an `<img>` tag with `user.avatarUrl` as its source, resulting in a broken image icon. For example, `UserCard` component displays `console.log(user.avatarUrl)` → `undefined`.",
+  "reproduction": [
+    "1. Call `ProfileService.fetchById('some-user-id')`.",
+    "2. Receive the `InternalUser` object returned by the service.",
+    "3. Inspect the `avatarUrl` property of the `InternalUser` object.",
+    "Expected: `avatarUrl` to be a string (e.g., 'https://cdn.example.com/avatars/ada.jpg').",
+    "Actual: `avatarUrl` is `undefined`."
+  ],
+  "rootCause": "The `ProfileMapper.toInternal` function explicitly discards the `avatarUrl` field from the `UserProfile` object and then assigns `undefined` to `avatarUrl` in the `InternalUser` object it returns (src/mappers/ProfileMapper.ts L6).",
+  "symptom": "User avatars are not displaying in the application; `user.avatarUrl` is `undefined` throughout the frontend components, leading to broken image icons.",
+  "timeline": [],
+  "timelineEdges": [
+    {
+      "from": "ProfileService.fetchById",
+      "isBugPoint": false,
+      "label": "calls `fetchFromApi`",
+      "to": "fetchFromApi"
+    },
+    {
+      "from": "fetchFromApi",
+      "isBugPoint": false,
+      "label": "returns `ExternalApiUser` with `avatar_url`",
+      "to": "ProfileService.fetchById"
+    },
+    {
+      "from": "ProfileService.fetchById",
+      "isBugPoint": false,
+      "label": "calls `externalMapper.toProfile`",
+      "to": "ExternalMapper.toProfile"
+    },
+    {
+      "from": "ExternalMapper.toProfile",
+      "isBugPoint": false,
+      "label": "returns `UserProfile` with `avatarUrl`",
+      "to": "ProfileService.fetchById"
+    },
+    {
+      "from": "ProfileService.fetchById",
+      "isBugPoint": false,
+      "label": "calls `profileMapper.toInternal`",
+      "to": "ProfileMapper.toInternal"
+    },
+    {
+      "from": "ProfileMapper.toInternal",
+      "isBugPoint": true,
+      "label": "sets `avatarUrl` to `undefined`",
+      "to": "InternalUser"
+    },
+    {
+      "from": "ProfileMapper.toInternal",
+      "isBugPoint": false,
+      "label": "returns `InternalUser` with `avatarUrl: undefined`",
+      "to": "ProfileService.fetchById"
+    },
+    {
+      "from": "ProfileService.fetchById",
+      "isBugPoint": false,
+      "label": "returns `InternalUser` to frontend",
+      "to": "Frontend Components"
+    },
+    {
+      "from": "Frontend Components",
+      "isBugPoint": false,
+      "label": "reads `user.avatarUrl` as `undefined`",
+      "to": "UI rendering"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "assigned L9",
+          "to": "fetchFromApi",
+          "type": "write"
+        },
+        {
+          "from": "fetchFromApi",
+          "label": "read L26",
+          "to": "ProfileService.fetchById",
+          "type": "read"
+        },
+        {
+          "from": "ProfileService.fetchById",
+          "label": "read L8",
+          "to": "ExternalMapper.toProfile",
+          "type": "read"
+        },
+        {
+          "from": "ExternalMapper.toProfile",
+          "label": "mutated L6",
+          "to": "ProfileMapper.toInternal",
+          "type": "mutate"
+        },
+        {
+          "from": "ProfileMapper.toInternal",
+          "label": "read L7",
+          "to": "ProfileMapper.toPublic",
+          "type": "read"
+        }
+      ],
+      "variable": "avatarUrl"
+    }
+  ],
+  "whyFixWorks": "The fix works by modifying the `ProfileMapper.toInternal` method to correctly propagate the `avatarUrl` field. By including `avatarUrl` in the destructuring of the `profile: UserProfile` object (`const { id, name, email, avatarUrl } = profile;`) and then directly assigning it to the returned `InternalUser` object (`return { id, name, email, avatarUrl };`), the `avatarUrl` value, which was correctly mapped from the external API response by `ExternalMapper`, is preserved throughout the data transformation pipeline. This ensures that the `InternalUser` object will contain the correct avatar URL string, allowing frontend components to display it properly."
+}

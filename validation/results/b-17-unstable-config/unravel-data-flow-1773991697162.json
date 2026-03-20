@@ -1,0 +1,169 @@
+{
+  "aiPrompt": "The `ReportDashboard` component is passing an inline object literal for the `config` prop to `ReportPanel`. This causes `ReportPanel`'s `useMemo` hook to re-run `runHeavyAggregation` on every parent re-render, bypassing memoization. Modify `ReportDashboard` to memoize the `config` object using `useMemo` with an empty dependency array, ensuring its referential stability across renders. Add `useMemo` to the React import.",
+  "bugType": "DATA_FLOW",
+  "codeLocation": "src/components/ReportDashboard.tsx L32",
+  "conceptExtraction": {
+    "bugCategory": "Performance Optimization & React Hooks",
+    "concept": "Referential Equality in JavaScript and React Memoization",
+    "patternToAvoid": "Passing inline object or array literals as props to memoized components (or as dependencies to `useMemo`/`useCallback`) when their logical content is intended to remain constant across renders. These literals create a new object/array reference on every render, invalidating memoization.",
+    "realWorldAnalogy": "Imagine you have a detailed instruction manual for assembling a complex product. You give this manual to a skilled worker (like a memoized React component). If you print a brand new copy of the *exact same manual* every time you need the product assembled, the worker will think it's a completely new set of instructions, even though the content is identical. They'll waste time re-reading and re-verifying everything from scratch. Instead, you should simply hand them the *original, stable manual* unless the instructions truly change. React's memoization works similarly: it only re-computes if the *reference* to the dependency changes, not just its internal values.",
+    "whyItMatters": "React's performance optimizations (like `useMemo`, `useCallback`, and `React.memo`) rely heavily on referential equality to determine if re-computation or re-rendering is necessary. When dependencies or props are not referentially stable, these optimizations are bypassed, leading to unnecessary re-executions of potentially expensive functions (like `runHeavyAggregation` in this case). This results in a sluggish user interface and wasted CPU cycles, especially on slower devices or with frequent interactions."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/components/ReportDashboard.tsx L1\n+++ src/components/ReportDashboard.tsx L1\n@@ -1,4 +1,4 @@\n-import React, { useState } from 'react';\n+import React, { useState, useMemo } from 'react';\n import { ReportPanel } from './ReportPanel';\n import { DataRow } from '../utils/aggregations';\n \n@@ -19,10 +19,15 @@\n \n   const categories = [...new Set(data.map((r) => r.category))];\n \n+  const reportConfig = useMemo(() => ({\n+    threshold: 0.5,\n+    mode: 'summary' as const,\n+    maxRows: 100\n+  }), []);\n+\n   return (\n     <div data-testid=\"report-dashboard\">\n       <div data-testid=\"filter-bar\">\n@@ -34,7 +39,7 @@\n \n       <ReportPanel\n         data={filteredData}\n-        config={{ threshold: 0.5, mode: 'summary', maxRows: 100 }}\n+        config={reportConfig}\n       />\n     </div>\n   );\n",
+  "evidence": [
+    "src/components/ReportDashboard.tsx L32: The 'config' prop is passed as an inline object literal `{ threshold: 0.5, mode: 'summary', maxRows: 100 }`.",
+    "src/components/ReportDashboard.tsx L10: `setActiveFilter` causes `ReportDashboard` to re-render when a filter button is clicked.",
+    "src/components/ReportPanel.tsx L11: `useMemo` depends on `config` (`[data, config]`).",
+    "JavaScript property: Object literals (`{...}`) create a new reference on every evaluation, even if content is identical."
+  ],
+  "hypotheses": [
+    "The `data` prop (`filteredData`) passed to `ReportPanel` changes its reference on every render, invalidating useMemo.",
+    "The `config` prop passed to `ReportPanel` changes its reference on every render, invalidating useMemo.",
+    "The `useMemo` hook itself is buggy or misconfigured and ignores its dependency array."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "src/components/ReportPanel.tsx L12: useMemo's dependencies are `data` and `config`. When `filteredData` changes (due to actual filter change), `data` dependency changes, and useMemo correctly re-runs. This is not the primary bug cause, but desired behavior.",
+      "id": "H1",
+      "reason": "`filteredData` (derived from `data.filter(...)` at `ReportDashboard.tsx L12`) legitimately changes its reference when the filter criteria change. This is the intended behavior for `useMemo` to re-compute when the actual data subset for aggregation changes.",
+      "status": "eliminated",
+      "text": "Filtered data reference changes"
+    },
+    {
+      "eliminatedBy": "",
+      "id": "H2",
+      "reason": "The `config` prop is passed as an inline object literal `{ threshold: 0.5, mode: 'summary', maxRows: 100 }` at `ReportDashboard.tsx L32`. Object literals create a new reference on every render, causing the `config` dependency in `ReportPanel`'s `useMemo` (`ReportPanel.tsx L12`) to always be considered changed.",
+      "status": "survived",
+      "text": "Config object reference changes"
+    },
+    {
+      "eliminatedBy": "React documentation: `useMemo` performs a shallow comparison of dependencies. If dependencies change, it re-executes. The problem is unstable dependencies, not a broken hook.",
+      "id": "H3",
+      "reason": "The `useMemo` hook itself is a fundamental React primitive that performs a shallow comparison of its dependencies. There is no evidence in the provided code that it is buggy or misconfigured; rather, its dependencies are inherently unstable (`ReportDashboard.tsx L32`), causing it to correctly re-evaluate.",
+      "status": "eliminated",
+      "text": "useMemo is buggy"
+    }
+  ],
+  "invariants": [
+    "The `config` object passed to `ReportPanel` must maintain referential equality across `ReportDashboard` renders if its values are constant.",
+    "The `useMemo` hook in `ReportPanel` must only re-execute its callback if its dependencies (`data` or `config`) change referentially.",
+    "The `filteredData` variable in `ReportDashboard` should create a new array reference only when the active filter genuinely changes the subset of data."
+  ],
+  "minimalFix": "To fix this, memoize the `config` object within the `ReportDashboard` component using `useMemo`. This ensures that the `config` object maintains referential stability across re-renders of `ReportDashboard`, thus allowing `ReportPanel`'s `useMemo` to correctly memoize the `runHeavyAggregation` result. \n\nAdd `useMemo` to the React import:\n`import React, { useState, useMemo } from 'react';`\n\nInside the `ReportDashboard` component, define `reportConfig` using `useMemo`:\n```typescript\nconst reportConfig = useMemo(() => ({\n  threshold: 0.5,\n  mode: 'summary' as const,\n  maxRows: 100\n}), []);\n```\n\nThen, pass this memoized `reportConfig` to `ReportPanel`:\n`<ReportPanel data={filteredData} config={reportConfig} />`",
+  "proximate_crash_site": "ReportPanel.tsx L11 — `runHeavyAggregation` re-executes inside `useMemo` on every parent render.",
+  "reproduction": [
+    "1. Navigate to the report dashboard.",
+    "2. Open your browser's developer tools and go to the Performance profiler.",
+    "3. Start recording CPU activity.",
+    "4. Click any filter button repeatedly (e.g., 'alpha', 'beta', 'alpha', 'gamma').",
+    "5. Stop recording and examine the flame graph. Observe `runHeavyAggregation` executing on every filter button click, consuming significant CPU time."
+  ],
+  "rootCause": "The `config` prop passed to `ReportPanel` in `ReportDashboard.tsx L32` is an inline object literal, which creates a new object reference on every render of `ReportDashboard`. This causes `ReportPanel`'s `useMemo` hook (`ReportPanel.tsx L11`) to detect a changed dependency (`config`) and re-execute the expensive `runHeavyAggregation` function on every interaction that causes `ReportDashboard` to re-render.",
+  "symptom": "The report dashboard is sluggish, with visible delays after clicking filter buttons. CPU profiling shows `runHeavyAggregation` executing on every user interaction, consuming 60-80% of the frame budget, despite `useMemo` being used in `ReportPanel`.",
+  "timelineEdges": [
+    {
+      "from": "ReportDashboard",
+      "isBugPoint": false,
+      "label": "User clicks filter button",
+      "to": "ReportDashboard"
+    },
+    {
+      "from": "ReportDashboard",
+      "isBugPoint": false,
+      "label": "Calls `setActiveFilter`",
+      "to": "React State"
+    },
+    {
+      "from": "React State",
+      "isBugPoint": false,
+      "label": "Triggers re-render",
+      "to": "ReportDashboard"
+    },
+    {
+      "from": "ReportDashboard",
+      "isBugPoint": true,
+      "label": "Creates new `config` object literal",
+      "to": "ReportPanel (props)"
+    },
+    {
+      "from": "ReportDashboard",
+      "isBugPoint": false,
+      "label": "Passes `filteredData` (new ref if filter changed)",
+      "to": "ReportPanel (props)"
+    },
+    {
+      "from": "ReportPanel (props)",
+      "isBugPoint": false,
+      "label": "useMemo detects `config` dependency change",
+      "to": "ReportPanel (useMemo)"
+    },
+    {
+      "from": "ReportPanel (useMemo)",
+      "isBugPoint": false,
+      "label": "Re-executes `runHeavyAggregation`",
+      "to": "Aggregation Logic"
+    },
+    {
+      "from": "Aggregation Logic",
+      "isBugPoint": false,
+      "label": "Returns result",
+      "to": "ReportPanel"
+    },
+    {
+      "from": "ReportPanel",
+      "isBugPoint": false,
+      "label": "Updates UI",
+      "to": "User Interface"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [
+    {
+      "meaning": "Keeps track of how many times the heavy aggregation function has been called.",
+      "variable": "aggregationCallCount",
+      "whereChanged": "src/utils/aggregations.ts L25 (reset), L32 (increment)"
+    },
+    {
+      "meaning": "The currently active filter category, or null if no filter is active.",
+      "variable": "activeFilter",
+      "whereChanged": "src/components/ReportDashboard.tsx L10 (initial), L23 (update)"
+    },
+    {
+      "meaning": "The report configuration object containing parameters for aggregation.",
+      "variable": "config",
+      "whereChanged": "src/components/ReportDashboard.tsx L32 (literal passed as prop), src/components/ReportPanel.tsx L6 (prop definition)"
+    },
+    {
+      "meaning": "The filtered data rows passed to ReportPanel.",
+      "variable": "filteredData",
+      "whereChanged": "src/components/ReportDashboard.tsx L12 (derived from `data` and `activeFilter`)"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "declared",
+          "label": "reassigned L25",
+          "to": "resetAggregationCallCount",
+          "type": "write"
+        },
+        {
+          "from": "resetAggregationCallCount",
+          "label": "reassigned L32",
+          "to": "runHeavyAggregation",
+          "type": "write"
+        },
+        {
+          "from": "runHeavyAggregation",
+          "label": "read L32",
+          "to": "runHeavyAggregation",
+          "type": "read"
+        }
+      ],
+      "variable": "aggregationCallCount"
+    }
+  ],
+  "whyFixWorks": "By wrapping the `config` object in `useMemo` with an empty dependency array (`[]`) in `ReportDashboard`, `reportConfig` becomes referentially stable. This means that on subsequent re-renders of `ReportDashboard` (e.g., when the `activeFilter` changes), the `reportConfig` variable will hold the exact same object reference as before. When this stable `reportConfig` is passed as the `config` prop to `ReportPanel`, `ReportPanel`'s `useMemo` hook will now find that its `config` dependency has not changed referentially. Consequently, `runHeavyAggregation` will only re-execute if the `data` prop (which is `filteredData`) truly changes its reference (i.e., when the actual filtered subset of data changes), significantly reducing unnecessary computations and improving UI responsiveness."
+}

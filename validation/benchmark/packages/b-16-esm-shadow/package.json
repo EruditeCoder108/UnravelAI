@@ -1,0 +1,11 @@
+{
+  "name": "b-16-esm-shadow",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "vitest run" },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.3.0",
+    "tsx": "^4.7.0"
+  }
+}

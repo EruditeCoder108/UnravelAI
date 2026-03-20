@@ -1,0 +1,154 @@
+{
+  "aiPrompt": "The `ProductSerializer` in `src/serializers/ProductSerializer.ts` is currently stripping the `reservedStock` field during serialization, leading to incorrect availability calculations in `CheckoutService`. Modify the `ALLOWED_FIELDS` array in `ProductSerializer.ts` to include `'reservedStock'` so that this critical piece of data is correctly passed to downstream services. Ensure the fix maintains consistency with the `SerializedProduct` interface.",
+  "bugType": "DATA_FLOW",
+  "codeLocation": "src/serializers/ProductSerializer.ts L5",
+  "conceptExtraction": {
+    "bugCategory": "Data Integrity",
+    "concept": "Data Inconsistency due to Incomplete Serialization/Transformation",
+    "patternToAvoid": "Silently dropping critical data fields during transformation or serialization when those fields are required by downstream business logic, or when the target interface specifies the field as potentially present. Always ensure your serialization logic aligns with the actual data requirements of all consumers.",
+    "realWorldAnalogy": "Imagine you're packing a suitcase for a critical business trip. You have a comprehensive list of items to pack, including your passport. A packing assistant (the serializer) helps you, but their checklist (ALLOWED_FIELDS) accidentally omits 'passport'. When you reach the airport (the `CheckoutService`) and present your bag, the security officer (the validation logic) checks your bag. Since the passport isn't there, they might assume you don't need one or that the trip doesn't require it, leading to a critical failure later on. The problem isn't the officer's logic, but that the essential item was never put in the bag in the first place due to an incomplete packing list.",
+    "whyItMatters": "Incomplete data transformations can lead to subtle, silent business logic errors that are extremely hard to trace. Data might appear correct at its source, but gets silently corrupted or dropped during intermediate processing. This only surfaces much later when a critical decision is made based on that missing data, leading to incorrect outcomes (like overselling products) without any visible crash or error message."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/serializers/ProductSerializer.ts L5\n-const ALLOWED_FIELDS = ['id', 'name', 'price', 'stock'];\n+const ALLOWED_FIELDS = ['id', 'name', 'price', 'stock', 'reservedStock'];",
+  "evidence": [
+    "src/serializers/ProductSerializer.ts L5: The ALLOWED_FIELDS array explicitly omits 'reservedStock'.",
+    "src/serializers/ProductSerializer.ts L8-L12: The serialize method uses ALLOWED_FIELDS, resulting in the reservedStock property being excluded from the SerializedProduct.",
+    "src/models/Product.ts L16: The SerializedProduct interface defines reservedStock as an optional property (reservedStock?: number), allowing its absence without type errors.",
+    "src/services/CheckoutService.ts L10: Inside validateAvailability, product.reservedStock (from the SerializedProduct) is undefined, causing the nullish coalescing operator (?? 0) to default reserved to 0.",
+    "src/services/CheckoutService.ts L11: The availableStock calculation (product.stock - reserved) then uses 0 for reserved, leading to an incorrect result (e.g., 8 - 0 = 8 for prod-2)."
+  ],
+  "hypotheses": [
+    "CheckoutService itself is buggy and causes product.reservedStock to be undefined.",
+    "ProductRepository returns Product objects with missing or incorrect reservedStock.",
+    "ProductSerializer strips reservedStock during serialization, leading to undefined in CheckoutService."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "src/services/CheckoutService.ts L10-L11: The validateAvailability method only reads product properties; it performs no assignments or mutations to the product object itself. The undefined value must originate upstream.",
+      "id": "H1",
+      "reason": "The validateAvailability method only reads product properties; it performs no assignments or mutations to the product object itself. The undefined value must originate upstream.",
+      "status": "eliminated",
+      "text": "CheckoutService itself causes undefined reservedStock"
+    },
+    {
+      "eliminatedBy": "src/repositories/ProductRepository.ts L10-L24: The internal 'store' object clearly defines 'reservedStock' for all products, including 'prod-2' (value 8). User also verified this in their debugging steps.",
+      "id": "H2",
+      "reason": "The internal 'store' object clearly defines 'reservedStock' for all products, including 'prod-2' (value 8). User also verified this in their debugging steps.",
+      "status": "eliminated",
+      "text": "ProductRepository returns incorrect reservedStock"
+    },
+    {
+      "eliminatedBy": "",
+      "id": "H3",
+      "reason": "src/serializers/ProductSerializer.ts L5: The `ALLOWED_FIELDS` array explicitly omits `'reservedStock'`, causing the `serialize` method to drop this property from the `Product` object during conversion to `SerializedProduct`.",
+      "status": "survived",
+      "text": "ProductSerializer strips reservedStock field"
+    }
+  ],
+  "invariants": [
+    "Any `Product` object, or its `SerializedProduct` representation, passed to `CheckoutService.validateAvailability` must accurately reflect the true `stock` and `reservedStock` values.",
+    "The `ProductSerializer` must include all fields required by consumers of `SerializedProduct` for correct business logic execution (e.g., `reservedStock` for availability checks).",
+    "The `SerializedProduct` interface, while allowing `reservedStock` to be optional, should reflect the intended data contract. If `reservedStock` is logically required by a consumer, it must be ensured by the serialization process or explicitly handled as a potential error condition."
+  ],
+  "minimalFix": "To fix this, the `reservedStock` field must be included in the `ALLOWED_FIELDS` array within `ProductSerializer.ts`. This ensures that when a `Product` is serialized, its `reservedStock` value is correctly carried over to the `SerializedProduct` object.",
+  "proximate_crash_site": "CheckoutService.validateAvailability() L10 — `product.reservedStock` is `undefined` leading to `reserved` incorrectly becoming `0`.",
+  "reproduction": [
+    "Given `prod-2` has `stock: 8` and `reservedStock: 8` in the `ProductRepository`.",
+    "Retrieve `prod-2` from `ProductRepository.findById('prod-2')`.",
+    "Pass the retrieved `Product` object to `ProductSerializer.serialize()`.",
+    "Pass the resulting `SerializedProduct` object and a `requestedQty` of `1` to `CheckoutService.validateAvailability()`.",
+    "Observe that `CheckoutService.validateAvailability()` incorrectly returns `{ available: true, availableStock: 8, requestedQty: 1 }` when it should be `{ available: false, availableStock: 0, requestedQty: 1 }`."
+  ],
+  "rootCause": "The `ProductSerializer.ts` is configured to exclude the `reservedStock` field during serialization (src/serializers/ProductSerializer.ts L5), causing `CheckoutService` to receive an incomplete `SerializedProduct` where `reservedStock` is `undefined`.",
+  "symptom": "Customers are successfully purchasing products that should be unavailable, specifically for `prod-2` (USB-C Hub) where all stock is reserved. `CheckoutService.validateAvailability()` returns true when it should be false.",
+  "timelineEdges": [
+    {
+      "from": "ProductRepository",
+      "isBugPoint": false,
+      "label": "Retrieves Product (includes reservedStock: 8)",
+      "to": "Caller (e.g., Controller)"
+    },
+    {
+      "from": "Caller (e.g., Controller)",
+      "isBugPoint": true,
+      "label": "Passes Product to serializer",
+      "to": "ProductSerializer.serialize"
+    },
+    {
+      "from": "ProductSerializer.serialize",
+      "isBugPoint": true,
+      "label": "Serializes Product, strips reservedStock due to ALLOWED_FIELDS",
+      "to": "SerializedProduct (missing reservedStock)"
+    },
+    {
+      "from": "Caller (e.g., Controller)",
+      "isBugPoint": false,
+      "label": "Passes SerializedProduct (missing reservedStock) to checkout",
+      "to": "CheckoutService.validateAvailability"
+    },
+    {
+      "from": "CheckoutService.validateAvailability",
+      "isBugPoint": false,
+      "label": "Reads product.reservedStock as undefined",
+      "to": "reserved (local variable)"
+    },
+    {
+      "from": "reserved (local variable)",
+      "isBugPoint": false,
+      "label": "Defaults to 0 via ?? 0",
+      "to": "reserved (value 0)"
+    },
+    {
+      "from": "CheckoutService.validateAvailability",
+      "isBugPoint": false,
+      "label": "Calculates availableStock (stock - 0) incorrectly",
+      "to": "Incorrect AvailabilityResult"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "ProductRepository.ts L10",
+          "label": "declared with initial value",
+          "to": "store",
+          "type": "write"
+        },
+        {
+          "from": "findById",
+          "label": "read L26",
+          "to": "store",
+          "type": "read"
+        },
+        {
+          "from": "findAll",
+          "label": "read L31",
+          "to": "store",
+          "type": "read"
+        }
+      ],
+      "variable": "store"
+    },
+    {
+      "edges": [
+        {
+          "from": "ProductSerializer.ts L5",
+          "label": "declared with initial value",
+          "to": "ALLOWED_FIELDS",
+          "type": "write"
+        },
+        {
+          "from": "serialize",
+          "label": "read L8",
+          "to": "ALLOWED_FIELDS",
+          "type": "read"
+        }
+      ],
+      "variable": "ALLOWED_FIELDS"
+    }
+  ],
+  "whyFixWorks": "By adding `'reservedStock'` to the `ALLOWED_FIELDS` array in `ProductSerializer.ts`, the serializer will now correctly include the `reservedStock` property in the `SerializedProduct` object. When this complete `SerializedProduct` is passed to `CheckoutService.validateAvailability`, `product.reservedStock` will no longer be `undefined` but will hold its correct numeric value (e.g., 8 for `prod-2`). This will cause the `reserved` variable in `validateAvailability` to be correctly assigned `8`, leading to an accurate `availableStock` calculation (`8 - 8 = 0`) and the correct `available: false` result for oversold products."
+}

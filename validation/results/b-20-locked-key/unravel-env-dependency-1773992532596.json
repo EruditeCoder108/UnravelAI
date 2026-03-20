@@ -1,0 +1,95 @@
+{
+  "bugType": "ENV_DEPENDENCY",
+  "codeLocation": "src/shortcuts/ShortcutHandler.ts L31",
+  "conceptExtraction": {
+    "bugCategory": "Data Flow, Environmental Dependency",
+    "concept": "Distinction between KeyboardEvent.key (character value) and KeyboardEvent.code (physical key identifier).",
+    "patternToAvoid": "Using KeyboardEvent.key directly for registering and looking up shortcuts that are intended to be tied to a physical key position (e.g., '[' or ']') as it leads to brittle code that breaks on different keyboard layouts.",
+    "realWorldAnalogy": "Imagine you're trying to find a specific book by its title ('The Big Adventure'). On a library shelf, books are ordered alphabetically by title. If someone mislabels the book's spine as 'The Large Adventure' (due to a translation from a different language), you won't find it when you search for 'The Big Adventure' even though it's the correct book in the correct physical spot. The 'spine label' is like `event.key` (layout-dependent character), the 'physical book' is like `event.code` (physical key position), and the 'search criteria' is `ShortcutDefinition.key` (the expected character). To consistently find the book, you'd need to either know all possible translated labels or, more robustly, consistently label books by a universal identifier like an ISBN (analogous to `event.code`).",
+    "whyItMatters": "KeyboardEvent.key is locale/layout dependent, while KeyboardEvent.code is physical hardware independent. Relying on KeyboardEvent.key for universal physical shortcuts results in unexpected failures for users with non-US keyboard layouts."
+  },
+  "aiPrompt": "The keyboard shortcut system incorrectly uses `KeyboardEvent.key` (character value, locale-dependent) instead of `KeyboardEvent.code` (physical key identifier, locale-independent) for registering and looking up physical key-based shortcuts. This causes shortcuts like Cmd+Shift+] to fail on non-US keyboard layouts where the physical key produces a different character (e.g., '+' on German QWERTZ). Implement a specific translation for the `BracketRight` and `BracketLeft` physical keys in `ShortcutHandler.dispatch` to map their layout-specific `event.key` values back to the expected US equivalent `]` and `[` when Shift is pressed. Additionally, propose an architectural refactor to use `KeyboardEvent.code` as the primary identifier for physical key shortcuts in `ShortcutDefinition` and `ShortcutRegistry` to ensure true layout independence.",
+  "evidence": [
+    "KeyboardManager.ts L24: Shortcut for 'next-tab' is registered with `key: ']'`.",
+    "ShortcutHandler.ts L31: `this.registry.lookup(event.key, modifiers)` is called, using the layout-dependent `event.key` for lookup.",
+    "User's console log: `received key=\"+ code=\"BracketRight\"` for the ']' physical key on a German keyboard, confirming `event.key` does not match the registered `key`."
+  ],
+  "confidence": 0.9,
+  "hypotheses": [
+    "ShortcutHandler.dispatch uses the wrong property from KeyEvent for comparison.",
+    "ShortcutRegistry.register stores the incorrect key representation.",
+    "The normalize function in ShortcutRegistry is flawed."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "id": "H1",
+      "reason": "The system registers ShortcutDefinition.key with a character value (e.g., ']' at KeyboardManager.ts L24). The dispatch method uses event.key (a character value) for lookup at ShortcutHandler.ts L31. When keyboard layouts differ, event.key produces a different character for the same physical key, leading to a mismatch. The intent for a universal shortcut system is to map a physical key press, not a layout-dependent character.",
+      "status": "survived",
+      "text": "dispatch uses wrong KeyEvent property"
+    },
+    {
+      "eliminatedBy": "",
+      "id": "H2",
+      "reason": "This is directly related to H1. KeyboardManager.ts L24 defines `key: ']'`. If the system is designed to match event.code (physical key), then ShortcutDefinition.key should store a physical key identifier (e.g., 'BracketRight') instead of a character. The current registration system forces ShortcutRegistry to store a character, which then dictates ShortcutHandler to compare characters.",
+      "status": "survived",
+      "text": "Registry stores incorrect key representation"
+    },
+    {
+      "eliminatedBy": "ShortcutRegistry.ts L27: `normalize` correctly processes its `key` input without modification; the issue is the input `key` itself.",
+      "id": "H3",
+      "reason": "The `normalize` function (ShortcutRegistry.ts L25-L28) correctly concatenates modifiers and the provided `key` string. Its logic is sound for the input it receives. The flaw is not in how it normalizes, but in *what* it normalizes (a layout-dependent character instead of a layout-independent physical key).",
+      "status": "eliminated",
+      "text": "normalize function in registry is flawed"
+    }
+  ],
+  "minimalFix": "To address the immediate issue for 'next-tab' (Cmd+Shift+]) and 'prev-tab' (Cmd+Shift+[) on German QWERTZ keyboards, modify the `ShortcutHandler.dispatch` method to introduce a specific translation for the physical 'BracketRight' and 'BracketLeft' keys when Shift is pressed. This mapping ensures that the `event.key` value (e.g., '+' or '°') received from the OS is translated to the character expected by the `ShortcutRegistry` (']' or '[').\n\n```typescript\n// src/shortcuts/ShortcutHandler.ts\nimport { ShortcutRegistry } from './ShortcutRegistry';\n\n// ... other interfaces and class definition ...\n\nexport class ShortcutHandler {\n  // ... constructor and other methods ...\n\n  dispatch(event: KeyEvent): DispatchResult {\n    const modifiers: Array<'Ctrl' | 'Shift' | 'Alt' | 'Meta'> = [];\n    if (event.ctrlKey) modifiers.push('Ctrl');\n    if (event.shiftKey) modifiers.push('Shift');\n    if (event.altKey) modifiers.push('Alt');\n    if (event.metaKey) modifiers.push('Meta');\n\n    let keyToLookup = event.key;\n    // Special handling for physical bracket keys, which produce different characters on QWERTZ layouts\n    // when Shift is pressed, compared to US layouts where they produce ']' and '['.\n    // 'BracketRight' produces '+' on German QWERTZ with Shift.\n    if (event.code === 'BracketRight' && event.shiftKey) {\n      keyToLookup = ']';\n    } \n    // 'BracketLeft' often produces '°' or other characters on non-US layouts with Shift.\n    else if (event.code === 'BracketLeft' && event.shiftKey) {\n      keyToLookup = '[';\n    }\n\n    const match = this.registry.lookup(keyToLookup, modifiers);\n\n    const result: DispatchResult = {\n      matched: !!match,\n      shortcutId: match?.id,\n      receivedKey: event.key, // Keep original for logging\n      receivedCode: event.code,\n    };\n\n    this.dispatchLog.push(result);\n\n    if (match) {\n      match.action();\n    }\n\n    return result;\n  }\n\n  // ... other methods ...\n}\n\n/* ARCHITECTURAL NOTE:\n\nThis surgical patch directly addresses the symptom by translating specific layout-dependent key inputs to their expected character equivalents. While effective for the immediate problem, it is a band-aid solution that will require continuous maintenance and expansion for every new problematic key or keyboard layout. It violates the principle of 'Don't Repeat Yourself' and makes the `ShortcutHandler` responsible for layout-specific translation, which is not its core concern.\n\nThe fundamental issue is that the current system relies on `KeyboardEvent.key` (a character value that varies by layout) for defining and looking up shortcuts that are intended to be tied to a physical key position. For true layout independence, `KeyboardEvent.code` (a physical key identifier that is consistent across layouts) should be used.\n\n**Correct Architectural Design (Better Fix):**\n\nTo build a robust, layout-independent keyboard shortcut system, you should use `KeyboardEvent.code` as the primary identifier for physical key-based shortcuts. This involves a refactor across three files:\n\n**1. Modify `ShortcutRegistry.ts`:**\n   - Update `ShortcutDefinition` to use `identifier` (string) and `isCodeBased` (boolean) instead of `key`.\n   - Modify `normalize` to prefix the identifier with 'CODE-' or 'KEY-' to prevent collisions and indicate its type.\n   - Update `register` to use the new `identifier` and `isCodeBased` fields.\n   - Update `lookup` to intelligently try to match against `event.code` for code-based shortcuts and `event.key` for key-based shortcuts.\n\n   ```typescript\n   // src/shortcuts/ShortcutRegistry.ts\n   export interface ShortcutDefinition {\n     id: string;\n     label: string;\n     identifier: string; // New: Stores either key character or code string\n     isCodeBased: boolean; // New: True if 'identifier' is a KeyboardEvent.code\n     modifiers: Array<'Ctrl' | 'Shift' | 'Alt' | 'Meta'>;\n     action: () => void;\n   }\n\n   export class ShortcutRegistry {\n     private shortcuts: Map<string, ShortcutDefinition> = new Map();\n\n     register(def: ShortcutDefinition): void {\n       const normalized = this.normalize(def.identifier, def.modifiers, def.isCodeBased);\n       this.shortcuts.set(normalized, def);\n     }\n\n     // Modified lookup signature to accept full KeyEvent\n     lookup(event: KeyEvent, modifiers: Array<'Ctrl' | 'Shift' | 'Alt' | 'Meta'>): ShortcutDefinition | undefined {\n       // Attempt to match by physical code first for code-based shortcuts\n       const normalizedByCode = this.normalize(event.code, modifiers, true);\n       const matchByCode = this.shortcuts.get(normalizedByCode);\n       if (matchByCode && matchByCode.isCodeBased) {\n         return matchByCode;\n       }\n\n       // Fallback to matching by character key for key-based shortcuts\n       const normalizedByKey = this.normalize(event.key, modifiers, false);\n       const matchByKey = this.shortcuts.get(normalizedByKey);\n       if (matchByKey && !matchByKey.isCodeBased) {\n         return matchByKey;\n       }\n       return undefined;\n     }\n\n     private normalize(inputIdentifier: string, modifiers: Array<'Ctrl' | 'Shift' | 'Alt' | 'Meta'>, isCodeBased: boolean): string {\n       const typePrefix = isCodeBased ? 'CODE-' : 'KEY-'; // Differentiate code-based vs key-based hashes\n       const sorted = [...modifiers].sort().join('+');\n       return sorted ? `${sorted}+${typePrefix}${inputIdentifier}` : `${typePrefix}${inputIdentifier}`;\n     }\n\n     listAll(): ShortcutDefinition[] {\n       return Array.from(this.shortcuts.values());\n     }\n\n     unregister(id: string): void {\n       for (const [key, def] of this.shortcuts.entries()) {\n         if (def.id === id) {\n           this.shortcuts.delete(key);\n           return;\n         }\n       }\n     }\n   }\n   ```\n\n**2. Modify `KeyboardManager.ts`:**\n   - Update `registerDefaults` to register shortcuts using the `identifier` and `isCodeBased` fields. For physical keys like `[` and `]`, use `event.code` values (`BracketLeft`, `BracketRight`). For standard alphanumeric keys (e.g., 'f', 's'), `event.key` usually works, but `event.code` (`KeyF`, `KeyS`) is more robust.\n\n   ```typescript\n   // src/shortcuts/KeyboardManager.ts\n   // ... other imports and interfaces ...\n\n   export class KeyboardManager {\n     // ... constructor and private members ...\n\n     private registerDefaults(cb: ActionCallbacks): void {\n       this.registry.register({\n         id: 'next-tab',\n         label: 'Next Tab',\n         identifier: 'BracketRight', // Use code for physical key\n         isCodeBased: true,\n         modifiers: ['Meta', 'Shift'],\n         action: cb.onNextTab,\n       });\n\n       this.registry.register({\n         id: 'prev-tab',\n         label: 'Previous Tab',\n         identifier: 'BracketLeft', // Use code for physical key\n         isCodeBased: true,\n         modifiers: ['Meta', 'Shift'],\n         action: cb.onPrevTab,\n       });\n\n       this.registry.register({\n         id: 'find',\n         label: 'Find',\n         identifier: 'f', // Use key character, assuming consistency\n         isCodeBased: false,\n         modifiers: ['Meta'],\n         action: cb.onFind,\n       });\n\n       this.registry.register({\n         id: 'save',\n         label: 'Save',\n         identifier: 's', // Use key character, assuming consistency\n         isCodeBased: false,\n         modifiers: ['Meta'],\n         action: cb.onSave,\n       });\n     }\n     // ... rest of the class ...\n   }\n   ```\n\n**3. Modify `ShortcutHandler.ts`:**\n   - Update the `dispatch` method to pass the full `KeyEvent` to `this.registry.lookup`, as the lookup logic now handles differentiating between `code` and `key`.\n\n   ```typescript\n   // src/shortcuts/ShortcutHandler.ts\n   // ... other imports and interfaces ...\n\n   export class ShortcutHandler {\n     // ... constructor and private members ...\n\n     dispatch(event: KeyEvent): DispatchResult {\n       const modifiers: Array<'Ctrl' | 'Shift' | 'Alt' | 'Meta'> = [];\n       if (event.ctrlKey) modifiers.push('Ctrl');\n       if (event.shiftKey) modifiers.push('Shift');\n       if (event.altKey) modifiers.push('Alt');\n       if (event.metaKey) modifiers.push('Meta');\n\n       // Pass the full event to lookup, allowing it to decide between code/key matching\n       const match = this.registry.lookup(event, modifiers);\n\n       const result: DispatchResult = {\n         matched: !!match,\n         shortcutId: match?.id,\n         receivedKey: event.key,\n         receivedCode: event.code,\n       };\n\n       this.dispatchLog.push(result);\n\n       if (match) {\n         match.action();\n       }\n\n       return result;\n     }\n\n     // ... rest of the class ...\n   }\n   ```\n\nThis architectural change ensures that shortcuts tied to physical key positions will function correctly across all keyboard layouts, making the system significantly more robust and user-friendly for an international audience. The `isCodeBased` flag and differentiated normalization in `ShortcutRegistry` allow flexibility for both physical-key and character-based shortcuts within a unified system.",
+  "reproduction": [
+    "Set keyboard layout to German QWERTZ.",
+    "In the application, attempt to trigger the 'next-tab' shortcut (Cmd+Shift+]) by pressing Cmd+Shift and the physical key that produces ']' on a US layout.",
+    "Observe that the shortcut does not activate, and the console log shows `[ShortcutHandler] received key=\"+ code=\"BracketRight\" — no match`."
+  ],
+  "rootCause": "The keyboard shortcut system incorrectly relies on `KeyboardEvent.key` (a character value that varies by keyboard layout and shift state) for registering and looking up shortcuts intended to be tied to a physical key position. On a German QWERTZ layout, the physical key corresponding to `BracketRight` produces the character `+` when Shift is pressed, while the `ShortcutRegistry` expects `]` for the `next-tab` shortcut, leading to a mismatch during lookup.",
+  "symptom": "The Cmd+Shift+] shortcut for switching to the next tab does not work on German QWERTZ keyboards, while it works on US keyboards. Other shortcuts like Cmd+F and Cmd+S work fine. On German layouts, the console logs `received key=\"+ code=\"BracketRight\" — no match`.",
+  "variableState": [],
+  "timeline": [],
+  "timelineEdges": [
+    {
+      "from": "User",
+      "isBugPoint": false,
+      "label": "Presses Cmd+Shift+]",
+      "to": "OS"
+    },
+    {
+      "from": "OS",
+      "isBugPoint": false,
+      "label": "Generates KeyEvent (key='+') for German layout",
+      "to": "KeyboardManager.handleKeyEvent"
+    },
+    {
+      "from": "KeyboardManager.handleKeyEvent",
+      "isBugPoint": false,
+      "label": "Calls handler.dispatch with KeyEvent",
+      "to": "ShortcutHandler.dispatch"
+    },
+    {
+      "from": "ShortcutHandler.dispatch",
+      "isBugPoint": true,
+      "label": "Calls registry.lookup(event.key='+') which expects ']' for the shortcut",
+      "to": "ShortcutRegistry.lookup"
+    },
+    {
+      "from": "ShortcutRegistry.lookup",
+      "isBugPoint": false,
+      "label": "Fails to find a match for 'Meta+Shift++'",
+      "to": "ShortcutHandler.dispatch"
+    },
+    {
+      "from": "ShortcutHandler.dispatch",
+      "isBugPoint": false,
+      "label": "Returns 'matched: false'",
+      "to": "User"
+    }
+  ],
+  "whyFixWorks": "The fix works by explicitly intercepting `KeyEvent`s where `event.code` is `BracketRight` (or `BracketLeft`) and `Shift` is pressed. For these specific conditions, it overrides the `event.key` (which would be layout-dependent like '+' or '°') with the expected US-layout character (']' or '[') before passing it to the `ShortcutRegistry` for lookup. This translation ensures that the `keyToLookup` matches the `key` string ('Meta+Shift+]' or 'Meta+Shift+[') that was originally registered, allowing the shortcut to be correctly identified and its action executed regardless of the keyboard layout producing the `KeyEvent`."
+}

@@ -1,0 +1,125 @@
+{
+  "aiPrompt": "The existing keyboard shortcut system uses `event.key` for matching shortcuts, which is locale-dependent. Update `src/shortcuts/ShortcutRegistry.ts`, `src/shortcuts/KeyboardManager.ts`, and `src/shortcuts/ShortcutHandler.ts` to use `event.code` instead of `event.key` for defining and looking up shortcuts. This makes the system layout-independent. Specifically: 1. In `src/shortcuts/ShortcutRegistry.ts`, modify `ShortcutDefinition` to replace `key: string` with `code: string`. Update `register`, `lookup`, and `normalize` methods to accept and use `code` instead of `key`. The `normalize` function's second argument for the base key should now be `code`. 2. In `src/shortcuts/KeyboardManager.ts`, update the `registerDefaults` calls to provide the `code` property (e.g., `'BracketRight'`, `'BracketLeft'`, `'KeyF'`, `'KeyS'`) instead of `key` for each shortcut definition. 3. In `src/shortcuts/ShortcutHandler.ts`, modify the `dispatch` method to pass `event.code` to `this.registry.lookup` instead of `event.key`.",
+  "bugType": "DATA_FLOW",
+  "codeLocation": "src/shortcuts/ShortcutRegistry.ts:normalize() L21",
+  "conceptExtraction": {
+    "bugCategory": "Environmental Dependency",
+    "concept": "Layout-independent keyboard input handling via `event.code`.",
+    "patternToAvoid": "Relying solely on `event.key` for unique, layout-independent key identification in cross-platform or internationalized applications.",
+    "realWorldAnalogy": "Imagine you have a universal remote control for your TV. Each button on the remote has a physical label (like \"Power,\" \"Volume Up\"). This is like `event.code`. But depending on the TV brand or region, pressing \"Volume Up\" might display a different *symbol* on the screen (e.g., `+` or an upward arrow), which is like `event.key`. If your remote's internal logic tried to match the *displayed symbol* instead of the *physical button*, it would only work for certain TV models. To make it truly universal, the remote must recognize the \"Volume Up\" *button* regardless of what symbol the TV displays. The bug was like the remote trying to match the displayed symbol (`+`) instead of the physical button (`BracketRight`).",
+    "whyItMatters": "`event.key` provides the *character* produced by a keypress, which varies based on keyboard layout, active modifiers, and locale. `event.code` provides a *physical identifier* for the key, which is consistent across layouts. Using `event.key` for shortcut matching makes the system brittle and unusable for users with non-US keyboard layouts when characters differ."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/shortcuts/KeyboardManager.ts L23\n-      key: ']',\n+      code: 'BracketRight',\n--- src/shortcuts/KeyboardManager.ts L30\n-      key: '[',\n+      code: 'BracketLeft',\n--- src/shortcuts/KeyboardManager.ts L37\n-      key: 'f',\n+      code: 'KeyF',\n--- src/shortcuts/KeyboardManager.ts L44\n-      key: 's',\n+      code: 'KeyS',\n--- src/shortcuts/ShortcutHandler.ts L30\n-    const match = this.registry.lookup(event.key, modifiers);\n+    const match = this.registry.lookup(event.code, modifiers);\n--- src/shortcuts/ShortcutRegistry.ts L4\n-  key: string;\n+  key?: string;\n+  code: string;\n--- src/shortcuts/ShortcutRegistry.ts L11\n-  register(def: ShortcutDefinition): void {\n-    const normalized = this.normalize(def.key, def.modifiers);\n+  register(def: ShortcutDefinition): void {\n+    const normalized = this.normalize(def.code, def.modifiers);\n--- src/shortcuts/ShortcutRegistry.ts L16\n-  lookup(key: string, modifiers: Array<'Ctrl' | 'Shift' | 'Alt' | 'Meta'>): ShortcutDefinition | undefined {\n-    const normalized = this.normalize(key, modifiers);\n+  lookup(code: string, modifiers: Array<'Ctrl' | 'Shift' | 'Alt' | 'Meta'>): ShortcutDefinition | undefined {\n+    const normalized = this.normalize(code, modifiers);\n--- src/shortcuts/ShortcutRegistry.ts L20\n-  private normalize(key: string, modifiers: Array<'Ctrl' | 'Shift' | 'Alt' | 'Meta'>): string {\n-    const sorted = [...modifiers].sort().join('+');\n-    return sorted ? `${sorted}+${key}` : key;\n+  private normalize(code: string, modifiers: Array<'Ctrl' | 'Shift' | 'Alt' | 'Meta'>): string {\n+    const sorted = [...modifiers].sort().join('+');\n+    return sorted ? `${sorted}+${code}` : code;\n",
+  "evidence": [
+    "KeyboardManager.ts L23: The shortcut is registered with `key: ']'",
+    "ShortcutHandler.ts L30: The `dispatch` method uses `event.key` for lookup: `this.registry.lookup(event.key, modifiers)`",
+    "User symptom report: On German keyboard, `event.key` is `'+'`, `event.code` is `'BracketRight'` for the physical key intended for `']'`."
+  ],
+  "hypotheses": [
+    "ShortcutRegistry.normalize uses event.key (character) instead of event.code (physical key) during lookup, leading to layout-dependent matching.",
+    "The registerDefaults function in KeyboardManager registers incorrect key strings for the affected shortcuts.",
+    "Modifier normalization is incorrect, causing a mismatch."
+  ],
+  "hypothesisTree": [
+    {
+      "id": "H1",
+      "reason": "AST evidence shows `KeyboardManager.ts L23` registers with `key: ']'`, while `ShortcutHandler.ts L30` uses `event.key` (which is `'+'` on German layouts) for `ShortcutRegistry.lookup`. `ShortcutRegistry.ts L12` and `L17` confirm `normalize` uses this `key` parameter, leading to `Meta+Shift+]` being registered and `Meta+Shift++` being looked up, causing a mismatch.",
+      "status": "survived",
+      "text": "Normalize uses layout-dependent key."
+    },
+    {
+      "eliminatedBy": "KeyboardManager.ts L23: register({ key: ']' ... })",
+      "id": "H2",
+      "reason": "The registered value `']'` in `KeyboardManager.ts L23` is the correct logical key as intended by the developer for a US layout. The problem is not the value itself but its interpretation across different keyboard layouts when comparing with `event.key`.",
+      "status": "eliminated",
+      "text": "registerDefaults uses incorrect key strings."
+    },
+    {
+      "eliminatedBy": "ShortcutHandler.ts L24-L28: if (event.ctrlKey) modifiers.push('Ctrl'); ...",
+      "id": "H3",
+      "reason": "The modifier extraction in `ShortcutHandler.ts L24-L28` is correct, and the sorting in `ShortcutRegistry.ts L21` ensures canonical order. The user reports other shortcuts with modifiers (Cmd+F, Cmd+S) work fine, contradicting a global modifier issue.",
+      "status": "eliminated",
+      "text": "Modifier normalization is incorrect."
+    }
+  ],
+  "invariants": [
+    "The normalized string representing a shortcut must be identical during registration and lookup for the same physical key press, regardless of keyboard layout.",
+    "The `ShortcutRegistry` must store and retrieve shortcuts using a layout-independent identifier (e.g., `event.code`) for the base key.",
+    "The `ShortcutDefinition` used for registration must align with the properties available in `KeyEvent` used for lookup to ensure consistent matching."
+  ],
+  "minimalFix": "The root cause is the reliance on `event.key` (character, locale-dependent) instead of `event.code` (physical key, locale-independent) for key identification in the shortcut system. The fix involves updating the `ShortcutDefinition` interface, the `ShortcutRegistry`'s registration and lookup logic, `KeyboardManager`'s default shortcut registrations, and `ShortcutHandler`'s dispatch mechanism to consistently use `event.code`.\n\nSpecifically:\n1.  **Update `ShortcutDefinition`**: In `src/shortcuts/ShortcutRegistry.ts`, change the `ShortcutDefinition` interface to remove `key: string` and add `code: string`. The `key` property can optionally be retained as `key?: string` if it's used for display purposes.\n2.  **Modify `ShortcutRegistry` methods**: Adjust `register`, `lookup`, and `normalize` in `src/shortcuts/ShortcutRegistry.ts` to operate on the `code` property instead of `key` for the base key identifier.\n3.  **Update `KeyboardManager` registrations**: In `src/shortcuts/KeyboardManager.ts`, change all `key: '...'` properties in `registerDefaults` to `code: '...'` using the appropriate `event.code` values (e.g., `'BracketRight'`, `'BracketLeft'`, `'KeyF'`, `'KeyS'`).\n4.  **Adjust `ShortcutHandler` dispatch**: In `src/shortcuts/ShortcutHandler.ts`, modify the `dispatch` method to pass `event.code` (instead of `event.key`) to `this.registry.lookup`.\n\nThis ensures that shortcuts are identified and matched based on the physical key pressed, making the system robust across different keyboard layouts.",
+  "proximate_crash_site": "ShortcutHandler.dispatch() L30 — `this.registry.lookup(event.key, modifiers)` returns `undefined` because `event.key` (e.g., '+') does not match the registered `key` (']').",
+  "reproduction": [
+    "1. Initialize `KeyboardManager` on a system with a German QWERTZ keyboard layout.",
+    "2. Press the physical key corresponding to `]` on a US keyboard, typically found to the right of `P` and to the left of `\\`.",
+    "3. Observe that `Cmd+Shift+]` (next tab) shortcut does not activate.",
+    "4. Console logs will show `received key='+' code='BracketRight' — no match`."
+  ],
+  "rootCause": "The `ShortcutRegistry.normalize` function, used for both registering and looking up shortcuts, relies on the `key` property of the `KeyEvent` (or `ShortcutDefinition.key`). The `key` property represents the character produced by the key press, which is dependent on the keyboard layout and active modifiers. For layout-independent shortcut matching, the system should use the `code` property, which represents the physical key position and is consistent across layouts. The current implementation compares a registered character `']'` against a received character `'+'` for the same physical key on a German layout, leading to a mismatch at `ShortcutRegistry.ts L17` when `normalize` is called from `lookup` with the layout-specific `event.key`.",
+  "secondaryTags": [
+    "Internationalization",
+    "Keyboard Layouts"
+  ],
+  "symptom": "The Cmd+Shift+] shortcut for switching to the next tab does not work on German keyboards, but works on US keyboards. Other shortcuts like Cmd+F and Cmd+S work fine on all layouts. The German keyboard produces `key=\"+\"` and `code=\"BracketRight\"` for the physical key that produces `]` on a US layout, causing a mismatch during lookup.",
+  "timelineEdges": [
+    {
+      "from": "KeyboardManager",
+      "isBugPoint": false,
+      "label": "registers shortcut (key: ']')",
+      "to": "ShortcutRegistry"
+    },
+    {
+      "from": "User (German keyboard)",
+      "isBugPoint": false,
+      "label": "presses physical key (code: 'BracketRight', key: '+')",
+      "to": "KeyboardManager.handleKeyEvent"
+    },
+    {
+      "from": "KeyboardManager.handleKeyEvent",
+      "isBugPoint": false,
+      "label": "calls dispatch with KeyEvent",
+      "to": "ShortcutHandler.dispatch"
+    },
+    {
+      "from": "ShortcutHandler.dispatch",
+      "isBugPoint": false,
+      "label": "calls lookup with event.key ('+')",
+      "to": "ShortcutRegistry.lookup"
+    },
+    {
+      "from": "ShortcutRegistry.lookup",
+      "isBugPoint": false,
+      "label": "calls normalize with key ('+')",
+      "to": "ShortcutRegistry.normalize"
+    },
+    {
+      "from": "ShortcutRegistry.normalize",
+      "isBugPoint": true,
+      "label": "generates normalized string ('Meta+Shift++')",
+      "to": "ShortcutRegistry Map"
+    },
+    {
+      "from": "ShortcutRegistry Map",
+      "isBugPoint": false,
+      "label": "fails to find 'Meta+Shift++' (registered as 'Meta+Shift+]')",
+      "to": "ShortcutRegistry.lookup"
+    },
+    {
+      "from": "ShortcutRegistry.lookup",
+      "isBugPoint": false,
+      "label": "returns undefined (no match)",
+      "to": "ShortcutHandler.dispatch"
+    },
+    {
+      "from": "ShortcutHandler.dispatch",
+      "isBugPoint": false,
+      "label": "sets matched: false, action not fired",
+      "to": "User"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [],
+  "variableStateEdges": [],
+  "whyFixWorks": "This fix works by fundamentally changing the basis of shortcut identification from the character-based `event.key` to the physical-key-based `event.code`. `event.code` provides a consistent, layout-independent identifier for a physical key position on the keyboard. By registering, normalizing, and looking up shortcuts using `event.code` (e.g., 'BracketRight') instead of `event.key` (e.g., ']' on US layout, '+' on German layout), the system ensures that a shortcut defined for a specific physical key will correctly match that keypress regardless of the user's keyboard layout or the specific character produced by `event.key`. This resolves the mismatch where `Meta+Shift+]` was registered, but `Meta+Shift++` was being looked up on German keyboards for the same physical action."
+}
