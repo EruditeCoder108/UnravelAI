@@ -4,7 +4,7 @@
 
 <br/>
 
-[![Watch demo](assets/thumbnail.png)](https://github.com/EruditeCoder108/UnravelAI/blob/main/assets/demo.mp4)
+https://github.com/user-attachments/assets/897ba07f-eaa5-4d95-b5a9-88a4fedfbf6a
 
 <br/>
 
