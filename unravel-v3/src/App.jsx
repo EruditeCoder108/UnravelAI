@@ -213,13 +213,13 @@ const BannerSplash = () => (
                         stroke-dashoffset: 1000;
                         stroke-linecap: round;
                         stroke-linejoin: round;
-                        animation: drawKnot 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+                        animation: drawKnot 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
                     }
                     .kp-1 { animation-delay: 0.1s; }
-                    .kp-2 { animation-delay: 0.3s; }
-                    .kp-3 { animation-delay: 0.5s; }
-                    .kp-4 { animation-delay: 0.7s; }
-                    .kp-5 { animation-delay: 0.9s; }
+                    .kp-2 { animation-delay: 0.2s; }
+                    .kp-3 { animation-delay: 0.3s; }
+                    .kp-4 { animation-delay: 0.4s; }
+                    .kp-5 { animation-delay: 0.5s; }
 
                     @keyframes drawKnot { to { stroke-dashoffset: 0; } }
                     @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
@@ -236,7 +236,7 @@ const BannerSplash = () => (
                         filter: url(#brandGlowSplash);
                         stroke-dasharray: 2000;
                         stroke-dashoffset: 2000;
-                        animation: drawLine 3.5s cubic-bezier(0.1, 0, 0, 1) 1.2s forwards;
+                        animation: drawLine 0.8s cubic-bezier(0.1, 0, 0, 1) 1.7s forwards;
                     }
 
                     @keyframes drawLine { to { stroke-dashoffset: 0; } }
@@ -246,7 +246,7 @@ const BannerSplash = () => (
                     .subtitle { font-family: 'JetBrains Mono', monospace; font-size: 13px; fill: #94a3b8; letter-spacing: 12px; text-transform: uppercase; opacity: 0.6; }
                     .tag-pill { fill: #1e293b; stroke: #334155; stroke-width: 1; }
                     .tag-text { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #38bdf8; font-weight: 900; }
-                    .node-end { fill: #06b6d4; filter: url(#nodeGlowSplash); opacity: 0; animation: showNode 0.4s ease-out 3.0s forwards; }
+                    .node-end { fill: #06b6d4; filter: url(#nodeGlowSplash); opacity: 0; animation: showNode 0.3s ease-out 2.4s forwards; }
 
                     @keyframes showNode { to { opacity: 1; } }
                     .mask-cutout { stroke: #030303; stroke-width: 16; fill: none; stroke-linecap: round; stroke-linejoin: round; }
@@ -330,7 +330,7 @@ const BannerSplash = () => (
                 <text x="5" y="30" className="letter letter-gradient">A</text>
                 <text x="215" y="30" className="letter letter-gradient">E</text>
                 
-                <circle cx="520" cy="0" r="20" className="node-end" />
+                <circle cx="520" cy="0" r="12" className="node-end" />
 
                 <g transform="translate(-720, -215) scale(1.1)">
                     <g className="float-base">
@@ -354,7 +354,6 @@ const BannerSplash = () => (
                             <path d="M180,240 L220,200 L270,250 L300,210 L250,170 L210,120 L170,160" className="knot-path kp-5" fill="none" stroke="#f8fafc" strokeWidth="4.5" filter="url(#whiteGlowSplash)" />
                         </g>
                     </g>
-                    <circle cx="210" cy="185" r="5" fill="#ffffff" filter="url(#whiteGlowSplash)" />
                 </g>
 
                 <text x="0" y="115" className="subtitle" textAnchor="middle">THE AST-ENHANCED AI DEBUGGING ENGINE</text>
@@ -720,8 +719,8 @@ export default function App() {
 
     // ── Splash screen timer — separate effect so StrictMode remount restarts it ──
     useEffect(() => {
-        const exitTimer = setTimeout(() => setIsSplashExiting(true), 4800);
-        const finishTimer = setTimeout(() => setIsInitialLoading(false), 5600);
+        const exitTimer = setTimeout(() => setIsSplashExiting(true), 3200);
+        const finishTimer = setTimeout(() => setIsInitialLoading(false), 3800);
         return () => { clearTimeout(exitTimer); clearTimeout(finishTimer); };
     }, []);
 
@@ -882,12 +881,31 @@ export default function App() {
             }
         }
 
-        const branch = (parts[2] === 'tree' && parts[3]) ? parts[3] : 'main';
+        // ── Resolve branch: explicit in URL > repo metadata default_branch > 'main' ──
+        let branch = (parts[2] === 'tree' && parts[3]) ? parts[3] : null;
+        if (!branch) {
+            onProgress?.('GITHUB: Resolving default branch...');
+            try {
+                const metaRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+                if (metaRes.ok) {
+                    const meta = await metaRes.json();
+                    branch = meta.default_branch || 'main';
+                    console.log(`[GITHUB] Default branch resolved: ${branch}`);
+                } else if (metaRes.status === 404) {
+                    throw new Error('Repository not found. Check the URL or verify it is public.');
+                } else {
+                    branch = 'main'; // fallback on API rate-limit etc.
+                }
+            } catch (metaErr) {
+                if (metaErr.message.includes('not found')) throw metaErr;
+                branch = 'main';
+            }
+        }
 
         onProgress?.('GITHUB: Fetching repository tree...');
         const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
         if (!treeRes.ok) {
-            if (treeRes.status === 404) throw new Error('Repo not found. Is it public?');
+            if (treeRes.status === 404) throw new Error(`Branch "${branch}" not found. Try specifying the branch in the URL: github.com/${owner}/${repo}/tree/BRANCH`);
             throw new Error(`GitHub API error: ${treeRes.status}`);
         }
         const treeData = await treeRes.json();
@@ -1360,7 +1378,7 @@ export default function App() {
     // ═══ RENDER ═══════════════════════════════════════════
 
     return (
-        <div id="app-root" style={{ position: 'relative', overflowX: 'hidden' }}>
+        <div id="app-root" style={{ position: 'relative', overflow: isInitialLoading ? 'hidden' : 'visible', height: isInitialLoading ? '100vh' : 'auto' }}>
             {isInitialLoading && (
                 <div className={`splash-overlay ${isSplashExiting ? 'splash-exit' : ''}`}>
                     <BannerSplash />
