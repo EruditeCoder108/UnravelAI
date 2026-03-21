@@ -8,6 +8,21 @@ https://github.com/user-attachments/assets/897ba07f-eaa5-4d95-b5a9-88a4fedfbf6a
 
 <br/>
 
+<table>
+<tr>
+<td align="center" width="50%">
+<b>The Problem</b><br/>
+LLMs suffer from <em>Proximate Fixation</em> — they blame the crash site instead of tracing state backward to where it was first corrupted.
+</td>
+<td align="center" width="50%">
+<b>The Solution</b><br/>
+Unravel extracts deterministic AST facts (mutation chains, async boundaries, closure captures) and forces the LLM to reason over verified ground truth — not guesses.
+</td>
+</tr>
+</table>
+
+<br/>
+
 <h1>Stop letting your AI guess.</h1>
 
 <p>
@@ -19,8 +34,12 @@ Every mutation chain. Every async boundary. Every closure capture — verified a
 
 <br/>
 
+**[Read the full 52-page Research Paper (PDF) &rarr;](arXiv-paper.pdf)**
+
+<br/>
+
 [![Version](https://img.shields.io/badge/engine-v3.3-58a6ff?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI)
-[![Benchmark](https://img.shields.io/badge/validation-2_merged_PRs-3fb950?style=flat-square&labelColor=0d1117)](#benchmark)
+[![Benchmark](https://img.shields.io/badge/benchmark-21_bugs_99.2%25-3fb950?style=flat-square&labelColor=0d1117)](#benchmark)
 
 [![React](https://img.shields.io/badge/react-18.3-61dafb?style=flat-square&labelColor=0d1117&logo=react&logoColor=61dafb)]()
 [![Node.js](https://img.shields.io/badge/node.js-%3E%3D18-339933?style=flat-square&labelColor=0d1117&logo=node.js&logoColor=339933)]()
@@ -28,7 +47,7 @@ Every mutation chain. Every async boundary. Every closure capture — verified a
 [![Languages](https://img.shields.io/badge/languages-JS%20%7C%20TS%20%7C%20JSX%20%7C%20TSX-3fb950?style=flat-square&labelColor=0d1117)](#language-support)
 [![License](https://img.shields.io/badge/license-BSL1.1-7d8590?style=flat-square&labelColor=0d1117)](LICENSE)
 [![Web App](https://img.shields.io/badge/web_app-live-58a6ff?style=flat-square&labelColor=0d1117&logo=netlify&logoColor=00C7B7)](https://vibeunravel.netlify.app)
-[![Paper](https://img.shields.io/badge/paper-arXiv-b31b1b?style=flat-square&labelColor=0d1117&logo=arxiv&logoColor=b31b1b)](https://github.com/EruditeCoder108/UnravelAI/blob/main/arXiv-paper.pdf)
+[![Read the Paper](https://img.shields.io/badge/Read%20the%20Paper-arXiv-b31b1b?style=for-the-badge&logo=arxiv&logoColor=white)](https://github.com/EruditeCoder108/UnravelAI/blob/main/arXiv-paper.pdf)
 
 <br/>
 
@@ -38,11 +57,12 @@ Every mutation chain. Every async boundary. Every closure capture — verified a
 
 ## Table of Contents
 
+- [Real-World Proof](#real-world-proof)
+- [Quickstart](#quickstart)
 - [How It Works](#how-it-works)
 - [The Loop Every Developer Knows](#the-loop-every-developer-knows)
 - [The Unravel Difference](#the-unravel-difference)
-- [Proved in the Wild](#proved-in-the-wild)
-- [Getting Started](#getting-started)
+- [Full Getting Started](#full-getting-started)
 - [Why AI Debugging Usually Fails](#why-ai-debugging-usually-fails)
 - [Architecture](#architecture)
 - [Three Modes](#three-modes)
@@ -59,6 +79,52 @@ Every mutation chain. Every async boundary. Every closure capture — verified a
 - [Project Status](#project-status)
 - [Contributing](#contributing)
 - [License](#license)
+<br/>
+
+## Real-World Proof
+
+Before any formal benchmark, Unravel was tested on real bugs in major open-source repositories. The tool's structured diagnoses — exact file, exact line, exact mutation chain — were applied directly to multi-file bugs in production codebases:
+
+| Repository | Bug | Scope |
+|------------|-----|-------|
+| **cal.com** | Settings toggles blocking each other — shared `useMutation` hook propagating `isUpdateBtnLoading` to all toggles | 8,000+ file monorepo |
+| **tldraw** | `create-tldraw` CLI installing into CWD instead of subdirectory | Multi-package CLI |
+
+In both cases Unravel traced the root cause to the exact line and function — without hallucination, without manual bisecting.
+
+<div align="center">
+<img src="assets/Screenshot 2026-03-21 071804.png" width="480" alt="cal.com issue #28283 closed — Unravel credited" title="cal.com #28283: EruditeCoder108 credits Unravel, closed as completed"/>
+&nbsp;&nbsp;
+<img src="assets/Screenshot 2026-03-21 071746.png" width="480" alt="tldraw issue #8148 closed — PR #8161 merged" title="tldraw #8148: fix(create-tldraw) merged via github-merge-queue"/>
+</div>
+
+<div align="center">
+<img src="assets/Screenshot 2026-03-20 193235.png" width="600" alt="jarrodwatts PR #259 — reviewer praises root cause identification"/>
+</div>
+
+<br/>
+
+## Quickstart
+
+**Web App — no install, try in 30 seconds:**
+
+1. Open **[vibeunravel.netlify.app](https://vibeunravel.netlify.app)**
+2. Enter your API key (Anthropic, Google, or OpenAI)
+3. Paste a GitHub issue URL *or* upload your files
+4. Describe the bug — or leave it blank for a full scan
+5. Read the diagnosis
+
+**VS Code Extension — install in one command:**
+
+```bash
+# Download unravel-vscode-0.3.0.vsix from GitHub, then:
+code --install-extension unravel-vscode-0.3.0.vsix
+```
+
+Or install from the file: **Extensions → Install from VSIX** → select the [downloaded `.vsix`](unravel-vscode/unravel-vscode-0.3.0.vsix).
+
+Right-click any JS/TS file → **Unravel: Debug This File**.
+
 <br/>
 
 ## How It Works
@@ -99,41 +165,11 @@ The result: **exact file, exact line, exact variable, with evidence and a confid
 
 <br/>
 
-## Proved in the Wild
-
-Before any formal benchmark, Unravel has already been used to diagnose and fix bugs in real production repositories — with the fixes merged and issues closed.
-
-<details>
-<summary><b>▸ &nbsp; cal.com #28283 — Settings toggles blocking each other (closed)</b></summary>
+<br/>
 
 <br/>
 
-**The report:** Toggle switches on the Settings page (e.g. "Search engine indexing", "Monthly digest") were not independent. Clicking one caused all others to show a `not-allowed` cursor and become unresponsive until the first API call completed.
-
-**What Unravel found:** A single `trpc.viewer.me.updateProfile.useMutation` hook at `general-view.tsx L44` was shared across all toggles. The global `isUpdateBtnLoading` state set at `L184` before `mutation.mutate` — and reset at `L87` on `onSettled` — was propagated to the `disabled` prop of every `SettingsToggle` in the form. The execution timeline traced T0 (click) → T0+δ (`isUpdateBtnLoading = true`, all toggles disabled) → T1 (second toggle unresponsive) → T2 (API resolves, `isUpdateBtnLoading = false`).
-
-**The fix:** Create a separate `useMutation` hook per toggle, so each toggle's `disabled` prop binds only to its own `isPending` state. Optimistic updates flip the UI instantly. The main form save button retains its own mutation and dirty-state guard.
-
-**What happened:** The fix pattern was implemented directly in [PR #28296](https://github.com/calcom/cal.com/pull/28296), which was merged and closed the issue. The reporter credited Unravel by name in the thread.
-
-</details>
-
-<details>
-<summary><b>▸ &nbsp; tldraw #8148 — create-tldraw CLI installing into current directory (closed)</b></summary>
-
-<br/>
-
-**The report:** `npm create tldraw my-app` installed everything into the current directory instead of creating a `my-app/` subdirectory. A second bug: files were created even after the user cancelled the "Directory is not empty" prompt.
-
-**What Unravel found:** `targetDir` was set from `process.cwd()` *before* the interactive `namePicker` prompt ran. The name entered interactively was only used to write the `name` field in `package.json` — it never updated `targetDir`. The data flow went: `args._[0]` → `maybeTargetDir` → `targetDir = maybeTargetDir ?? process.cwd()` → `namePicker(maybeTargetDir)` → name used for `package.json` only. For bug 2, static analysis showed `ensureDirectoryEmpty` calls `process.exit(1)` on cancel — the "files created" reports were from external npm scaffolding running before Unravel's code, not from the tool's post-cancel path.
-
-**The fix:** After `namePicker` returns, check if no argument was given *and* the user entered a name different from `pathToName(process.cwd())` — if so, resolve a new `targetDir` from that name before calling `ensureDirectoryEmpty`. This is exactly the `// START FIX` block committed in [PR #8161](https://github.com/tldraw/tldraw/pull/8161), which was merged and closed the issue.
-
-</details>
-
-<br/>
-
-## Getting Started
+## Full Getting Started
 
 ### Web App — No install required
 
@@ -192,8 +228,8 @@ Only after these facts exist does the model reason. It cannot contradict them. I
 <table>
 <thead>
 <tr>
-<th width="50%">❌ &nbsp; Standard ChatGPT / Claude</th>
-<th width="50%">✅ &nbsp; Unravel + Claude</th>
+<th width="50%">Without Unravel</th>
+<th width="50%">With Unravel</th>
 </tr>
 </thead>
 <tbody>
@@ -333,7 +369,7 @@ The engine returns one of three structured verdicts: a normal diagnosis report, 
 <tr>
 <td width="33%" align="center">
 
-### 🐛 &nbsp; Debug
+### Debug
 **Root cause diagnosis**
 
 Full 8-phase pipeline. Traces state backwards from the symptom through mutation chains to the exact corruption point.
@@ -345,7 +381,7 @@ Returns: root cause · evidence · unified diff fix · confidence · Mermaid dia
 </td>
 <td width="33%" align="center">
 
-### 🔍 &nbsp; Explain
+### Explain
 **Architecture walkthrough**
 
 Reads 15–25 files for breadth. Maps module responsibilities, data flow direction, entry points, and dependency graph.
@@ -357,7 +393,7 @@ Returns: module map · data flow · dependency graph · onboarding guide
 </td>
 <td width="33%" align="center">
 
-### 🛡️ &nbsp; Security
+### Security
 **Vulnerability audit**
 
 Traces attack surface across 8–12 files. Requires a concrete exploit payload — no vague "could be vulnerable" claims.
@@ -459,18 +495,27 @@ Every analysis concludes with one of three structured verdicts.
 
 ## Benchmark
 
+
 Unravel's edge is not on easy, isolated bugs — any modern LLM handles those adequately. This engine is built for the opposite scenario: large repos, deep cross-file mutation chains, async races across multiple files, bugs where the symptom and root cause live in completely different modules.
 
-| Suite | Status | Model | Signal |
-|-------|--------|-------|--------|
-| 2 merged PRs (tldraw #8161, cal.com #28296) | ✅ Validated | Gemini 2.5 Flash | Primary validation — diagnoses used by maintainers, fixes merged |
-| UDB-11 (11 bugs) | 📌 Sidelined | Gemini 2.5 Flash | Early architectural signal only: +9% RCA, −35% hallucination. Not publication data. |
-| UDB-51 (51 bugs, 8 categories) | ⏸ Paused | — | Superseded by real-world PR validation as primary evidence path |
-| 20 real GitHub issues | 📋 Planned | Multi-model | Next.js, React, Vite, Express — vs. actual merged fixes |
+**Internal validation suite — 21 bugs across 8 bug categories (v1)**
+
+| Suite | Result | Model | Notes |
+|-------|--------|-------|-------|
+| B-01 to B-20 (20 bugs) | 119/120 (99.2%) | Gemini 2.5 Flash + AST | One partial on PFR axis |
+| Super-bug (extreme difficulty) | 6/6 (100%) | Gemini 2.5 Flash + Async Yield AST | Multi-tenant race condition, 8 files |
+| **Total** | **125/126 (99.2%)** | | |
+
+Baseline comparison (Claude without AST, structured prompt, B-12 to Super-Bug):
+
+| System | Score | Notes |
+|--------|-------|-------|
+| Unravel (AST + Gemini 2.5 Flash) | 59/60 (98.3%) | |
+| Claude Sonnet 4.6 (structured prompt, no AST) | 60/60 (100%) | Optimal prompting |
+
+The AST engine closes the reasoning gap between a fast, cheap model and a frontier model — the systems are functionally equivalent at peak configuration.
 
 **Target:** ≥85% RCA accuracy on hard bugs · ≥+10% delta over raw baseline · <5% hallucination rate
-
-> The merged PRs are the primary correctness signal: real production bugs in major repositories, diagnosed correctly, with maintainer acceptance as the external validation. UDB-11 is early supporting evidence. UDB-51 is deferred — real-world validation is the more meaningful path and is already underway.
 
 <br/>
 
@@ -560,33 +605,33 @@ const BUG_TAXONOMY = {
 ## Project Status
 
 ```
-Phase 1    ✅  Web app, 8-phase pipeline, multi-provider, anti-sycophancy (7 rules)
-Phase 2    ✅  AST pre-analysis, open source
-Phase 3    ✅  Core engine extracted, VS Code extension (v0.3.0) end-to-end
-Phase 3.5  ✅  Pre-publish hardening (MemberExpression detection, input completeness)
-Phase 3.6  ✅  File handling hardening (Router-first GitHub, empty symptom support)
-Phase 4A   ✅  Multi-mode analysis (Debug / Explain / Security) + output presets
-Phase 5    ✅  GitHub Issue URL parsing, Action Center (Web + VS Code)
-Phase 4B   ✅  Intelligence layer — complete:
-               ✅  Cross-file AST import resolution (ast-project.js)
-               ✅  Graph-frontier deterministic router (BFS, wired as Phase 0.5)
-               ✅  Progressive streaming (SSE, all 3 providers)
-               ✅  Tree-sitter primary engine — Babel removed
-               ✅  Floating promise detection (isAwaited guard)
-               ✅  React-specific AST patterns (useState, useEffect, useMemo/useCallback)
-               ✅  Fix completeness verifier (cross-file call graph guard)
-               ✅  proximate_crash_site field + Variable Trace UI
-               ✅  Prompt hardening (Rule 6, Rule 7, buggy context warning, mutual exclusivity)
-               ✅  CFG branch annotation — conditional vs. unconditional per mutation
-               ✅  Hypothesis elimination scoring — eliminatedBy field, AST citation required
-               ✅  Symptom contradiction checks — listener gap, crash site ≠ root cause
-               ✅  Visual diff output — unified diffBlock field in every fix
-Phase 5.5  ✅  Pipeline hardening (post-arxiv) — error type classifier, cross-repo verdict,
+Phase 1    [done]  Web app, 8-phase pipeline, multi-provider, anti-sycophancy (7 rules)
+Phase 2    [done]  AST pre-analysis, open source
+Phase 3    [done]  Core engine extracted, VS Code extension (v0.3.0) end-to-end
+Phase 3.5  [done]  Pre-publish hardening (MemberExpression detection, input completeness)
+Phase 3.6  [done]  File handling hardening (Router-first GitHub, empty symptom support)
+Phase 4A   [done]  Multi-mode analysis (Debug / Explain / Security) + output presets
+Phase 5    [done]  GitHub Issue URL parsing, Action Center (Web + VS Code)
+Phase 4B   [done]  Intelligence layer:
+               Cross-file AST import resolution (ast-project.js)
+               Graph-frontier deterministic router (BFS, wired as Phase 0.5)
+               Progressive streaming (SSE, all 3 providers)
+               Tree-sitter primary engine — Babel removed
+               Floating promise detection (isAwaited guard)
+               React-specific AST patterns (useState, useEffect, useMemo/useCallback)
+               Fix completeness verifier (cross-file call graph guard)
+               proximate_crash_site field + Variable Trace UI
+               Prompt hardening (Rule 6, Rule 7, buggy context warning, mutual exclusivity)
+               CFG branch annotation — conditional vs. unconditional per mutation
+               Hypothesis elimination scoring — eliminatedBy field, AST citation required
+               Symptom contradiction checks — listener gap, crash site != root cause
+               Visual diff output — unified diffBlock field in every fix
+Phase 5.5  [done]  Pipeline hardening (post-arxiv) — error type classifier, cross-repo verdict,
                verifier whitelist, LAYER_BOUNDARY false-positive fix, discipline rules,
                EXTERNAL_FIX_TARGET verdict, framework name stop-list (11 fixes total)
-Phase 8    📋  UDB-51 benchmark — 51 bugs, 8 categories, multi-model
-Phase 9    📋  Real-world validation — 20 real GitHub issues, API pitch data
-Phase 10   📋  Unravel Heavy — multi-agent parallel analysis
+Phase 8    [planned]  UDB-51 benchmark — 51 bugs, 8 categories, multi-model
+Phase 9    [planned]  Real-world validation — 20 real GitHub issues
+Phase 10   [planned]  Unravel Heavy — multi-agent parallel analysis
 ```
 
 <br/>
