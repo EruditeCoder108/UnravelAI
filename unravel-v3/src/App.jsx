@@ -600,15 +600,26 @@ function MermaidChart({ chart, caption }) {
         // This avoids ALL null-ref issues from run() operating on live DOM nodes
         const renderChart = async () => {
             try {
+                let retries = 0;
+                while (!window.mermaid && retries < 40) {
+                    await new Promise(r => setTimeout(r, 50));
+                    retries++;
+                }
                 if (!window.mermaid) return;
+                
+                if (!window.mermaidInitialized) {
+                    window.mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+                    window.mermaidInitialized = true;
+                }
+
                 const { svg } = await window.mermaid.render(svgId, chart);
                 // Only apply if this is still the latest render and container exists
-                if (currentRender === renderIdRef.current && container && container.isConnected) {
+                if (currentRender === renderIdRef.current && container) {
                     container.innerHTML = svg;
                 }
             } catch (err) {
                 // Silently degrade — don't spam console, show fallback
-                if (currentRender === renderIdRef.current && container && container.isConnected) {
+                if (currentRender === renderIdRef.current && container) {
                     container.innerHTML = '<p style="color:#555;font-size:11px;font-family:monospace;padding:8px">⚠️ Diagram could not render</p>';
                 }
                 // Clean up any orphaned SVG element mermaid may have left in the DOM
@@ -625,9 +636,9 @@ function MermaidChart({ chart, caption }) {
     }, [chart]);
     if (!chart) return null;
     return (
-        <div style={{ background: '#0a0a0a', border: '1px solid #333', padding: 16, marginTop: 12, borderRadius: 0, overflow: 'auto' }}>
+        <div style={{ background: 'var(--surface-base)', border: '1px solid var(--border-heavy)', padding: 16, marginTop: 12, borderRadius: 'var(--radius-sm)', overflow: 'auto' }}>
             <div ref={containerRef} />
-            {caption && <p style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: '#666', marginTop: 8, textTransform: 'uppercase', letterSpacing: 1 }}>{caption}</p>}
+            {caption && <p style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: 'var(--text-tertiary)', marginTop: 8, textTransform: 'uppercase', letterSpacing: 1 }}>{caption}</p>}
         </div>
     );
 }
@@ -649,7 +660,6 @@ export default function App() {
     const [pastedFiles, setPastedFiles] = useState([{ name: '', content: '' }]);
     const [directoryFiles, setDirectoryFiles] = useState([]);
     const [githubUrl, setGithubUrl] = useState('');
-    const [githubLoading, setGithubLoading] = useState(false);
     const [githubError, setGithubError] = useState('');
     const [userError, setUserError] = useState('');
 
@@ -793,6 +803,7 @@ export default function App() {
                 sequence: { actorMargin: 50, useMaxWidth: true },
             });
             window.mermaid = m.default;
+            window.mermaidInitialized = true;
         });
     }, []);
 
@@ -1357,14 +1368,14 @@ export default function App() {
         label: { fontFamily: 'inherit', textTransform: 'uppercase', fontSize: 13, fontWeight: 700, letterSpacing: 1.2, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, color: 'var(--text-secondary)' },
         optBtn: (active, accentColor = 'var(--accent-blue)') => ({
             padding: '18px 24px', fontWeight: 600, 
-            border: active ? '2px solid' : '1px solid', 
+            border: '1px solid', 
             borderColor: active ? accentColor : 'var(--border-light)', 
             background: active ? `var(--surface-active)` : 'var(--surface-base)', 
             color: active ? accentColor : 'var(--text-primary)', 
             cursor: 'pointer', fontFamily: 'inherit', fontSize: 16, 
             transition: 'all 0.2s', borderRadius: 'var(--radius-md)',
             transform: active ? 'translateY(-2px)' : 'none',
-            boxShadow: active ? `0 8px 16px rgba(0,0,0,0.1)` : 'none'
+            boxShadow: active ? `0 0 0 1px ${accentColor}, 0 8px 16px rgba(0,0,0,0.1)` : 'none'
         }),
         tabBtn: (active) => ({
             flex: 1, padding: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, 
@@ -1677,7 +1688,7 @@ export default function App() {
                                                 onChange={(e) => setGithubUrl(e.target.value)}
                                             />
                                         </div>
-                                        {githubUrl.trim() && (
+                                        {githubUrl.trim() && /^https?:\/\/github\.com\/.+\/.+/.test(githubUrl.trim()) && (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px' }}>
                                                 <CheckSquare size={16} color="var(--accent-green)" />
                                                 <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Ready</span>
@@ -2017,23 +2028,25 @@ export default function App() {
                 {step === 5 && layerBoundary && !report && (
                     <div className="animate-slide-up" style={{ maxWidth: 1000, margin: '0 auto', paddingBottom: 80 }}>
                         {/* Header */}
-                        <div className="glass-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--accent-orange)', paddingBottom: 16, marginBottom: 32, position: 'sticky', top: 72, zIndex: 15, paddingTop: 16, gap: 12, flexWrap: 'wrap' }}>
-                            <div>
-                                <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: 12, background: 'var(--accent-orange)22', color: 'var(--accent-orange)', border: '1px solid var(--accent-orange)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>
-                                        {layerBoundary._isMissingImpl ? 'IMPLEMENTATION NOT FOUND' : 'UPSTREAM ISSUE'}
-                                    </span>
-                                    {!layerBoundary._isMissingImpl && (
-                                        <span style={{ fontSize: 12, background: 'var(--surface-base)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
-                                            CFD: {Math.round((layerBoundary.confidence || 0) * 100)}%
+                        <div className="glass-header" style={{ position: 'sticky', top: 24, zIndex: 15, background: 'var(--surface-base)', backdropFilter: 'var(--blur-md)', WebkitBackdropFilter: 'var(--blur-md)', border: '1px solid var(--accent-orange)', borderRadius: '32px', marginBottom: 32, boxShadow: 'var(--shadow-lg)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 32px', gap: 12, flexWrap: 'wrap' }}>
+                                <div>
+                                    <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: 12, background: 'var(--accent-orange)22', color: 'var(--accent-orange)', border: '1px solid var(--accent-orange)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>
+                                            {layerBoundary._isMissingImpl ? 'IMPLEMENTATION NOT FOUND' : 'UPSTREAM ISSUE'}
                                         </span>
-                                    )}
+                                        {!layerBoundary._isMissingImpl && (
+                                            <span style={{ fontSize: 12, background: 'var(--surface-base)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
+                                                CFD: {Math.round((layerBoundary.confidence || 0) * 100)}%
+                                            </span>
+                                        )}
+                                    </div>
+                                    <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
+                                        {layerBoundary._isMissingImpl ? 'No Executable Code Found' : 'Fix Impossible Here'}
+                                    </h2>
                                 </div>
-                                <h2 style={{ fontSize: 36, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
-                                    {layerBoundary._isMissingImpl ? 'No Executable Code Found' : 'Fix Impossible Here'}
-                                </h2>
+                                <button className="matte-button" onClick={reset}>← New Analysis</button>
                             </div>
-                            <button className="matte-button" onClick={reset}>← New Analysis</button>
                         </div>
 
                         {/* Layer boundary explanation */}
@@ -2172,62 +2185,64 @@ export default function App() {
                     <ReportErrorBoundary rawResult={report}>
                         <div id="unravel-report-container" className="animate-slide-up" style={{ paddingBottom: 80 }}>
                             {/* Sticky header — mode-aware */}
-                            <div className="glass-header no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--border-light)', paddingBottom: 16, marginBottom: 32, position: 'sticky', top: 72, zIndex: 15, paddingTop: 16, gap: 12, flexWrap: 'wrap' }}>
-                                <div>
-                                    <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                                        <span style={{ fontSize: 12, background: analysisMode === 'debug' ? `${bugMeta?.color || '#888'}22` : analysisMode === 'explain' ? 'var(--accent-cyan)22' : 'var(--accent-orange)22', color: analysisMode === 'debug' ? (bugMeta?.color || 'var(--text-secondary)') : analysisMode === 'explain' ? 'var(--accent-cyan)' : 'var(--accent-orange)', border: `1px solid ${analysisMode === 'debug' ? (bugMeta?.color || '#888') : analysisMode === 'explain' ? 'var(--accent-cyan)' : 'var(--accent-orange)'}`, padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>
-                                            {analysisMode === 'debug' ? (bugMeta?.label || report.bugType || 'DEBUG') : analysisMode === 'explain' ? 'EXPLAIN' : 'SECURITY AUDIT'}
-                                        </span>
-                                        {report.confidence != null && (
-                                            <span style={{ fontSize: 12, background: 'var(--surface-base)', color: report._missingImplementation ? 'var(--text-tertiary)' : 'var(--accent-green)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
-                                                CFD: {report._missingImplementation ? '—' : `${displayConfidence(report.confidence)}%`}
+                            <div className="glass-header no-print" style={{ position: 'sticky', top: 24, zIndex: 15, background: 'var(--surface-base)', backdropFilter: 'var(--blur-md)', WebkitBackdropFilter: 'var(--blur-md)', border: '1px solid var(--border-light)', borderRadius: '32px', marginBottom: 32, boxShadow: 'var(--shadow-lg)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 32px', gap: 12, flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: 12, background: analysisMode === 'debug' ? `${bugMeta?.color || '#888'}22` : analysisMode === 'explain' ? 'var(--accent-cyan)22' : 'var(--accent-orange)22', color: analysisMode === 'debug' ? (bugMeta?.color || 'var(--text-secondary)') : analysisMode === 'explain' ? 'var(--accent-cyan)' : 'var(--accent-orange)', border: `1px solid ${analysisMode === 'debug' ? (bugMeta?.color || '#888') : analysisMode === 'explain' ? 'var(--accent-cyan)' : 'var(--accent-orange)'}`, padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>
+                                                {analysisMode === 'debug' ? (bugMeta?.label || report.bugType || 'DEBUG') : analysisMode === 'explain' ? 'EXPLAIN' : 'SECURITY AUDIT'}
                                             </span>
-                                        )}
+                                            {report.confidence != null && (
+                                                <span style={{ fontSize: 12, background: 'var(--surface-base)', color: report._missingImplementation ? 'var(--text-tertiary)' : 'var(--accent-green)', border: '1px solid var(--border-light)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontWeight: 600 }}>
+                                                    CFD: {report._missingImplementation ? '—' : `${displayConfidence(report.confidence)}%`}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
+                                            {analysisMode === 'debug' ? 'Diagnosis' : analysisMode === 'explain' ? 'Code Explanation' : 'Security Report'}
+                                        </h2>
                                     </div>
-                                    <h2 style={{ fontSize: 36, fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', margin: 0, letterSpacing: -0.5 }}>
-                                        {analysisMode === 'debug' ? 'Diagnosis' : analysisMode === 'explain' ? 'Code Explanation' : 'Security Report'}
-                                    </h2>
-                                </div>
-                                <div style={{ display: 'flex', gap: 12 }}>
-                                    <button className="matte-button primary" style={{ padding: '10px 18px', fontSize: 16, gap: 10 }} onClick={() => {
-                                        const el = document.getElementById('unravel-report-container');
-                                        if (!el) return;
-                                        // Temporarily force light theme for printing
-                                        const prevTheme = document.documentElement.getAttribute('data-theme');
-                                        document.documentElement.setAttribute('data-theme', 'light');
-                                        
-                                        const opt = {
-                                            margin: 0.5,
-                                            filename: `unravel-report-${Date.now()}.pdf`,
-                                            image: { type: 'jpeg', quality: 0.98 },
-                                            html2canvas: { scale: 2, useCORS: true },
-                                            jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-                                        };
-                                        
-                                        html2pdf().set(opt).from(el).save().then(() => {
-                                            if (prevTheme) document.documentElement.setAttribute('data-theme', prevTheme);
-                                            else document.documentElement.removeAttribute('data-theme');
-                                        });
-                                    }}>
-                                        <Download size={16} /> <span style={{ fontSize: 16 }}>PDF Export</span>
-                                    </button>
-                                    <button className="matte-button" style={{ padding: '10px 18px', fontSize: 16, gap: 10, border: '1px solid var(--accent-cyan)', color: 'var(--accent-cyan)' }} onClick={() => {
-                                        const exportData = { ...report };
-                                        delete exportData._streaming;
-                                        const slug = (exportData.bugType || exportData._mode || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-                                        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-                                        const url = URL.createObjectURL(blob);
-                                        const a = document.createElement('a');
-                                        a.href = url;
-                                        a.download = `unravel-${slug}-${Date.now()}.json`;
-                                        document.body.appendChild(a);
-                                        a.click();
-                                        document.body.removeChild(a);
-                                        URL.revokeObjectURL(url);
-                                    }}>
-                                        <Download size={16} /> <span style={{ fontSize: 16 }}>JSON Export</span>
-                                    </button>
-                                    <button className="matte-button" onClick={reset} style={{ padding: '10px 18px', fontSize: 16, gap: 10 }}>← <span style={{ fontSize: 16 }}>New Analysis</span></button>
+                                    <div style={{ display: 'flex', gap: 12 }}>
+                                        <button className="matte-button primary" style={{ padding: '10px 18px', fontSize: 16, gap: 10 }} onClick={() => {
+                                            const el = document.getElementById('unravel-report-container');
+                                            if (!el) return;
+                                            // Temporarily force light theme for printing
+                                            const prevTheme = document.documentElement.getAttribute('data-theme');
+                                            document.documentElement.setAttribute('data-theme', 'light');
+                                            
+                                            const opt = {
+                                                margin: 0.5,
+                                                filename: `unravel-report-${Date.now()}.pdf`,
+                                                image: { type: 'jpeg', quality: 0.98 },
+                                                html2canvas: { scale: 2, useCORS: true },
+                                                jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+                                            };
+                                            
+                                            html2pdf().set(opt).from(el).save().then(() => {
+                                                if (prevTheme) document.documentElement.setAttribute('data-theme', prevTheme);
+                                                else document.documentElement.removeAttribute('data-theme');
+                                            });
+                                        }}>
+                                            <Download size={16} /> <span className="hide-on-mobile" style={{ fontSize: 16 }}>PDF Export</span>
+                                        </button>
+                                        <button className="matte-button" style={{ padding: '10px 18px', fontSize: 16, gap: 10, border: '1px solid var(--accent-cyan)', color: 'var(--accent-cyan)' }} onClick={() => {
+                                            const exportData = { ...report };
+                                            delete exportData._streaming;
+                                            const slug = (exportData.bugType || exportData._mode || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                                            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                                            const url = URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = `unravel-${slug}-${Date.now()}.json`;
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            document.body.removeChild(a);
+                                            URL.revokeObjectURL(url);
+                                        }}>
+                                            <Download size={16} /> <span className="hide-on-mobile" style={{ fontSize: 16 }}>JSON Export</span>
+                                        </button>
+                                        <button className="matte-button" onClick={reset} style={{ padding: '10px 18px', fontSize: 16, gap: 10 }}>← <span className="hide-on-mobile" style={{ fontSize: 16 }}>New Analysis</span></button>
+                                    </div>
                                 </div>
                             </div>
 
