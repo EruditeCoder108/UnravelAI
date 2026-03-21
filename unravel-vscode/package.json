@@ -32,6 +32,10 @@
             {
                 "command": "unravel.securityFile",
                 "title": "Unravel: Security Scan This File"
+            },
+            {
+                "command": "unravel.clearDiagnostics",
+                "title": "Unravel: Clear Diagnostics"
             }
         ],
         "menus": {

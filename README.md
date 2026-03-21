@@ -4,7 +4,7 @@
 
 <br/>
 
-<video src="https://github.com/EruditeCoder108/UnravelAI/blob/main/assets/demo.mp4?raw=true" width="100%" autoplay loop muted playsinline></video>
+[![Watch demo](assets/thumbnail.png)](https://github.com/EruditeCoder108/UnravelAI/blob/main/assets/demo.mp4)
 
 <br/>
 
@@ -28,10 +28,11 @@ Every mutation chain. Every async boundary. Every closure capture — verified a
 [![Languages](https://img.shields.io/badge/languages-JS%20%7C%20TS%20%7C%20JSX%20%7C%20TSX-3fb950?style=flat-square&labelColor=0d1117)](#language-support)
 [![License](https://img.shields.io/badge/license-BSL1.1-7d8590?style=flat-square&labelColor=0d1117)](LICENSE)
 [![Web App](https://img.shields.io/badge/web_app-live-58a6ff?style=flat-square&labelColor=0d1117&logo=netlify&logoColor=00C7B7)](https://vibeunravel.netlify.app)
+[![Paper](https://img.shields.io/badge/paper-arXiv-b31b1b?style=flat-square&labelColor=0d1117&logo=arxiv&logoColor=b31b1b)](https://github.com/EruditeCoder108/UnravelAI/blob/main/arXiv-paper.pdf)
 
 <br/>
 
-**[Try it now →](https://vibeunravel.netlify.app)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Architecture →](ARCHITECTURE.md)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Benchmark →](#benchmark)**
+**[Try it now →](https://vibeunravel.netlify.app)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Architecture →](ARCHITECTURE.md)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Benchmark →](#benchmark)** &nbsp;&nbsp;·&nbsp;&nbsp; **[Paper →](arXiv-paper.pdf)**
 
 </div>
 
@@ -146,16 +147,15 @@ Visit **[vibeunravel.netlify.app](https://vibeunravel.netlify.app)**
 
 ### VS Code Extension
 
-The extension is currently in development and not yet published to the Marketplace. To use it locally:
+Download the pre-built `.vsix` from [GitHub](https://github.com/EruditeCoder108/UnravelAI/blob/main/unravel-vscode/unravel-vscode-0.3.0.vsix) and install via **Extensions → Install from VSIX** in VS Code.
+
+Or build from source:
 
 ```bash
 git clone https://github.com/EruditeCoder108/UnravelAI.git
-cd UnravelAI
-npm install
-npm run build:extension
+cd unravel-vscode
+npm run package
 ```
-
-Install the generated `.vsix` via **Extensions → Install from VSIX** in VS Code.
 
 ### Run Locally
 
@@ -604,6 +604,8 @@ BSL 1.1 — see [LICENSE](LICENSE).
 <div align="center">
 
 **Built by [Sambhav Jain](https://github.com/EruditeCoder108)**
+
+[Web App](https://vibeunravel.netlify.app) &nbsp;·&nbsp; [VS Code Extension](unravel-vscode/unravel-vscode-0.3.0.vsix) &nbsp;·&nbsp; [Research Paper](arXiv-paper.pdf) &nbsp;·&nbsp; [Architecture](ARCHITECTURE.md)
 
 *If Unravel found a bug your AI missed — a star helps.*
 

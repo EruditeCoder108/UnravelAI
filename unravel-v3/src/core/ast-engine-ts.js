@@ -301,32 +301,32 @@ function _collectDestructuredBindings(patternNode, scope, kind) {
  * Handles: simple { a, b }, aliases { a: b }, nested { a: { b } }, arrays [x, [y]],
  * rest elements (...z), and assignment defaults ({ a = 1 }).
  */
-function _collectDestructuredMutations(patternNode, mutations, fn, line) {
+function _collectDestructuredMutations(patternNode, mutations, fn, line, conditional) {
     if (!patternNode) return;
     for (const child of patternNode.namedChildren) {
         if (child.type === 'identifier') {
             if (!mutations[child.text]) mutations[child.text] = { writes: [], reads: [] };
-            mutations[child.text].writes.push({ fn, line, type: 'reassigned' });
+            mutations[child.text].writes.push({ fn, line, type: 'reassigned', conditional });
         } else if (child.type === 'shorthand_property_identifier_pattern' || child.type === 'shorthand_property_identifier') {
             if (!mutations[child.text]) mutations[child.text] = { writes: [], reads: [] };
-            mutations[child.text].writes.push({ fn, line, type: 'reassigned' });
+            mutations[child.text].writes.push({ fn, line, type: 'reassigned', conditional });
         } else if (child.type === 'pair_pattern') {
             // { key: localName } — the local name is the value child
             const value = child.childForFieldName('value');
-            if (value) _collectDestructuredMutations(value, mutations, fn, line);
+            if (value) _collectDestructuredMutations(value, mutations, fn, line, conditional);
         } else if (child.type === 'assignment_pattern') {
             // { a = defaultVal } — 'a' is the left child
             const left = child.childForFieldName('left');
-            if (left) _collectDestructuredMutations(left, mutations, fn, line);
+            if (left) _collectDestructuredMutations(left, mutations, fn, line, conditional);
         } else if (child.type === 'rest_pattern') {
             // [...rest] or {...rest}
             const inner = child.namedChildren[0];
             if (inner?.type === 'identifier') {
                 if (!mutations[inner.text]) mutations[inner.text] = { writes: [], reads: [] };
-                mutations[inner.text].writes.push({ fn, line, type: 'reassigned' });
+                mutations[inner.text].writes.push({ fn, line, type: 'reassigned', conditional });
             }
         } else if (child.type === 'object_pattern' || child.type === 'array_pattern') {
-            _collectDestructuredMutations(child, mutations, fn, line);
+            _collectDestructuredMutations(child, mutations, fn, line, conditional);
         }
     }
 }
@@ -589,7 +589,7 @@ export function extractMutationChains(tree) {
         if (left.type === 'array_pattern' || left.type === 'object_pattern') {
             // Use the recursive helper that handles nested patterns, aliases, rest elements.
             // e.g. [a, [b, c]] = x  or  { a: { b }, c: d } = x
-            _collectDestructuredMutations(left, mutations, fn, line);
+            _collectDestructuredMutations(left, mutations, fn, line, conditional);
         }
         if (left.type === 'member_expression') {
             // obj.prop = value  — property write, object identity preserved

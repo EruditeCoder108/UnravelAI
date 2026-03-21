@@ -34,8 +34,13 @@ function activate(context) {
     const cmdDebug = vscode.commands.registerCommand('unravel.debugFile', () => analyzeCurrentFile('debug'));
     const cmdExplain = vscode.commands.registerCommand('unravel.explainFile', () => analyzeCurrentFile('explain'));
     const cmdSecurity = vscode.commands.registerCommand('unravel.securityFile', () => analyzeCurrentFile('security'));
+    const cmdClear = vscode.commands.registerCommand('unravel.clearDiagnostics', () => {
+        clearDiagnostics();
+        clearDecorations();
+        vscode.window.showInformationMessage('Unravel: Diagnostics cleared.');
+    });
 
-    context.subscriptions.push(cmdDebug, cmdExplain, cmdSecurity, outputChannel, diagCollection, hoverProvider);
+    context.subscriptions.push(cmdDebug, cmdExplain, cmdSecurity, cmdClear, outputChannel, diagCollection, hoverProvider);
 }
 
 /**

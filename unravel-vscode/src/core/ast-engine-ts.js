@@ -301,32 +301,32 @@ function _collectDestructuredBindings(patternNode, scope, kind) {
  * Handles: simple { a, b }, aliases { a: b }, nested { a: { b } }, arrays [x, [y]],
  * rest elements (...z), and assignment defaults ({ a = 1 }).
  */
-function _collectDestructuredMutations(patternNode, mutations, fn, line) {
+function _collectDestructuredMutations(patternNode, mutations, fn, line, conditional) {
     if (!patternNode) return;
     for (const child of patternNode.namedChildren) {
         if (child.type === 'identifier') {
             if (!mutations[child.text]) mutations[child.text] = { writes: [], reads: [] };
-            mutations[child.text].writes.push({ fn, line, type: 'reassigned' });
+            mutations[child.text].writes.push({ fn, line, type: 'reassigned', conditional });
         } else if (child.type === 'shorthand_property_identifier_pattern' || child.type === 'shorthand_property_identifier') {
             if (!mutations[child.text]) mutations[child.text] = { writes: [], reads: [] };
-            mutations[child.text].writes.push({ fn, line, type: 'reassigned' });
+            mutations[child.text].writes.push({ fn, line, type: 'reassigned', conditional });
         } else if (child.type === 'pair_pattern') {
             // { key: localName } — the local name is the value child
             const value = child.childForFieldName('value');
-            if (value) _collectDestructuredMutations(value, mutations, fn, line);
+            if (value) _collectDestructuredMutations(value, mutations, fn, line, conditional);
         } else if (child.type === 'assignment_pattern') {
             // { a = defaultVal } — 'a' is the left child
             const left = child.childForFieldName('left');
-            if (left) _collectDestructuredMutations(left, mutations, fn, line);
+            if (left) _collectDestructuredMutations(left, mutations, fn, line, conditional);
         } else if (child.type === 'rest_pattern') {
             // [...rest] or {...rest}
             const inner = child.namedChildren[0];
             if (inner?.type === 'identifier') {
                 if (!mutations[inner.text]) mutations[inner.text] = { writes: [], reads: [] };
-                mutations[inner.text].writes.push({ fn, line, type: 'reassigned' });
+                mutations[inner.text].writes.push({ fn, line, type: 'reassigned', conditional });
             }
         } else if (child.type === 'object_pattern' || child.type === 'array_pattern') {
-            _collectDestructuredMutations(child, mutations, fn, line);
+            _collectDestructuredMutations(child, mutations, fn, line, conditional);
         }
     }
 }
@@ -589,7 +589,7 @@ export function extractMutationChains(tree) {
         if (left.type === 'array_pattern' || left.type === 'object_pattern') {
             // Use the recursive helper that handles nested patterns, aliases, rest elements.
             // e.g. [a, [b, c]] = x  or  { a: { b }, c: d } = x
-            _collectDestructuredMutations(left, mutations, fn, line);
+            _collectDestructuredMutations(left, mutations, fn, line, conditional);
         }
         if (left.type === 'member_expression') {
             // obj.prop = value  — property write, object identity preserved
@@ -877,7 +877,7 @@ export async function runFullAnalysis(code, filename = '') {
         };
     }
 
-    let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [];
+    let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [], globalWriteRaces = [];
 
     try { mutations = extractMutationChains(tree); }
     catch (e) { console.warn('[AST-TS] Mutation analysis failed:', e.message); }
@@ -900,10 +900,13 @@ export async function runFullAnalysis(code, filename = '') {
     try { stateMutations = detectDirectStateMutations(tree); }
     catch (e) { console.warn('[AST-TS] State mutation detection failed:', e.message); }
 
-    const formatted = formatAnalysis(mutations, closures, timing, reactPatterns, floatingPromises, listenerParity, stateMutations);
+    try { globalWriteRaces = detectGlobalMutationBeforeAwait(tree); }
+    catch (e) { console.warn('[AST-TS] Global write race detection failed:', e.message); }
+
+    const formatted = formatAnalysis(mutations, closures, timing, reactPatterns, floatingPromises, listenerParity, stateMutations, globalWriteRaces);
 
     tree.delete(); // Free WASM memory
-    return { raw: { mutations, closures, timingNodes: timing, reactPatterns, floatingPromises, listenerParity, stateMutations }, formatted };
+    return { raw: { mutations, closures, timingNodes: timing, reactPatterns, floatingPromises, listenerParity, stateMutations, globalWriteRaces }, formatted };
 }
 
 // ═══════════════════════════════════════════════════
@@ -920,6 +923,7 @@ export async function runMultiFileAnalysis(files) {
     const mergedFloatingPromises = [];
     const mergedListenerParity = [];
     const mergedStateMutations = [];
+    const mergedGlobalWriteRaces = [];
     let totalParsed = 0;
     let totalFailed = 0;
     const failedFiles = [];
@@ -984,7 +988,7 @@ export async function runMultiFileAnalysis(files) {
             console.warn(`[AST-TS] Partial analysis for ${shortName}: error ratio ${(errorRatio * 100).toFixed(1)}% — results flagged in output`);
         }
 
-        let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [];
+        let mutations = Object.create(null), closures = Object.create(null), timing = [], reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [], globalWriteRaces = [];
         let anySucceeded = false;
 
         try { mutations = extractMutationChains(tree); anySucceeded = true; }
@@ -1007,6 +1011,9 @@ export async function runMultiFileAnalysis(files) {
 
         try { stateMutations = detectDirectStateMutations(tree); anySucceeded = true; }
         catch (e) { console.warn(`[AST-TS] State mutations failed for ${shortName}:`, e.message); }
+
+        try { globalWriteRaces = detectGlobalMutationBeforeAwait(tree); anySucceeded = true; }
+        catch (e) { console.warn(`[AST-TS] Global write race failed for ${shortName}:`, e.message); }
 
         tree.delete(); // Free WASM memory
 
@@ -1057,6 +1064,9 @@ export async function runMultiFileAnalysis(files) {
         for (const p of stateMutations) {
             mergedStateMutations.push({ ...p, file: shortName });
         }
+        for (const p of globalWriteRaces) {
+            mergedGlobalWriteRaces.push({ ...p, file: shortName });
+        }
     }
 
     if (totalParsed === 0) {
@@ -1066,7 +1076,7 @@ export async function runMultiFileAnalysis(files) {
         };
     }
 
-    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises, mergedListenerParity, mergedStateMutations);
+    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises, mergedListenerParity, mergedStateMutations, mergedGlobalWriteRaces);
     const header = `Files parsed: ${totalParsed}/${files.length}`;
     const failNote = totalFailed > 0
         ? ` (${totalFailed} failed: ${failedFiles.join(', ')})`
@@ -1079,7 +1089,8 @@ export async function runMultiFileAnalysis(files) {
     return {
         raw: { mutations: mergedMutations, closures: mergedClosures, timingNodes: mergedTiming,
                reactPatterns: mergedReactPatterns, floatingPromises: mergedFloatingPromises,
-               listenerParity: mergedListenerParity, stateMutations: mergedStateMutations },
+               listenerParity: mergedListenerParity, stateMutations: mergedStateMutations,
+               globalWriteRaces: mergedGlobalWriteRaces },
         formatted: fullFormatted,
         partialFiles,
     };
@@ -1680,6 +1691,221 @@ export function detectFloatingPromises(tree) {
 }
 
 // ═══════════════════════════════════════════════════
+// FEATURE 6: Global-Scope Write Before Async Yield
+//
+// Detects the race pattern that defeats module-level
+// shared state under concurrent async execution:
+//
+//   moduleScopeVar = value;          // write
+//   await someAsyncCall();           // yield — other requests run here
+//   // downstream reads moduleScopeVar — gets WRONG value
+//
+// Two detection passes:
+//   Pass A — within-file: `let`/`var` at module scope written
+//             inside an async function before an `await` in the
+//             same statement block.
+//   Pass B — cross-file setters: calls to imported functions
+//             whose name matches set*/clear*/reset* (common
+//             module-state mutator conventions) that precede
+//             an `await` in the same block.
+//
+// This is the structural signal that locates the Ghost Tenant
+// class of bug: a global variable written before a ~20ms async
+// gap, making it invisible to the unaided LLM reader.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Detect module-scope state writes that precede an await in the same
+ * function body — the race window that enables cross-request data leakage.
+ *
+ * @param {import('web-tree-sitter').Tree} tree
+ * @returns {Array<{type: string, variable: string, writeKind: string,
+ *                  writeLine: number, awaitLine: number, fn: string,
+ *                  description: string}>}
+ */
+export function detectGlobalMutationBeforeAwait(tree) {
+    const signals = [];
+    if (!tree) return signals;
+
+    const root = tree.rootNode;
+
+    // ── Pass A: collect module-scope mutable variable names ──────────────
+    // Only `let` and `var` are mutable; `const` bindings cannot be reassigned.
+    // Walk direct children of the root node only — declarations inside
+    // functions belong to that function's scope, not the module scope.
+    const moduleScopeWritables = new Set();
+    for (const child of root.namedChildren) {
+        if (child.type !== 'lexical_declaration' && child.type !== 'variable_declaration') continue;
+        const keyword = child.children[0]?.text;
+        if (keyword !== 'let' && keyword !== 'var') continue;
+        for (const declarator of child.namedChildren) {
+            if (declarator.type !== 'variable_declarator') continue;
+            const nameNode = declarator.childForFieldName('name');
+            if (nameNode?.type === 'identifier') {
+                moduleScopeWritables.add(nameNode.text);
+            }
+        }
+    }
+
+    // ── Pass A: find functions whose bodies directly assign to module-scope vars ──
+    // These are "setter" functions (e.g. setTenant, clearSession).
+    // We collect their names so the main scan can recognise bare calls to them.
+    const localSetterFunctions = new Set();
+    const allFnTypes = [
+        'function_declaration', 'function_expression', 'arrow_function',
+        'method_definition', 'generator_function', 'generator_function_declaration',
+    ];
+    const allFunctions = root.descendantsOfType(allFnTypes);
+
+    if (moduleScopeWritables.size > 0) {
+        for (const fnNode of allFunctions) {
+            const body = fnNode.childForFieldName('body');
+            if (!body) continue;
+            const assigns = body.descendantsOfType('assignment_expression');
+            for (const assign of assigns) {
+                const left = assign.childForFieldName('left');
+                if (left?.type === 'identifier' && moduleScopeWritables.has(left.text)) {
+                    localSetterFunctions.add(_getFunctionName(fnNode));
+                    break;
+                }
+            }
+        }
+    }
+
+    // ── Pass B: collect imported identifiers matching setter naming conventions ──
+    // Pattern: `import { setTenant, clearTenant } from '...'`
+    // Convention: set[A-Z]*, clear[A-Z]*, reset[A-Z]*, init[A-Z]*
+    // These are NOT defined locally — they arrive from another module and are
+    // presumed to mutate state in that module's scope.
+    //
+    // Known false-positive risk: generic utility functions that match the prefix
+    // (e.g. setConfig, initParser) will be flagged if called before an await.
+    // The signal is clearly labelled as a RISK — the LLM is expected to confirm
+    // whether the callee actually writes shared state. Precision can be tightened
+    // in future by resolving the imported symbol to its declaration file.
+    const SETTER_PREFIX_RE = /^(?:set|clear|reset|init)[A-Z]/;
+    const importedSetterLike = new Set();
+
+    for (const child of root.namedChildren) {
+        if (child.type !== 'import_statement') continue;
+        const clause = child.namedChildren.find(c => c.type === 'import_clause');
+        if (!clause) continue;
+        // Walk all identifiers in the import clause
+        const ids = clause.descendantsOfType('identifier');
+        for (const id of ids) {
+            if (SETTER_PREFIX_RE.test(id.text)) {
+                importedSetterLike.add(id.text);
+            }
+        }
+    }
+
+    // ── Main scan: walk each function's statement block in order ──────────
+    // For each statement we check whether it:
+    //   (A) directly assigns to a module-scope variable, OR
+    //   (B) calls a local setter function, OR
+    //   (C) calls an imported setter-like function
+    // Then we look for the first `await_expression` in a *subsequent*
+    // statement within the same block and emit a signal.
+    //
+    // Limitation: only inspects direct children of the `statement_block`.
+    // Setter calls wrapped in a try/if/switch at the top level are NOT caught
+    // because the top-level statement is a try_statement/if_statement, not an
+    // expression_statement. Extending to recurse into try bodies is a v2 task.
+
+    for (const fnNode of allFunctions) {
+        const body = fnNode.childForFieldName('body');
+        if (!body || body.type !== 'statement_block') continue;
+
+        const stmts = body.namedChildren; // ordered statements
+        const enclosingFn = _getFunctionName(fnNode);
+
+        for (let i = 0; i < stmts.length - 1; i++) {
+            const stmt = stmts[i];
+            let writeInfo = null;
+
+            if (stmt.type === 'expression_statement') {
+                const expr = stmt.namedChildren[0];
+                if (!expr) continue;
+
+                // Pattern A: direct assignment — `_activeTenant = tenantId`
+                if (expr.type === 'assignment_expression') {
+                    const left = expr.childForFieldName('left');
+                    if (left?.type === 'identifier' && moduleScopeWritables.has(left.text)) {
+                        writeInfo = {
+                            kind: 'direct_assignment',
+                            variable: left.text,
+                            line: stmt.startPosition.row + 1,
+                        };
+                    }
+                }
+
+                // Pattern B/C: call to a setter — `setTenant(x)` or `clearTenant()`
+                if (!writeInfo && expr.type === 'call_expression') {
+                    const callee = expr.childForFieldName('function');
+                    const calleeName = callee?.type === 'identifier' ? callee.text
+                        : callee?.type === 'member_expression'
+                            ? callee.childForFieldName('property')?.text
+                            : null;
+
+                    if (calleeName) {
+                        const isLocalSetter   = localSetterFunctions.has(calleeName);
+                        const isImportedSetter = importedSetterLike.has(calleeName);
+
+                        if (isLocalSetter || isImportedSetter) {
+                            writeInfo = {
+                                kind: isLocalSetter ? 'local_setter_call' : 'imported_setter_call',
+                                variable: calleeName,
+                                line: stmt.startPosition.row + 1,
+                            };
+                        }
+                    }
+                }
+            }
+
+            if (!writeInfo) continue;
+
+            // Look for the first await_expression in a subsequent statement
+            for (let j = i + 1; j < stmts.length; j++) {
+                const awaitNodes = stmts[j].descendantsOfType('await_expression');
+                if (awaitNodes.length === 0) continue;
+
+                const awaitLine = awaitNodes[0].startPosition.row + 1;
+
+                // Determine a human-readable subject for the signal
+                const subject = writeInfo.kind === 'direct_assignment'
+                    ? `module-scope variable \`${writeInfo.variable}\``
+                    : `\`${writeInfo.variable}()\` (writes module-scope state)`;
+
+                // Generic description — deliberately avoids naming downstream consumers
+                // because those differ per codebase. The LLM uses variable/writeLine/awaitLine
+                // to find the exact call sites. The description explains the race class.
+                const description = [
+                    `${subject} written at L${writeInfo.line},`,
+                    `then \`await\` at L${awaitLine} in \`${enclosingFn}\` suspends execution.`,
+                    `During that async gap, any concurrent call to \`${enclosingFn}\` (or any`,
+                    `other function that writes the same global) will overwrite the value.`,
+                    `All code that reads this global after the await — in this request or`,
+                    `downstream — may receive a value belonging to a different concurrent caller.`,
+                ].join(' ');
+
+                signals.push({
+                    type: 'global_write_before_await',
+                    variable: writeInfo.variable,
+                    writeKind: writeInfo.kind,
+                    writeLine: writeInfo.line,
+                    awaitLine,
+                    fn: enclosingFn,
+                    description,
+                });
+                break; // one signal per write — report the first await gap only
+            }
+        }
+    }
+
+    return signals;
+}
+
+// ═══════════════════════════════════════════════════
 // CAUSAL CHAIN BUILDER
 // Connects timing nodes → state writes into explicit
 // cause→effect chains using already-extracted data.
@@ -1866,7 +2092,7 @@ function detectMultiSourceRace(chains) {
 // FORMAT: Same output format as the old engine
 // ═══════════════════════════════════════════════════
 
-function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = []) {
+function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [], globalWriteRaces = []) {
     const lines = [];
     lines.push('VERIFIED STATIC ANALYSIS — deterministic, not hallucinated');
     lines.push('══════════════════════════════════════════════════════════');
@@ -2067,9 +2293,21 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
         lines.push('');
     }
 
+    // Global-scope writes before async yield — the concurrent request race signal
+    if (globalWriteRaces.length > 0) {
+        lines.push('Global State Written Before Async Yield ⚠ CONCURRENT RACE RISK:');
+        for (const r of globalWriteRaces) {
+            const fileTag = r.file ? ` [${r.file}]` : '';
+            lines.push(`  ${r.variable}${fileTag}  written at L${r.writeLine}  →  await at L${r.awaitLine}  in \`${r.fn}\``);
+            lines.push(`  ⚠ ${r.description}`);
+            lines.push(`  → Fix: move the write to AFTER the await resolves, or use AsyncLocalStorage for per-request isolation.`);
+            lines.push('');
+        }
+    }
+
     if (mutatedVars.length === 0 && timing.length === 0 && captureEntries.length === 0
         && reactPatterns.length === 0 && floatingPromises.length === 0 && listenerParity.length === 0
-        && stateMutations.length === 0) {
+        && stateMutations.length === 0 && globalWriteRaces.length === 0) {
         lines.push('No significant mutation chains, timing nodes, or closure captures detected.');
         lines.push('The LLM should analyze the code without AST hints.');
         lines.push('');
