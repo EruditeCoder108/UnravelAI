@@ -1,0 +1,206 @@
+{
+  "aiPrompt": "Refactor `counter-store.js` to prevent stale references in `hot-path-cache.js` when `_counters` is reset. Specifically, modify `resetWindow()` so that it clears the existing `_counters` Map instead of reassigning the variable to a new Map. Explain why this prevents `HotPathCache` from holding a stale reference to an old Map instance.",
+  "bugType": "STATE_MUTATION",
+  "codeLocation": "src/counter-store.js L36",
+  "conceptExtraction": {
+    "bugCategory": "Data Consistency",
+    "concept": "Stale Object Reference due to Variable Reassignment",
+    "patternToAvoid": "Avoid reassigning module-scoped `let` variables that hold object references, especially when those references are passed into constructors or captured by closures in other modules that expect a consistent underlying object. Instead, mutate the object's contents or provide explicit update mechanisms.",
+    "realWorldAnalogy": "Imagine you have a shared whiteboard (the `Map` object) where everyone writes important notes. Your team's meeting room has a permanent reference to *that specific whiteboard*. If the facility manager decides to 'reset' the main notes by replacing the old whiteboard with a brand new, empty one, your team's meeting room still points to the *original, now abandoned, old whiteboard*. You keep writing on the old one, but everyone else is seeing and updating notes on the new one, leading to complete confusion and bypassed information. The fix is for the facility manager to simply erase the existing whiteboard instead of replacing it, so everyone consistently uses the same physical board.",
+    "whyItMatters": "Stale references lead to insidious data inconsistencies where different parts of an application operate on divergent versions of 'truth'. This can manifest as silent failures, incorrect business logic, bypassed security/rate limits, or corrupted data that is extremely difficult to debug because the code appears syntactically correct but refers to the wrong data instance."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/counter-store.js L36\n-    _counters = new Map();\n+    _counters.clear();",
+  "evidence": [
+    "The `VERIFIED STATIC ANALYSIS` explicitly states a 'Constructor-Captured References ⚠ STALE OBJECT IDENTITY' at `hot-path-cache.js L40`, where `_cache = new HotPathCache(_counters)` captures the initial `Map` instance.",
+    "The `VERIFIED STATIC ANALYSIS` confirms `counter-store.js L36` in `resetWindow()` 'REASSIGNS _counters' to a new `Map` object.",
+    "Following this reassignment, `_cache._map` in `HotPathCache` continues to point to the *original*, now 'stale, abandoned' `Map` object, as detailed in the `VERIFIED STATIC ANALYSIS`.",
+    "This divergence ensures that `checkHotPath` (which reads from `_cache._map`) will operate on an empty or incorrect dataset, leading to `count: 0` and `allowed: true` even when actual counts in the *new* `_counters` are high."
+  ],
+  "hypotheses": [
+    "Stale reference to `_counters` in `HotPathCache`",
+    "`flushHitBuffer` not propagating counts to `HotPathCache`",
+    "`clearForRotation` being called too frequently or incorrectly"
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "id": "H1",
+      "reason": "`HotPathCache` is instantiated with `_counters` at `hot-path-cache.js L40`. `resetWindow` at `counter-store.js L36` reassigns the `_counters` variable to a new `Map`, causing `_cache._map` to hold a reference to the old, cleared `Map` object, making it stale. Subsequent lookups in `_cache` (e.g., in `checkHotPath`) will always read from this stale, empty map, directly causing the observed symptoms.",
+      "status": "survived",
+      "text": "Stale reference to `_counters` in `HotPathCache`"
+    },
+    {
+      "eliminatedBy": "hot-path-cache.js L74, hot-path-cache.js L69, counter-store.js L18",
+      "id": "H2",
+      "reason": "`flushHitBuffer` at `hot-path-cache.js L74` (via loop) and `recordHit` at `hot-path-cache.js L69` both call `incrementCount` from `counter-store.js`, which directly updates the `_counters` variable. The `HotPathCache`'s `_map` is intended to be the same underlying `Map` object as `_counters`, not a separate cache that needs explicit propagation. The issue is the identity of the `Map` object itself, not a propagation mechanism.",
+      "status": "eliminated",
+      "text": "`flushHitBuffer` not propagating counts to `HotPathCache`"
+    },
+    {
+      "eliminatedBy": "window-manager.js L38, hot-path-cache.js L87",
+      "id": "H3",
+      "reason": "`clearForRotation` is called appropriately once per rotation in `window-manager.js L38`. The problem is not the timing or frequency of clearing, but that it clears a *stale* `Map` object, and subsequent writes go to a *different` Map` object. The clearing itself is correct for the intended (non-stale) map.",
+      "status": "eliminated",
+      "text": "`clearForRotation` being called too frequently or incorrectly"
+    }
+  ],
+  "invariants": [
+    "The `_activeWindowId` in `counter-store.js` must always represent the currently active window for all count operations.",
+    "The `HotPathCache`'s internal map (`_cache._map`) must always reflect the *current* state of `_counters` in `counter-store.js`.",
+    "The count for any `clientId:windowId` key in `_counters` must be non-negative.",
+    "`_isRotating` in `window-manager.js` must accurately reflect whether a window rotation is in progress to prevent concurrent rotations."
+  ],
+  "minimalFix": "The root cause is the reassignment of the `_counters` variable in `counter-store.js`'s `resetWindow()` function, which causes `HotPathCache` to retain a stale reference to the old `Map` object. The most direct fix is to ensure `_counters` is never reassigned, but rather its contents are cleared when a reset is needed.",
+  "proximate_crash_site": "rate-checker.js L31 — `cacheResult.count` is always 0 because `checkHotPath()` reads from a stale cache. This causes `allowed: true` to be returned prematurely.",
+  "reproduction": [
+    "Initialize the rate limiter using `limiter.init()`.",
+    "Wait for the first window rotation to complete (approximately 60 seconds by default, as per `WINDOW_DURATION_MS`).",
+    "After the rotation, send a high volume of requests for any client, e.g., `processRequest('free-client-001', {})` for 5,000 times.",
+    "Observe that `processRequest` calls continue to return `{ allowed: true, count: 0, remaining: 100 }` (or similar for the client's limit) and never report `allowed: false` for exceeding the limit, even when `getDiagnostics().store.entryCount` shows correct, increasing counts for the new window.",
+    "Observe that `getDiagnostics().cache.size` remains `0`."
+  ],
+  "rootCause": "counter-store.js L36: `_counters = new Map()` inside `resetWindow()` reassigns the `_counters` variable to a new `Map` object. This abandons the original `Map` instance, to which `HotPathCache` (instantiated at `hot-path-cache.js L40`) holds a permanent, stale reference via `_cache._map`.",
+  "symptom": "After the first 60-second window rotation, the rate limiter stops enforcing limits. All requests pass, `count` in responses is 0, and `getDiagnostics().cache.size` is 0, despite `getDiagnostics().store.entryCount` growing correctly.",
+  "timelineEdges": [
+    {
+      "from": "User",
+      "isBugPoint": false,
+      "label": "makes requests",
+      "to": "Limiter"
+    },
+    {
+      "from": "Limiter: processRequest()",
+      "isBugPoint": false,
+      "label": "calls recordRequest()",
+      "to": "RateChecker"
+    },
+    {
+      "from": "RateChecker: recordRequest()",
+      "isBugPoint": false,
+      "label": "calls checkLimit()",
+      "to": "RateChecker"
+    },
+    {
+      "from": "RateChecker: checkLimit()",
+      "isBugPoint": false,
+      "label": "calls checkHotPath()",
+      "to": "HotPathCache"
+    },
+    {
+      "from": "HotPathCache: checkHotPath()",
+      "isBugPoint": false,
+      "label": "performs _cache.lookup() on initial Map",
+      "to": "HotPathCache:_cache"
+    },
+    {
+      "from": "System",
+      "isBugPoint": false,
+      "label": "time passes",
+      "to": "WindowManager"
+    },
+    {
+      "from": "WindowManager",
+      "isBugPoint": false,
+      "label": "setInterval triggers rotateWindow()",
+      "to": "WindowManager: rotateWindow()"
+    },
+    {
+      "from": "WindowManager: rotateWindow()",
+      "isBugPoint": false,
+      "label": "calls clearForRotation()",
+      "to": "HotPathCache"
+    },
+    {
+      "from": "HotPathCache: clearForRotation()",
+      "isBugPoint": false,
+      "label": "clears _cache._map (original Map)",
+      "to": "HotPathCache:_cache"
+    },
+    {
+      "from": "WindowManager: rotateWindow()",
+      "isBugPoint": false,
+      "label": "awaits fetchWindowSync()",
+      "to": "SyncCoordinator"
+    },
+    {
+      "from": "SyncCoordinator",
+      "isBugPoint": false,
+      "label": "returns newWindowId, remoteStats",
+      "to": "WindowManager: rotateWindow()"
+    },
+    {
+      "from": "WindowManager: rotateWindow()",
+      "isBugPoint": true,
+      "label": "calls resetWindow() (reassigns _counters)",
+      "to": "CounterStore"
+    },
+    {
+      "from": "User",
+      "isBugPoint": false,
+      "label": "makes requests (post-rotation)",
+      "to": "Limiter"
+    },
+    {
+      "from": "Limiter: processRequest()",
+      "isBugPoint": false,
+      "label": "calls recordRequest()",
+      "to": "RateChecker"
+    },
+    {
+      "from": "RateChecker: recordRequest()",
+      "isBugPoint": false,
+      "label": "calls checkLimit()",
+      "to": "RateChecker"
+    },
+    {
+      "from": "RateChecker: checkLimit()",
+      "isBugPoint": false,
+      "label": "calls checkHotPath()",
+      "to": "HotPathCache"
+    },
+    {
+      "from": "HotPathCache: checkHotPath()",
+      "isBugPoint": false,
+      "label": "performs _cache.lookup() (on stale, cleared Map)",
+      "to": "HotPathCache:_cache"
+    },
+    {
+      "from": "HotPathCache:_cache",
+      "isBugPoint": false,
+      "label": "returns 0 count (always allowed)",
+      "to": "HotPathCache: checkHotPath()"
+    },
+    {
+      "from": "RateChecker: checkLimit()",
+      "isBugPoint": false,
+      "label": "calls recordHit()",
+      "to": "HotPathCache"
+    },
+    {
+      "from": "HotPathCache: recordHit()",
+      "isBugPoint": false,
+      "label": "calls incrementCount() (on new _counters Map)",
+      "to": "CounterStore"
+    }
+  ],
+  "uncertainties": [],
+  "variableState": [
+    {
+      "meaning": "The currently active window ID for counter operations.",
+      "variable": "_activeWindowId",
+      "whereChanged": "resetWindow L35"
+    },
+    {
+      "meaning": "The primary store for all client counts, keyed by client ID and window ID.",
+      "variable": "_counters",
+      "whereChanged": "resetWindow L36 (reassigned)"
+    },
+    {
+      "meaning": "The `HotPathCache` instance, which internally holds a reference to a `Map` for fast lookups.",
+      "variable": "_cache",
+      "whereChanged": "hot-path-cache.js L40 (initialized)"
+    }
+  ],
+  "whyFixWorks": "Changing `_counters = new Map()` to `_counters.clear()` at `counter-store.js L36` ensures that the `_counters` variable itself is never reassigned. Instead, the *contents* of the existing `Map` instance are cleared. Since `HotPathCache` (at `hot-path-cache.js L40`) initially captured a reference to this *same* `Map` instance, its internal `_cache._map` will always point to the live, current `Map` object. When `resetWindow()` is called, the shared `Map` object is correctly cleared. Subsequent `incrementCount()` calls and `checkHotPath()` lookups will then operate on this single, consistent, and correctly reset `Map` instance, eliminating the stale reference and ensuring rate limits are enforced."
+}

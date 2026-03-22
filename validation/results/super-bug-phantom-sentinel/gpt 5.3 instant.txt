@@ -1,0 +1,172 @@
+## 1. Hypothesis Tree
+
+### **Hypothesis 1 — Stale Map reference in hot-path cache (SURVIVES)**
+
+* **Where:** `counter-store.js: resetWindow()` → `_counters = new Map()` 
+* **Where:** `hot-path-cache.js: constructor` → `this._map = counterMap` 
+
+**Reasoning:**
+
+* The cache is initialized with a **reference to `_counters` at module load time**.
+* On rotation, `resetWindow()` **reassigns `_counters` to a brand new Map**, not mutating the old one.
+* The cache continues pointing to the **old (now abandoned) Map**.
+* Meanwhile, all writes (`incrementCount`) go to the **new `_counters` Map**.
+
+**Explains both symptoms:**
+
+* ✅ **Permanent bypass:** cache always reads from old empty Map → `count = 0` forever → always allowed.
+* ✅ **cache.size = 0 vs store.entryCount > 0:** cache Map ≠ store Map.
+
+**Status:** ✔️ Survives
+
+---
+
+### **Hypothesis 2 — Rotation async gap allows bypass (ELIMINATED)**
+
+* **Where:** `window-manager.js: rotateWindow()` → async gap between `clearForRotation()` and `resetWindow()` 
+
+**Reasoning:**
+
+* There *is* a window where cache is cleared before store reset completes.
+* This could allow a **temporary burst of allowed requests**.
+
+**But:**
+
+* ❌ Does **not explain permanence** — once rotation completes, enforcement should resume.
+* ❌ Does **not explain divergence** (`cache.size=0` while store grows).
+
+**Status:** ❌ Eliminated
+
+---
+
+### **Hypothesis 3 — Policy engine returning incorrect limits (ELIMINATED)**
+
+* **Where:** `policy-engine.js: evaluatePolicy()` 
+
+**Reasoning:**
+
+* If policy cache returned huge limits, enforcement could appear disabled.
+
+**But:**
+
+* ❌ Observed `limit = 100` (correct)
+* ❌ `count = 0` is the real issue, not limit inflation
+* ❌ Does not explain **cache/store divergence**
+
+**Status:** ❌ Eliminated
+
+---
+
+## 2. Root Cause
+
+**File:** `counter-store.js`
+**Line:** `resetWindow()` → `_counters = new Map();` 
+
+**Mechanism:**
+Reassigning `_counters` creates a new Map object, but `hot-path-cache` retains a reference to the old Map. After rotation, reads (cache) and writes (store) operate on different Map instances, causing the cache to permanently see zero counts.
+
+---
+
+## 3. Causal Chain
+
+1. **Initialization**
+
+   * `_counters = Map A` (in `counter-store`)
+   * `HotPathCache` stores reference → `this._map = Map A` 
+
+2. **Normal operation (Window 1)**
+
+   * Reads (cache) → Map A
+   * Writes (incrementCount) → Map A
+   * System works correctly.
+
+3. **Rotation begins**
+
+   * `clearForRotation()` → clears Map A (cache + store aligned) 
+
+4. **Critical step**
+
+   * `resetWindow()` → `_counters = Map B` (NEW object) 
+
+5. **Post-rotation state**
+
+   * Store writes → Map B
+   * Cache reads → still Map A (stale reference)
+
+6. **Request flow after rotation**
+
+   * `checkHotPath()` → reads Map A → always empty → `count = 0`
+   * `incrementCount()` → writes to Map B → counts increase correctly
+   * `getDiagnostics()`:
+
+     * cache.size → Map A → 0
+     * store.entryCount → Map B → growing
+
+7. **Permanent bypass**
+
+   * Cache never reconnects to Map B → enforcement permanently broken.
+
+---
+
+## 4. Proximate Trap
+
+A less careful engineer will blame:
+
+> “Async rotation gap in `fetchWindowSync()` causing requests to slip through.”
+
+**Why this is wrong:**
+
+* That explains only a **temporary burst**, not a **permanent bypass**.
+* It ignores the key invariant violation: **read/write structures diverging**.
+* The real issue is **object identity (Map reference), not timing**.
+
+---
+
+## 5. Minimal Fix
+
+### **Fix: mutate instead of reassign**
+
+**File:** `counter-store.js`
+**Change:**
+
+```diff
+export function resetWindow(newWindowId) {
+    _rotationCount++;
+    _activeWindowId = newWindowId;
+-   _counters = new Map();
++   _counters.clear();
+    storeEvents.emit('window:reset', { windowId: newWindowId, rotation: _rotationCount });
+}
+```
+
+### **Why this works**
+
+* Keeps **same Map object (Map A)** alive
+* Both:
+
+  * HotPathCache (`this._map`)
+  * counter-store (`_counters`)
+    now reference the **same Map**
+* Clearing instead of replacing preserves **reference identity**
+* Eliminates stale-reference split → cache and store stay consistent
+
+---
+
+### **Alternative (less ideal) fix**
+
+Rebind cache on rotation:
+
+```js
+_cache._map = _counters;
+```
+
+But this is fragile and breaks encapsulation — the real fix is **never swapping the Map instance**.
+
+---
+
+## Final Insight
+
+This is a classic **mutable module state + captured reference bug**:
+
+> You didn’t clear the data — you replaced the container.
+> And one part of the system never noticed.

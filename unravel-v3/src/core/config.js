@@ -798,6 +798,26 @@ export const ENGINE_SCHEMA = {
                 diffBlock: {
                     type: "STRING",
                     description: "Minimal fix as unified diff format. Lines starting with - are removed, + are added. Include file:line header per changed location. Keep under 20 lines. Example: '--- app.js L69\n-    duration = remaining\n+    lastActiveRemaining = remaining'"
+                },
+                additionalRootCauses: {
+                    type: "ARRAY",
+                    description: "Populate ONLY when the symptom describes multiple INDEPENDENT failure modes — bugs that are causally independent: (1) different trigger condition, (2) different fix location (different file or different function), (3) different observable symptom. TEST: if fixing rootCause would also fix this, it is NOT an independent root cause — it is a secondary effect. A null dereference crash and the missing null guard that causes it are NOT two root causes. A Set.forEach double-count and a strict > off-by-one in a separate function ARE two root causes. Do NOT populate this with symptoms explained by the primary rootCause.",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            id: { type: "STRING", description: "RC-2, RC-3, etc." },
+                            rootCause: { type: "STRING", description: "Independent root cause — different file/mechanism from the primary." },
+                            codeLocation: { type: "STRING", description: "File + line for this independent bug." },
+                            minimalFix: { type: "STRING", description: "Fix for this independent bug only." },
+                            diffBlock: { type: "STRING", description: "Unified diff for this independent bug." },
+                            confidence: { type: "NUMBER", description: "Confidence in this independent diagnosis." }
+                        }
+                    }
+                },
+                uncoveredSymptoms: {
+                    type: "ARRAY",
+                    items: { type: "STRING" },
+                    description: "Symptoms from the user's bug report that are NOT explained by rootCause or additionalRootCauses. Each entry is a quoted phrase from the symptom + a brief explanation of why it is unresolved. Leave empty if all symptoms are accounted for."
                 }
             }
         }
@@ -807,7 +827,7 @@ export const ENGINE_SCHEMA = {
 
 // --- Schema Instruction (for Claude / OpenAI inline prompt injection) ---
 // This mirrors ENGINE_SCHEMA so that changes to one are reflected in both.
-export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, secondaryTags?: string[], customLabel?: string, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, proximate_crash_site?: string, codeLocation, minimalFix, whyFixWorks, diffBlock?: string, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, aiPrompt, timelineEdges: [{from, to, label, isBugPoint}], hypothesisTree: [{id, text, status, reason, eliminatedBy?}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}] } }`;
+export const ENGINE_SCHEMA_INSTRUCTION = `\n\nReturn ONLY a raw JSON object (no markdown fences, no explanation outside JSON) matching this structure: { needsMoreInfo: boolean, missingFilesRequest?: { filesNeeded: string[], reason: string }, report?: { bugType, secondaryTags?: string[], customLabel?: string, confidence, evidence[], uncertainties[], symptom, reproduction[], rootCause, proximate_crash_site?: string, codeLocation, minimalFix, whyFixWorks, diffBlock?: string, variableState: [{variable, meaning, whereChanged}], timeline: [{time, event}], invariants[], hypotheses[], conceptExtraction: {bugCategory, concept, whyItMatters, patternToAvoid, realWorldAnalogy}, aiPrompt, timelineEdges: [{from, to, label, isBugPoint}], hypothesisTree: [{id, text, status, reason, eliminatedBy?}], variableStateEdges: [{variable, edges: [{from, to, label, type}]}], additionalRootCauses?: [{id, rootCause, codeLocation, minimalFix, diffBlock?, confidence}], uncoveredSymptoms?: string[] } }\n\nIMPORTANT — Multi-Root-Cause: If the symptoms clearly describe MULTIPLE INDEPENDENT failure modes (different files, different mechanisms, different observable effects), populate additionalRootCauses[] with a separate entry for each independent bug. Use this ONLY for truly independent bugs, not for secondary effects of the same root cause. Populate uncoveredSymptoms[] with any symptom phrases you cannot explain — do not silently ignore them.`;
 
 // ═══════════════════════════════════════════════════
 // PHASE 4A: Mode-Specific Schemas
@@ -1044,7 +1064,7 @@ export const PRESETS = {
 // These are NOT presentational — they are the anti-sycophancy enforcement mechanism.
 // Presets may only remove presentational sections (conceptExtraction, invariants, variableState, timeline).
 const SECTION_TO_SCHEMA_KEYS = {
-    rootCause: ['rootCause', 'codeLocation', 'bugType', 'confidence', 'evidence', 'uncertainties', 'hypotheses', 'hypothesisTree', 'proximate_crash_site'],
+    rootCause: ['rootCause', 'codeLocation', 'bugType', 'confidence', 'evidence', 'uncertainties', 'hypotheses', 'hypothesisTree', 'proximate_crash_site', 'additionalRootCauses', 'uncoveredSymptoms'],
     minimalFix: ['minimalFix', 'whyFixWorks', 'diffBlock'],
     aiPrompt: ['aiPrompt'],
     reproduction: ['symptom', 'reproduction'],
@@ -1087,7 +1107,7 @@ export function buildDynamicSchema(sections) {
 export function buildDynamicSchemaInstruction(sections) {
     const sectionToFields = {
         // rootCause always includes hypothesisTree + proximate_crash_site — these are diagnostic core, not optional
-        rootCause: 'rootCause, codeLocation, bugType, confidence, evidence[], uncertainties[], hypotheses[], hypothesisTree: [{id, text, status, reason, eliminatedBy?: string}], proximate_crash_site?: string',
+        rootCause: 'rootCause, codeLocation, bugType, confidence, evidence[], uncertainties[], hypotheses[], hypothesisTree: [{id, text, status, reason, eliminatedBy?: string}], proximate_crash_site?: string, additionalRootCauses?: [{id, rootCause, codeLocation, minimalFix, diffBlock?, confidence}], uncoveredSymptoms?: string[]',
         minimalFix: 'minimalFix, whyFixWorks, diffBlock?: string',
         aiPrompt: 'aiPrompt',
         reproduction: 'symptom, reproduction[]',

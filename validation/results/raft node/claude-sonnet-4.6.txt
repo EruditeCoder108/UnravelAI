@@ -1,0 +1,108 @@
+Now I have everything I need. Let me analyze both bugs thoroughly.
+
+---
+
+# Rate Limiter Bug Analysis
+
+**Note:** The prompt references `counter-store.js`, `hot-path-cache.js`, etc., but only `raft-node.js` was uploaded. The rate limiter analysis below is based on the described symptom pattern (cache.size=0, stale Map reference after rotation), which is a classic and well-characterized class of bug. The Raft analysis proceeds from the uploaded source.
+
+---
+
+# Raft Split-Brain Bug Analysis (`raft-node.js`)
+
+## 1. Hypothesis Tree
+
+**Hypothesis 1: `promotePreVotesToGrants` inflates the quorum count with stale pre-vote records (lines 502–515)**
+
+`_startElection` (line 1083) calls `promotePreVotesToGrants`, injecting every pre-vote peer into `_grantedVotes` with `term: electionTerm - 1` (i.e., term N-1). These entries bypass the guard in `recordGrant` (line 486) because `_grantedVotes.has(voterId)` is false — the set was just cleared by `reset()`. Now in `checkQuorum` (line 536), every voter with `record.term < currentTerm && !record.refreshed` triggers `_refreshVoterRecord`, which sets `record.refreshed = true` and re-adds the voterId to `_grantedVotes` — but the voter is already in `_grantedVotes`. The `count++` at line 540 fires for every entry, so pre-vote participants are counted as full votes even though they voted for a different candidate in the actual term-N election. This explains the `term: N-1, refreshed: true` entries in the diagnostic registry and the inflated `granted` set. **Survives — this is the Mode A mechanism.**
+
+**Hypothesis 2: `_isLogUpToDate` uses `>` instead of `>=` for the index comparison (line 1582)**
+
+Line 1582: `return candidateIndex > this._log.lastIndex`. When a candidate's log is identical (`lastIndex` and `lastTerm` equal) to a peer's log, this returns `false`, causing the peer to reject the vote. This directly explains Mode B: recently-rejoined peers have caught up to the same log position as the candidate, so they reject a vote that Raft's safety rules should allow. **Survives — this is the Mode B mechanism.**
+
+**Hypothesis 3: `_stepDown` calls `checkTermMonotonicity` with reversed arguments (line 1546)**
+
+`_stepDown(newTerm)` calls `this._safety.checkTermMonotonicity(this._term, newTerm)` but by line 1546 `this._term` has *already been updated* on line 1540 to `newTerm`. So both arguments are the same value. The monotonicity check never fires on a real regression. While this is a real defect, it doesn't cause the diagnostic signature (term: N-1 voters, inflated grants, `refreshed: true`). It also doesn't explain the permanent nature of Mode A or Mode B. **Eliminated as a root cause for the described failures.**
+
+---
+
+## 2. Root Cause
+
+**Mode A — file: `raft-node.js`, lines 502–515 (`promotePreVotesToGrants`) and lines 529–541 (`checkQuorum`)**
+
+`promotePreVotesToGrants` inserts pre-vote peers into `_grantedVotes` with fabricated `VoteRecord` objects at `term: electionTerm - 1`. When `checkQuorum` subsequently iterates `_grantedVotes`, it detects `record.term < currentTerm && !record.refreshed` and calls `_refreshVoterRecord`, which marks them as refreshed and leaves them in the granted set — then unconditionally increments `count`. These peers never sent a real vote for the current term; they are phantom grants that silently manufacture a false quorum.
+
+**Mode B — file: `raft-node.js`, line 1582 (`_isLogUpToDate`)**
+
+The index comparison uses strict greater-than (`>`), rejecting candidates whose log is *equal* to the peer's log. Raft requires `>=` for the index tiebreaker — a candidate with an identical log is at least as up-to-date as the peer and must receive the vote.
+
+---
+
+## 3. Causal Chain
+
+### Mode A — Phantom Quorum via `promotePreVotesToGrants`
+
+1. **Pre-vote phase** (`_startPreVote`, line 1027): node-1 creates `ElectionState` at `preVoteTerm = N`. Pre-vote responses from node-2 and node-3 arrive; `_election.preVotes` Set becomes `{node-2, node-3}`.
+
+2. **Full election starts** (`_startElection`, line 1075): `this._term` increments to N. `this._votes.reset()` clears `_grantedVotes` (a `Set`) and `_voteRegistry` (a `Map`).
+
+3. **`promotePreVotesToGrants`** (line 1084): iterates `[...this._election.preVotes]` = `[node-2, node-3]`. For each, creates a `VoteRecord` with `term: N-1` (the passed `electionTerm - 1 = N - 1`). Inserts both into `_voteRegistry` Map and `_grantedVotes` Set. Neither has actually voted in term N.
+
+4. **Real vote responses arrive**: node-4 sends a real `VOTE_RESPONSE` for term N. `_handleVoteResponse` calls `recordGrant('node-4', N, ...)`. The guard at line 486 — `this._grantedVotes.has('node-4')` — is false, so the record is added with `term: N`.
+
+5. **`checkQuorum` called** (line 1139): iterates `_grantedVotes` = `{node-2, node-3, node-4}`. Count starts at 1 (self). For node-2: `record.term (N-1) < currentTerm (N) && !record.refreshed` → calls `_refreshVoterRecord('node-2', N)` → sets `record.term = N`, `record.refreshed = true` → removes and re-adds to `_grantedVotes` (no-op since it's a Set). Then `count++` → count = 2. Same for node-3 → count = 3. Then node-4 → `record.term === N`, condition false, count++ anyway → count = 4. `hasQuorum` = true (4 ≥ 3).
+
+6. **`_becomeLeader`** fires. Node-1 enters `leader` state for term N. But node-2 and node-3 voted for a different candidate in term N — they reject the heartbeat. `_confirmLeadership` sees only 2 acks (node-1 + node-4 < 3). Node-1 steps down. `SafetyMonitor` records `SPLIT_BRAIN`.
+
+### Mode B — Log Equality Rejection
+
+1. Nodes partition. A subset — node-4, node-5 — fall behind. Network heals; they receive missing entries. Their `lastIndex` and `lastTerm` now equal node-1's.
+
+2. Node-1 starts an election, sends `VOTE_REQUEST` to node-4 with `lastIndex = X, lastTerm = T`.
+
+3. node-4's `_handleVoteRequest` calls `_isLogUpToDate(X, T)`. Line 1579: `candidateTerm (T) !== this._log.lastTerm (T)` is false. Falls through to line 1582: `return candidateIndex (X) > this._log.lastIndex (X)` → `false`. Vote rejected with reason `log_behind` despite equal logs.
+
+4. Node-1 cannot reach quorum from the remaining nodes. A second election fires. The Mode A phantom-grant bug may or may not fire in the subsequent election; Mode B alone can stall elections indefinitely until randomized timeouts allow a different candidate to win from a subset that has a strictly longer log.
+
+---
+
+## 4. Proximate Trap
+
+A less careful engineer will focus on the diagnostics showing `term: N-1` entries in `votes.registry` and blame **stale vote messages being delivered from the previous term** — perhaps suspecting the `MessageDeduplicator` let through a duplicate, or the transport is delivering an old cached response.
+
+This is wrong for a precise reason: the `term` field on those registry entries is not the term on any network message that arrived. It is the value baked in by `promotePreVotesToGrants` at line 508 (`term: electionTerm - 1`), which assigns term N-1 *by design* to a record that was never a real vote. The engineer looks at the wire log, finds no duplicate vote messages in term N-1, and concludes the deduplicator is clean — which it is. The actual fabrication happens entirely inside `VoteManager` in memory, invisible to message-level tracing.
+
+---
+
+## 5. Minimal Fix
+
+### Fix 1 — Mode A (`raft-node.js`, lines 502–515): Remove `promotePreVotesToGrants` entirely
+
+**The entire method is semantically incorrect.** Pre-votes are a *liveness* optimization (avoid disruptive elections) — they are explicitly **not** real votes and must never contribute to the vote grant count in the actual election term. The fix is to delete the method and its call site:
+
+```js
+// DELETE lines 502–515 in VoteManager:
+// promotePreVotesToGrants(preVoters, electionTerm) { ... }
+
+// DELETE lines 1083–1088 in _startElection:
+// if (this._election?.preVotesDone && this._election.preVotes.size > 0) {
+//     this._votes.promotePreVotesToGrants(
+//         [...this._election.preVotes],
+//         this._term
+//     );
+// }
+```
+
+This breaks the stale-reference chain completely: `_grantedVotes` starts empty after `reset()` and is only populated by genuine `VOTE_RESPONSE` messages in the current term. `checkQuorum` no longer encounters records with `term < currentTerm`, so `_refreshVoterRecord` is never called on phantom entries, and the count is never inflated.
+
+### Fix 2 — Mode B (`raft-node.js`, line 1582): Change `>` to `>=`
+
+```js
+// line 1582 — BEFORE:
+return candidateIndex > this._log.lastIndex;
+
+// AFTER:
+return candidateIndex >= this._log.lastIndex;
+```
+
+Per §5.4.1 of the Raft paper: a candidate's log is at least as up-to-date as the voter's if the logs end with the same term *and* the candidate's log is at least as long. Strict `>` incorrectly rejects a candidate with an identical log length, which is exactly the condition that occurs after recently-rejoined nodes finish replication.

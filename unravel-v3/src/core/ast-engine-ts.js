@@ -924,6 +924,9 @@ export async function runMultiFileAnalysis(files) {
     const mergedListenerParity = [];
     const mergedStateMutations = [];
     const mergedGlobalWriteRaces = [];
+    const mergedForEachMutations = [];
+    const mergedSpecRisks = [];
+    const allFileBindings = {};
     let totalParsed = 0;
     let totalFailed = 0;
     const failedFiles = [];
@@ -1015,6 +1018,9 @@ export async function runMultiFileAnalysis(files) {
         try { globalWriteRaces = detectGlobalMutationBeforeAwait(tree); anySucceeded = true; }
         catch (e) { console.warn(`[AST-TS] Global write race failed for ${shortName}:`, e.message); }
 
+        try { allFileBindings[shortName] = extractModuleLevelBindings(tree); }
+        catch (e) { console.warn(`[AST-TS] Module bindings failed for ${shortName}:`, e.message); }
+
         tree.delete(); // Free WASM memory
 
         if (!anySucceeded) {
@@ -1067,6 +1073,18 @@ export async function runMultiFileAnalysis(files) {
         for (const p of globalWriteRaces) {
             mergedGlobalWriteRaces.push({ ...p, file: shortName });
         }
+
+        // ── forEach collection mutation detection ──
+        let forEachMutationsLocal = [];
+        try { forEachMutationsLocal = detectForEachCollectionMutation(tree, shortName); }
+        catch (e) { console.warn('[AST-TS] forEach mutation detection failed:', e.message); }
+        for (const m of forEachMutationsLocal) mergedForEachMutations.push(m);
+
+        // ── spec violation risk heuristics (structural, general) ──
+        let specRisksLocal = [];
+        try { specRisksLocal = detectStrictComparisonInPredicateGate(tree, shortName); }
+        catch (e) { console.warn('[AST-TS] Predicate gate detection failed:', e.message); }
+        for (const r of specRisksLocal) mergedSpecRisks.push(r);
     }
 
     if (totalParsed === 0) {
@@ -1076,7 +1094,20 @@ export async function runMultiFileAnalysis(files) {
         };
     }
 
-    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises, mergedListenerParity, mergedStateMutations, mergedGlobalWriteRaces);
+    // ── Cross-file: constructor-captured reference detection ──
+    let mergedConstructorCaptures = [];
+    if (Object.keys(allFileBindings).length >= 2) {
+        try {
+            mergedConstructorCaptures = detectConstructorCapturedReference(allFileBindings, mergedMutations);
+            if (mergedConstructorCaptures.length > 0) {
+                console.log(`[AST-TS] Constructor-captured references detected: ${mergedConstructorCaptures.length}`);
+            }
+        } catch (e) {
+            console.warn('[AST-TS] Constructor capture detection failed:', e.message);
+        }
+    }
+
+    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises, mergedListenerParity, mergedStateMutations, mergedGlobalWriteRaces, mergedConstructorCaptures, mergedForEachMutations, mergedSpecRisks);
     const header = `Files parsed: ${totalParsed}/${files.length}`;
     const failNote = totalFailed > 0
         ? ` (${totalFailed} failed: ${failedFiles.join(', ')})`
@@ -1090,7 +1121,8 @@ export async function runMultiFileAnalysis(files) {
         raw: { mutations: mergedMutations, closures: mergedClosures, timingNodes: mergedTiming,
                reactPatterns: mergedReactPatterns, floatingPromises: mergedFloatingPromises,
                listenerParity: mergedListenerParity, stateMutations: mergedStateMutations,
-               globalWriteRaces: mergedGlobalWriteRaces },
+               globalWriteRaces: mergedGlobalWriteRaces, constructorCaptures: mergedConstructorCaptures,
+               forEachMutations: mergedForEachMutations, specRisks: mergedSpecRisks },
         formatted: fullFormatted,
         partialFiles,
     };
@@ -2089,10 +2121,620 @@ function detectMultiSourceRace(chains) {
 }
 
 // ═══════════════════════════════════════════════════
+// CONSTRUCTOR-CAPTURED REFERENCE DETECTION (cross-file)
+// Detects class constructors that store an imported let
+// binding by value. If the exporting module later reassigns
+// that binding, the stored reference becomes permanently stale.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Extract module-level binding information needed for cross-file
+ * reference detection. Runs per-file during the analysis loop.
+ * Lightweight — only walks root.namedChildren (module scope).
+ */
+function extractModuleLevelBindings(tree) {
+    const root = tree.rootNode;
+    const imports = new Map();
+    const letBindings = new Set();
+    const moduleScopeNewExprs = [];
+    const classCaptures = new Map();
+
+    for (const child of root.namedChildren) {
+        // ── Imports ──
+        if (child.type === 'import_statement') {
+            const source = child.childForFieldName('source')
+                || child.namedChildren.find(c => c.type === 'string');
+            const sourceText = source?.text?.replace(/^['"]|['"]$/g, '');
+            if (!sourceText) continue;
+            const specifiers = child.descendantsOfType('import_specifier');
+            for (const spec of specifiers) {
+                const nameNode = spec.childForFieldName('name');
+                const aliasNode = spec.childForFieldName('alias');
+                const sourceName = nameNode?.text;
+                const localName = aliasNode?.text || sourceName;
+                if (sourceName && localName) {
+                    imports.set(localName, { sourceBinding: sourceName, sourceModule: sourceText });
+                }
+            }
+            continue;
+        }
+
+        // ── Unwrap export statement ──
+        let declNode = child;
+        if (child.type === 'export_statement') {
+            declNode = child.namedChildren.find(c =>
+                c.type === 'lexical_declaration' ||
+                c.type === 'variable_declaration' ||
+                c.type === 'class_declaration' ||
+                c.type === 'class'
+            );
+            if (!declNode) continue;
+        }
+
+        // ── Let bindings at module scope ──
+        if (declNode.type === 'lexical_declaration') {
+            const isLet = declNode.children[0]?.text === 'let';
+            if (isLet) {
+                const declarators = declNode.descendantsOfType('variable_declarator');
+                for (const decl of declarators) {
+                    const nameNode = decl.childForFieldName('name');
+                    if (nameNode?.type === 'identifier') {
+                        letBindings.add(nameNode.text);
+                    }
+                }
+            }
+        }
+
+        // ── Module-scope new expressions: const/let x = new Class(...) ──
+        if (declNode.type === 'lexical_declaration' || declNode.type === 'variable_declaration') {
+            const declarators = declNode.descendantsOfType('variable_declarator');
+            for (const decl of declarators) {
+                const nameNode = decl.childForFieldName('name');
+                const init = decl.childForFieldName('value');
+                if (!nameNode || !init || init.type !== 'new_expression') continue;
+                if (nameNode.type !== 'identifier') continue;
+                const ctorNode = init.childForFieldName('constructor');
+                const argsNode = init.childForFieldName('arguments');
+                if (!ctorNode || !argsNode) continue;
+                const args = [];
+                for (const arg of argsNode.namedChildren) {
+                    args.push(arg.type === 'identifier' ? arg.text : null);
+                }
+                moduleScopeNewExprs.push({
+                    instanceVar: nameNode.text,
+                    className: ctorNode.text,
+                    args,
+                    line: declNode.startPosition.row + 1,
+                });
+            }
+        }
+
+        // ── Class definitions ──
+        if (declNode.type === 'class_declaration' || declNode.type === 'class') {
+            _extractClassConstructorCaptures(declNode, classCaptures);
+        }
+    }
+
+    return { imports, letBindings, moduleScopeNewExprs, classCaptures };
+}
+
+/**
+ * Extract constructor this.field = param assignments from a class node.
+ */
+function _extractClassConstructorCaptures(classNode, capturesMap) {
+    const nameNode = classNode.childForFieldName('name');
+    const className = nameNode?.text;
+    if (!className) return;
+
+    const body = classNode.childForFieldName('body');
+    if (!body) return;
+
+    const methods = body.descendantsOfType('method_definition');
+    const ctor = methods.find(m => m.childForFieldName('name')?.text === 'constructor');
+    if (!ctor) return;
+
+    const params = ctor.childForFieldName('parameters');
+    if (!params) return;
+    const paramNames = [];
+    for (const p of params.namedChildren) {
+        if (p.type === 'identifier') paramNames.push(p.text);
+        else if (p.type === 'required_parameter' || p.type === 'optional_parameter') {
+            const pName = p.childForFieldName('pattern') || p.childForFieldName('name');
+            if (pName) paramNames.push(pName.text);
+        } else if (p.type === 'assignment_pattern') {
+            const left = p.childForFieldName('left');
+            if (left?.type === 'identifier') paramNames.push(left.text);
+        }
+    }
+
+    const ctorBody = ctor.childForFieldName('body');
+    if (!ctorBody) return;
+
+    const captures = [];
+    const assigns = ctorBody.descendantsOfType('assignment_expression');
+    for (const assign of assigns) {
+        const left = assign.childForFieldName('left');
+        const right = assign.childForFieldName('right');
+        if (!left || !right) continue;
+        if (left.type !== 'member_expression') continue;
+        const obj = left.childForFieldName('object');
+        const prop = left.childForFieldName('property');
+        if (!obj || obj.text !== 'this' || !prop) continue;
+        if (right.type !== 'identifier') continue;
+        const paramIdx = paramNames.indexOf(right.text);
+        if (paramIdx === -1) continue;
+        captures.push({ fieldName: prop.text, paramIndex: paramIdx, paramName: right.text });
+    }
+
+    if (captures.length > 0) capturesMap.set(className, captures);
+}
+
+/**
+ * Resolve an import module specifier to a filename in the analysis set.
+ */
+function _resolveModuleToFile(moduleSpecifier, allFileNames) {
+    const base = moduleSpecifier.replace(/^\.\.?\//, '').split('/').pop();
+    for (const fileName of allFileNames) {
+        if (fileName === base) return fileName;
+        if (fileName.endsWith('/' + base)) return fileName;
+        for (const ext of ['.js', '.ts', '.jsx', '.tsx', '.mjs']) {
+            if (fileName === base + ext) return fileName;
+            if (fileName.endsWith('/' + base + ext)) return fileName;
+        }
+    }
+    return null;
+}
+
+/**
+ * Cross-file detector: find class constructors that capture imported let
+ * bindings by value, where the exporting module later reassigns the binding.
+ *
+ * @param {Object} allBindings  — { filename: extractModuleLevelBindings result }
+ * @param {Object} mergedMutations — keyed "varName [file]"
+ * @returns {Array} annotations with structured annotation text
+ */
+function detectConstructorCapturedReference(allBindings, mergedMutations) {
+    const annotations = [];
+    const allFileNames = Object.keys(allBindings);
+
+    for (const [file, bindings] of Object.entries(allBindings)) {
+        for (const expr of bindings.moduleScopeNewExprs) {
+            for (let i = 0; i < expr.args.length; i++) {
+                const argName = expr.args[i];
+                if (!argName) continue;
+
+                // Step 1: Is this arg imported from another module?
+                const imp = bindings.imports.get(argName);
+                if (!imp) continue;
+
+                // Step 2: Resolve source module to a file in our set
+                const sourceFile = _resolveModuleToFile(imp.sourceModule, allFileNames);
+                if (!sourceFile) continue;
+                const sourceBindings = allBindings[sourceFile];
+                if (!sourceBindings) continue;
+
+                // Step 3: Is the source binding a `let` (reassignable)?
+                if (!sourceBindings.letBindings.has(imp.sourceBinding)) continue;
+
+                // Step 4: Is the source binding REASSIGNED (not just mutated)?
+                const mutKey = `${imp.sourceBinding} [${sourceFile}]`;
+                const mutData = mergedMutations[mutKey];
+                if (!mutData) continue;
+                const reassignments = mutData.writes.filter(w => w.type === 'reassigned');
+                if (reassignments.length === 0) continue;
+
+                // Step 5: Does the constructor capture this arg as this.field?
+                let classCaptures = bindings.classCaptures.get(expr.className);
+                if (!classCaptures) {
+                    const classImp = bindings.imports.get(expr.className);
+                    if (classImp) {
+                        const classFile = _resolveModuleToFile(classImp.sourceModule, allFileNames);
+                        if (classFile && allBindings[classFile]) {
+                            classCaptures = allBindings[classFile].classCaptures.get(classImp.sourceBinding);
+                        }
+                    }
+                }
+                if (!classCaptures) continue;
+
+                const capture = classCaptures.find(c => c.paramIndex === i);
+                if (!capture) continue;
+
+                // ── All 5 conditions met — emit structured annotation ──
+                const sites = reassignments.map(r =>
+                    `    ${r.fn}() L${r.line}`
+                ).join('\n');
+
+                const annotationText = [
+                    `  ${file} L${expr.line}: const ${expr.instanceVar} = new ${expr.className}(${argName})`,
+                    `    ${argName}: imported from ${sourceFile}::${imp.sourceBinding} (let, reassignable)`,
+                    `    Constructor stores: this.${capture.fieldName} = ${capture.paramName}  [VALUE COPY at init time]`,
+                    ``,
+                    `  ${sourceFile} REASSIGNS ${imp.sourceBinding}:`,
+                    sites,
+                    ``,
+                    `  After reassignment:`,
+                    `    ${sourceFile}::${imp.sourceBinding}  → NEW object`,
+                    `    ${file}::${expr.instanceVar}.${capture.fieldName}  → OLD object (stale, abandoned)`,
+                    ``,
+                    `  ⚠ Reads via ${expr.instanceVar}.${capture.fieldName} see the abandoned old object.`,
+                    `    Writes via ${imp.sourceBinding} go to the new object (never read through ${expr.instanceVar}).`,
+                    `    STALE REFERENCE: ${expr.instanceVar}.${capture.fieldName} is permanently diverged from ${imp.sourceBinding}.`,
+                ].join('\n');
+
+                annotations.push({
+                    type: 'constructor_captured_reference',
+                    severity: 'critical',
+                    file, line: expr.line,
+                    instanceVar: expr.instanceVar, className: expr.className,
+                    capturedField: capture.fieldName, argName,
+                    sourceFile, sourceBinding: imp.sourceBinding,
+                    reassignSites: reassignments,
+                    annotationText,
+                });
+            }
+        }
+    }
+
+    return annotations;
+}
+
+// ═══════════════════════════════════════════════════
+// FEATURE 8: forEach Collection Mutation Detector
+// Detects Set/Map/Array mutations (add, delete, push, splice, etc.)
+// inside a .forEach() callback on the SAME collection.
+//
+// WHY THIS MATTERS (JS spec, ECMA-262 §23.2.3.6 for Set.forEach):
+//   The specification states that if a value is deleted and then added
+//   back during iteration, it WILL be visited again. This means a
+//   Set.delete(x) followed by Set.add(x) inside forEach causes x to
+//   be processed TWICE — a hidden double-count with no visible error.
+//   This is the exact mechanism behind Raft vote double-counting bugs.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Build a map of functionName -> body AST node for all named functions/methods
+ * in the file. Used for depth-1 callee expansion during forEach analysis.
+ */
+function buildFunctionBodyMap(rootNode) {
+    const map = new Map();
+    function walk(node) {
+        if (!node) return;
+
+        // function foo() { ... }
+        if (node.type === 'function_declaration') {
+            const name = node.childForFieldName('name');
+            const body = node.childForFieldName('body');
+            if (name?.text && body) map.set(name.text, body);
+        }
+
+        // const foo = function() { ... } or const foo = () => { ... }
+        if (node.type === 'variable_declarator') {
+            const name  = node.childForFieldName('name');
+            const value = node.childForFieldName('value');
+            if (name?.text && value) {
+                const isFunc = value.type === 'function' || value.type === 'arrow_function';
+                if (isFunc) {
+                    const body = value.childForFieldName('body');
+                    if (body) map.set(name.text, body);
+                }
+            }
+        }
+
+        // class method: foo() { ... }
+        if (node.type === 'method_definition') {
+            const name = node.childForFieldName('name');
+            const value = node.childForFieldName('value'); // function node
+            const body  = value?.childForFieldName('body');
+            if (name?.text && body) map.set(name.text, body);
+        }
+
+        for (const child of (node.children || [])) walk(child);
+    }
+    walk(rootNode);
+    return map;
+}
+
+/**
+ * Detect mutations to a collection (Set/Map/Array) on which .forEach
+ * is being called, where the mutation happens inside the callback
+ * OR inside a function directly called by the callback (depth-1 expansion).
+ *
+ * WHY DEPTH-1 MATTERS:
+ * Real-world forEach callbacks frequently delegate to helper functions.
+ * Example: votes.forEach(v => _refreshVoterRecord(v))  where
+ * _refreshVoterRecord calls votes.delete(v) + votes.add(v_updated).
+ * Without depth-1 expansion the detector misses this entirely.
+ */
+export function detectForEachCollectionMutation(tree, filename = '') {
+    const results = [];
+    if (!tree?.rootNode) return results;
+
+    // Pre-build function body map once per file for depth-1 lookup
+    const fnBodyMap = buildFunctionBodyMap(tree.rootNode);
+
+    // Mutation methods that are spec-dangerous during iteration
+    const DANGEROUS_MUTATIONS = new Set([
+        'delete', 'add',    // Set/Map — causes re-visit per ECMA spec
+        'set',              // Map — updates entry mid-iteration
+        'clear',            // Set/Map — destroys remaining entries
+        'push', 'pop', 'shift', 'unshift', 'splice', // Array
+    ]);
+
+    // Read methods — these are safe
+    const SAFE_READS = new Set(['has', 'get', 'size', 'forEach', 'entries', 'keys', 'values']);
+
+    function walk(node) {
+        if (!node) return;
+
+        // Look for: <expr>.forEach(callback)
+        if (node.type === 'call_expression') {
+            const callee = node.childForFieldName('function');
+            const args   = node.childForFieldName('arguments');
+
+            if (callee?.type === 'member_expression') {
+                const prop = callee.childForFieldName('property');
+                if (prop?.text === 'forEach' && args) {
+                    const collectionNode = callee.childForFieldName('object');
+                    if (!collectionNode) { walkChildren(node); return; }
+
+                    const collectionName = collectionNode.text;
+                    const forEachLine = node.startPosition.row + 1;
+
+                    // First argument is the callback
+                    const callbackArg = args.namedChildren?.[0];
+                    if (!callbackArg) { walkChildren(node); return; }
+
+                    // --- Step 1: Search callback body directly (depth 0) ---
+                    const mutations = [];
+                    findCallsOnTarget(callbackArg, collectionName, mutations);
+
+                    // --- Step 2: Depth-1 expansion ---
+                    // Find every standalone function call inside the callback body.
+                    // If the callee is a named function in this file, search its body too.
+                    const calledFns = collectStandaloneCallees(callbackArg);
+                    for (const fnName of calledFns) {
+                        const body = fnBodyMap.get(fnName);
+                        if (body) {
+                            const indirect = [];
+                            findCallsOnTarget(body, collectionName, indirect);
+                            // Tag each indirect hit so the annotation can name the callsite
+                            for (const hit of indirect) {
+                                mutations.push({ ...hit, via: fnName });
+                            }
+                        }
+                    }
+
+                    // Filter to dangerous mutations
+                    const dangerous = mutations.filter(m => DANGEROUS_MUTATIONS.has(m.method) && !SAFE_READS.has(m.method));
+                    if (dangerous.length > 0) {
+                        const hasDelete = dangerous.some(m => m.method === 'delete');
+                        const hasAdd    = dangerous.some(m => m.method === 'add' || m.method === 'set' || m.method === 'push');
+
+                        let severity = 'warning';
+                        let specNote = '';
+                        if (hasDelete && hasAdd) {
+                            severity = 'critical';
+                            specNote = 'ECMA-262 spec: deleted-then-re-added elements ARE visited again — elements may be processed TWICE.';
+                        } else if (hasDelete) {
+                            specNote = 'ECMA-262 spec: elements added after deletion MAY be visited; iteration count is unpredictable.';
+                        } else {
+                            specNote = 'Mutating the collection during iteration produces spec-undefined behaviour.';
+                        }
+
+                        const mutDesc = dangerous.map(m => {
+                            const via = m.via ? ` (via ${m.via}())` : '';
+                            return `${m.method}()${via} L${m.line}`;
+                        }).join(', ');
+
+                        results.push({
+                            type: 'foreach_collection_mutation',
+                            severity,
+                            collection: collectionName,
+                            file: filename,
+                            line: forEachLine,
+                            mutations: dangerous,
+                            specNote,
+                            description: `${collectionName}.forEach() — mutated during iteration: ${mutDesc}`,
+                        });
+                    }
+                }
+            }
+        }
+
+        walkChildren(node);
+    }
+
+    function walkChildren(node) {
+        if (!node?.children) return;
+        for (const child of node.children) walk(child);
+    }
+
+    /**
+     * Find all method calls on `targetName` inside a subtree (depth 0 only).
+     * Records: { method, line, via? }
+     */
+    function findCallsOnTarget(subtree, targetName, out) {
+        if (!subtree) return;
+        if (subtree.type === 'call_expression') {
+            const callee = subtree.childForFieldName('function');
+            if (callee?.type === 'member_expression') {
+                const obj  = callee.childForFieldName('object');
+                const prop = callee.childForFieldName('property');
+                if (obj && prop) {
+                    const objText = obj.text;
+                    // Direct match: target.method() OR this.target.method()
+                    if (objText === targetName || objText.endsWith('.' + targetName)) {
+                        out.push({ method: prop.text, line: subtree.startPosition.row + 1 });
+                    }
+                }
+            }
+        }
+        if (subtree.children) {
+            for (const child of subtree.children) findCallsOnTarget(child, targetName, out);
+        }
+    }
+
+    /**
+     * Collect names of standalone (non-method) function calls within a subtree.
+     * Used to identify helper functions called from the forEach callback.
+     * Excludes: method calls (foo.bar()), IIFE, built-ins.
+     */
+    function collectStandaloneCallees(subtree) {
+        const names = new Set();
+        function scan(node) {
+            if (!node) return;
+            if (node.type === 'call_expression') {
+                const callee = node.childForFieldName('function');
+                // Plain identifier: foo() — not a method or chained call
+                if (callee?.type === 'identifier') {
+                    names.add(callee.text);
+                }
+            }
+            for (const child of (node.children || [])) scan(child);
+        }
+        scan(subtree);
+        return names;
+    }
+
+    walk(tree.rootNode);
+    return results;
+}
+
+// ═══════════════════════════════════════════════════
+// FEATURE 9: Strict Comparison in Predicate Gate (General)
+//
+// Detects strict > or < comparisons inside functions whose NAMES follow
+// universal predicate naming conventions: is*, can*, has*, should*,
+// meets*, passes*, eligible*, ready*, allows*, permits*, qualifies*.
+//
+// The structural signal is function ROLE, not domain vocabulary.
+// This fires equally on:
+//   isAdult(age)          → age > 18       (should be >=?)
+//   canBorrow(score)      → score > limit  (should be >=?)
+//   hasPermission(level)  → level > req    (should be >=?)
+//   isLogUpToDate(...)    → idx > lastIdx  (should be >=?)
+//   meetsThreshold(val)   → val > min      (should be >=?)
+//
+// These are ATTENTION SIGNALS — not verified bugs.
+// Labelled HEURISTIC in the formatted output block.
+//
+// Pattern motivation: in predicate gates (functions that return a boolean
+// to allow/deny an action), the equality case is frequently the one that
+// reveals a spec violation. "strictly greater than" excludes the exact
+// boundary case, which is often meaningful: "at least N", "at least X".
+// ═══════════════════════════════════════════════════
+
+// Predicate prefix patterns — universal naming convention across all domains.
+// These are structural properties of code style, not domain vocabulary.
+const PREDICATE_NAME_PATTERN = /^(is[A-Z_]|can[A-Z_]|has[A-Z_]|should[A-Z_]|meets?[A-Z_]?$|meets[A-Z_]|passes?[A-Z_]?$|passes[A-Z_]|eligible[A-Z_]?$|ready[A-Z_]?$|allows?[A-Z_]?$|allows[A-Z_]|permits?[A-Z_]?$|permits[A-Z_]|qualifies?[A-Z_]?$)/;
+
+// Also catch snake_case variants: is_adult, can_vote, has_permission
+const PREDICATE_NAME_SNAKE = /^(is_|can_|has_|should_|meets_|passes_|eligible_|allows_|permits_|qualifies_)/;
+
+/**
+ * Detect strict comparisons (> <) inside predicate-named functions.
+ * The pattern: a function whose name signals "this decides yes/no"
+ * contains a strict boundary comparison that may exclude the equality case.
+ *
+ * @param {Object} tree - tree-sitter parse tree
+ * @param {string} filename - source filename for annotations
+ * @returns {Array} findings
+ */
+export function detectStrictComparisonInPredicateGate(tree, filename = '') {
+    const results = [];
+    if (!tree?.rootNode) return results;
+
+    const STRICT_OPS = new Set(['>', '<']);
+
+    /**
+     * Extract the name of the innermost enclosing named function/method.
+     * Returns null if inside an anonymous function or module scope.
+     */
+    function getEnclosingPredicateName(node) {
+        let cur = node.parent;
+        while (cur) {
+            if (cur.type === 'function_declaration') {
+                return cur.childForFieldName('name')?.text || null;
+            }
+            if (cur.type === 'method_definition') {
+                return cur.childForFieldName('name')?.text || null;
+            }
+            if (cur.type === 'variable_declarator') {
+                const val = cur.childForFieldName('value');
+                if (val?.type === 'function' || val?.type === 'arrow_function') {
+                    return cur.childForFieldName('name')?.text || null;
+                }
+            }
+            // Stop at class/module boundaries — don't leak across unrelated scopes
+            if (cur.type === 'class_body' || cur.type === 'program') break;
+            cur = cur.parent;
+        }
+        return null;
+    }
+
+    function isPredicateName(name) {
+        if (!name) return false;
+        return PREDICATE_NAME_PATTERN.test(name) || PREDICATE_NAME_SNAKE.test(name);
+    }
+
+    function nodeText(node) {
+        try { return node?.text?.slice(0, 80) || ''; }
+        catch { return ''; }
+    }
+
+    function walk(node) {
+        if (!node) return;
+
+        if (node.type === 'binary_expression') {
+            // tree-sitter stores the operator as a child node with a specific text
+            const opNode = node.children?.find(c =>
+                c.type === '>' || c.type === '<' || c.text === '>' || c.text === '<'
+            );
+            const opText = opNode?.text;
+
+            if (opText && STRICT_OPS.has(opText)) {
+                const fnName = getEnclosingPredicateName(node);
+                if (fnName && isPredicateName(fnName)) {
+                    const left  = nodeText(node.childForFieldName('left')  || node.namedChildren?.[0]);
+                    const right = nodeText(node.childForFieldName('right') || node.namedChildren?.[1]);
+                    const line  = node.startPosition.row + 1;
+                    const saferOp = opText === '>' ? '>=' : '<=';
+
+                    results.push({
+                        type: 'predicate_strict_comparison',
+                        severity: 'attention',
+                        file: filename,
+                        line,
+                        fnName,
+                        expression: `${left} ${opText} ${right}`,
+                        operator: opText,
+                        suggestedOperator: saferOp,
+                        description: `\`${fnName}\`: strict \`${opText}\` at L${line} — confirm the equality case (\`${left} === ${right}\`) is intentionally excluded`,
+                        note: `HEURISTIC (unverified): Predicate functions named ${fnName}() typically gate an action based on a threshold. ` +
+                              `Strict \`${opText}\` excludes the exact boundary case. ` +
+                              `If the spec/requirement says "at least N" or "N or more", use \`${saferOp}\`. ` +
+                              `No change needed if "strictly greater/less than" is the deliberate intent.`,
+                    });
+                }
+            }
+        }
+
+        if (node.children) {
+            for (const child of node.children) walk(child);
+        }
+    }
+
+    walk(tree.rootNode);
+    return results;
+}
+
+
+
+// ═══════════════════════════════════════════════════
 // FORMAT: Same output format as the old engine
 // ═══════════════════════════════════════════════════
 
-function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [], globalWriteRaces = []) {
+function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [], globalWriteRaces = [], constructorCaptures = [], forEachMutations = [], specRisks = []) {
     const lines = [];
     lines.push('VERIFIED STATIC ANALYSIS — deterministic, not hallucinated');
     lines.push('══════════════════════════════════════════════════════════');
@@ -2305,9 +2947,56 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
         }
     }
 
-    if (mutatedVars.length === 0 && timing.length === 0 && captureEntries.length === 0
-        && reactPatterns.length === 0 && floatingPromises.length === 0 && listenerParity.length === 0
-        && stateMutations.length === 0 && globalWriteRaces.length === 0) {
+    // Constructor-captured references — cross-file stale object identity
+    if (constructorCaptures.length > 0) {
+        lines.push('Constructor-Captured References ⚠ STALE OBJECT IDENTITY:');
+        for (const c of constructorCaptures) {
+            lines.push(c.annotationText);
+            lines.push('');
+        }
+    }
+
+    // forEach collection mutation — deterministic JS spec violation
+    if (forEachMutations.length > 0) {
+        lines.push('Collection Mutated During Iteration ⚠ JS SPEC VIOLATION:');
+        for (const m of forEachMutations) {
+            const fileTag = m.file ? ` [${m.file}]` : '';
+            const sev = m.severity === 'critical' ? '🔴 CRITICAL' : '⚠ WARNING';
+            lines.push(`  ${sev}: ${m.collection}.forEach()${fileTag}  L${m.line}`);
+            lines.push(`  Mutations inside callback: ${m.mutations.map(x => `${x.method}() L${x.line}`).join(', ')}`);
+            lines.push(`  ${m.specNote}`);
+            lines.push(`  → Effect: elements may be visited MULTIPLE TIMES or skipped — counts/decisions based on this loop are unreliable.`);
+            lines.push('');
+        }
+    }
+
+    // ── Heuristic Attention Signals (not VERIFIED — require human confirmation) ──
+    if (specRisks.length > 0) {
+        lines.push('');
+        lines.push('HEURISTIC ATTENTION SIGNALS — unverified, require human review');
+        lines.push('──────────────────────────────────────────────────────────────');
+        lines.push('(These are NOT confirmed bugs. The following patterns are structurally');
+        lines.push(' associated with off-by-one spec violations. Investigate before acting.)');
+        lines.push('');
+        lines.push('Strict Comparison in Predicate Gate Function:');
+        for (const r of specRisks) {
+            const fileTag = r.file ? ` [${r.file}]` : '';
+            lines.push(`  ATTENTION${fileTag}  L${r.line}  in \`${r.fnName}\``);
+            lines.push(`    Expression: \`${r.expression}\``);
+            lines.push(`    ${r.description}`);
+            lines.push(`    ${r.note}`);
+            lines.push('');
+        }
+    }
+
+    const hasVerifiedFindings = (
+        mutatedVars.length > 0 || timing.length > 0 || captureEntries.length > 0 ||
+        reactPatterns.length > 0 || floatingPromises.length > 0 || listenerParity.length > 0 ||
+        stateMutations.length > 0 || globalWriteRaces.length > 0 || constructorCaptures.length > 0 ||
+        forEachMutations.length > 0
+    );
+
+    if (!hasVerifiedFindings && specRisks.length === 0) {
         lines.push('No significant mutation chains, timing nodes, or closure captures detected.');
         lines.push('The LLM should analyze the code without AST hints.');
         lines.push('');

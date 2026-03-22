@@ -1,0 +1,313 @@
+{
+  "aiPrompt": "The `promotePreVotesToGrants` method incorrectly treats successful pre-votes as full election votes, leading to inflated quorum counts and split-brain scenarios. Pre-votes are an optimization to reduce unnecessary elections, not to contribute to the actual vote count. Remove the call to `this._votes.promotePreVotesToGrants` from the `_startElection` method. This ensures that only explicit, legitimate `VOTE_RESPONSE` messages for the current term contribute to the election quorum.",
+  "bugType": "DATA_FLOW",
+  "codeLocation": "src/raft-node.js L1087",
+  "conceptExtraction": {
+    "bugCategory": "STATE_MANAGEMENT",
+    "concept": "Misinterpretation of temporary pre-election state as permanent election votes.",
+    "patternToAvoid": "Do not conflate different stages of a multi-phase protocol by allowing intermediate or preparatory state from one phase to directly contribute to the final decision-making of a subsequent phase, especially if that state is not strictly equivalent to the final decision. Always ensure that the criteria for critical decisions (like electing a leader) are met by explicit, current, and unambiguous signals from all participants.",
+    "realWorldAnalogy": "Imagine you're organizing a community vote for a new committee leader. You first conduct a \"straw poll\" (pre-vote) to see who has a reasonable chance of winning, so you don't waste everyone's time on a candidate with no support. This straw poll helps decide *if* a full election should proceed. The actual election (full vote) then happens, and people cast their real, binding votes. The bug is like counting the informal \"yes, I'd consider voting for them\" from the straw poll *as actual votes* in the final tally, even if those people later voted for someone else in the official election. This would lead to a false winner and confusion, as multiple people might claim to be the legitimate leader.",
+    "whyItMatters": "In distributed consensus protocols like Raft, the integrity of voting and quorum calculations is paramount. Confusing different phases of a protocol (pre-vote vs. full election) or miscounting votes based on an incorrect state transformation can lead to severe safety violations like split-brain, where multiple nodes believe they are the leader, leading to data inconsistency and corruption."
+  },
+  "confidence": 0.9,
+  "diffBlock": "--- src/raft-node.js L1086\n-        if (this._election?.preVotesDone && this._election.preVotes.size > 0) {\n-            this._votes.promotePreVotesToGrants(\n-                [...this._election.preVotes],\n-                this._term\n-            );\n-        }\n",
+  "evidence": [
+    "src/raft-node.js L1087: `_startElection` calls `this._votes.promotePreVotesToGrants`, implicitly converting pre-votes into full election votes.",
+    "src/raft-node.js L482-486: `promotePreVotesToGrants` creates `VoteRecord` objects with `term: electionTerm - 1` and adds them to `_voteRegistry` and `_grantedVotes`.",
+    "src/raft-node.js L539-541: `checkQuorum` calls `_refreshVoterRecord` for these `term: N-1` records if `!record.refreshed`.",
+    "src/raft-node.js L522: `_refreshVoterRecord` mutates the `record.term` to `currentTerm`, effectively falsely updating a pre-vote from `N-1` to `N`.",
+    "src/raft-node.js L544: `checkQuorum` unconditionally increments `count++` for all entries in `_grantedVotes`, including these improperly promoted and refreshed pre-vote records."
+  ],
+  "hypotheses": [
+    "Pre-votes are incorrectly promoted to full grants and then refreshed, leading to inflated quorum counts.",
+    "`_votes.reset()` in `_startElection()` is insufficient to clear previous election state, allowing pre-vote data to persist and cause issues.",
+    "The `_refreshVoterRecord` logic is fundamentally flawed and should not update the `term` of a `VoteRecord` within `checkQuorum`."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "id": "H1",
+      "reason": "AST confirms `promotePreVotesToGrants` (L482-486) creates `VoteRecord` entries with `electionTerm - 1` that are added to `_grantedVotes` in `_startElection` (L1087-1089), and `checkQuorum` (L539-541) then calls `_refreshVoterRecord` (L522) to mutate their term to the `currentTerm` (N), leading to false quorum counts (L544).",
+      "status": "survived",
+      "text": "Pre-votes incorrectly promote to full grants"
+    },
+    {
+      "eliminatedBy": "raft-node.js L451-453: this._grantedVotes.clear(), this._voteRegistry.clear(), this._rejectedBy.clear()",
+      "id": "H2",
+      "reason": "The `_votes.reset()` method (L451-453) explicitly clears `_grantedVotes`, `_voteRegistry`, and `_rejectedBy` before `promotePreVotesToGrants` is called, so state is not persisting across elections.",
+      "status": "eliminated",
+      "text": "`_votes.reset()` is insufficient"
+    },
+    {
+      "eliminatedBy": "raft-node.js L482-486: promotePreVotesToGrants creates VoteRecords with electionTerm - 1 for current election.",
+      "id": "H3",
+      "reason": "While `_refreshVoterRecord` (L522) is problematic for mutating terms, the root cause is the initial incorrect generation of `VoteRecord` objects from pre-votes by `promotePreVotesToGrants` (L482-486) that then trigger this problematic refresh. Without the incorrect promotion, the issue wouldn't manifest this way.",
+      "status": "eliminated",
+      "text": "`_refreshVoterRecord` logic is flawed"
+    }
+  ],
+  "invariants": [
+    "A node can vote for at most one candidate in a given term.",
+    "A candidate is elected leader only if it receives votes from a majority of the cluster for the *current election term*.",
+    "Pre-vote responses are used to determine if a full election *should* be initiated, not to directly count towards the quorum of the full election.",
+    "The `_grantedVotes` and `_voteRegistry` in `VoteManager` must only contain valid, explicit `VOTE_RESPONSE` messages for the *current election term*.",
+    "A `VoteRecord`'s term, once established by a `VOTE_RESPONSE`, must not be implicitly mutated to a new term."
+  ],
+  "minimalFix": "To resolve the split-brain and election issues, the `promotePreVotesToGrants` function should not be used to populate actual vote records for the current election term. Pre-votes are an optimization to determine if an election *should* start, not a source of actual votes. All votes must come from explicit `VOTE_RESPONSE` messages in the current term.\n\nRemove the conditional block that calls `this._votes.promotePreVotesToGrants` within the `_startElection` method. This ensures that only actual `VOTE_RESPONSE` messages contribute to the quorum calculation for a given election term.",
+  "proximate_crash_site": "_confirmLeadership() L1579 — Node steps down after discovering its local quorum count was false.\n_handleVoteResponse() L1147 — `_becomeLeader` is not called, despite `quorum.hasQuorum` appearing true locally, because the quorum count is inflated by invalid votes.",
+  "reproduction": [
+    "Simulate a 5-node Raft cluster under production load.",
+    "Introduce intermittent network partitions or message delays to trigger frequent election cycles.",
+    "Observe Mode A: A node becomes leader (Term N), but `_confirmLeadership()` reports insufficient acknowledgments. SafetyMonitor records SPLIT_BRAIN.",
+    "Observe Mode B: An election takes unusually long, and a candidate doesn't become leader despite seeming to have a quorum, often after network healing."
+  ],
+  "rootCause": "The `promotePreVotesToGrants` method (called by `_startElection` at L1087) incorrectly populates the candidate's `_grantedVotes` with `VoteRecord` entries derived from the *previous term's pre-vote phase*. These records are created with `term: electionTerm - 1` (L483). When `checkQuorum` is later invoked (e.g., in `_handleVoteResponse`), it uses `_refreshVoterRecord` (L539-541), which mutates these pre-vote records' `term` to the `currentTerm` (L522). This leads to an inflated and illegitimate quorum count for the current election (L544), allowing a node to falsely believe it has won the election, directly causing split-brain (Mode A) or prolonged elections (Mode B) because other nodes do not acknowledge these 'ghost votes'.",
+  "symptom": "Intermittent split-brain in a 5-node Raft cluster, manifesting as a node winning election but immediately stepping down due to failed leadership confirmation (Mode A), or prolonged elections despite apparent quorum (Mode B). Both modes result in `SPLIT_BRAIN` violations.",
+  "timelineEdges": [
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "calls _startPreVote()",
+      "to": "Candidate"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "sends PRE_VOTE_REQUESTs (Term N)",
+      "to": "Peers"
+    },
+    {
+      "from": "Peer",
+      "isBugPoint": false,
+      "label": "sends PRE_VOTE_RESPONSE (granted)",
+      "to": "Candidate"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "records pre-vote",
+      "to": "ElectionState"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "achieves pre-vote quorum",
+      "to": "ElectionState"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "calls _startElection()",
+      "to": "Candidate"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "resets VoteManager state (L1083)",
+      "to": "VoteManager"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": true,
+      "label": "calls promotePreVotesToGrants (L1087)",
+      "to": "VoteManager"
+    },
+    {
+      "from": "VoteManager",
+      "isBugPoint": true,
+      "label": "creates VoteRecord with Term N-1 for pre-voters (L482-486)",
+      "to": "VoteManager._voteRegistry / _grantedVotes"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "sends VOTE_REQUESTs (Term N)",
+      "to": "Peers"
+    },
+    {
+      "from": "Peer",
+      "isBugPoint": false,
+      "label": "sends VOTE_RESPONSE (granted)",
+      "to": "Candidate"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "records new grant (Term N)",
+      "to": "VoteManager"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": true,
+      "label": "calls checkQuorum() (L1147)",
+      "to": "VoteManager"
+    },
+    {
+      "from": "VoteManager",
+      "isBugPoint": true,
+      "label": "calls _refreshVoterRecord on pre-voters' records (L539-541)",
+      "to": "VoteManager"
+    },
+    {
+      "from": "VoteManager",
+      "isBugPoint": true,
+      "label": "mutates pre-voters' record.term to Term N (L522)",
+      "to": "VoteManager._voteRegistry"
+    },
+    {
+      "from": "VoteManager",
+      "isBugPoint": true,
+      "label": "inflates quorum count (L544)",
+      "to": "Candidate"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "falsely believes quorum met",
+      "to": "Candidate"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "becomes leader",
+      "to": "Candidate"
+    },
+    {
+      "from": "Leader",
+      "isBugPoint": false,
+      "label": "calls _confirmLeadership()",
+      "to": "Leader"
+    },
+    {
+      "from": "Leader",
+      "isBugPoint": false,
+      "label": "sends HEARTBEATs",
+      "to": "Peers"
+    },
+    {
+      "from": "Peers",
+      "isBugPoint": false,
+      "label": "reject heartbeats (Mode A)",
+      "to": "Leader"
+    },
+    {
+      "from": "Leader",
+      "isBugPoint": false,
+      "label": "steps down, records SPLIT_BRAIN (Mode A)",
+      "to": "SafetyMonitor"
+    }
+  ],
+  "uncertainties": [],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "_refreshVoterRecord",
+          "label": "written L522 ← property write",
+          "to": "_refreshVoterRecord",
+          "type": "write"
+        }
+      ],
+      "variable": "record.term"
+    },
+    {
+      "edges": [
+        {
+          "from": "_refreshVoterRecord",
+          "label": "written L523 ← property write",
+          "to": "_refreshVoterRecord",
+          "type": "write"
+        }
+      ],
+      "variable": "record.refreshed"
+    },
+    {
+      "edges": [
+        {
+          "from": "recordPreVote",
+          "label": "written L420 ← Set add",
+          "to": "recordPreVote",
+          "type": "write"
+        },
+        {
+          "from": "preVoteCount",
+          "label": "read L424",
+          "to": "preVoteCount",
+          "type": "read"
+        },
+        {
+          "from": "hasPreVoteQuorum",
+          "label": "read L428",
+          "to": "hasPreVoteQuorum",
+          "type": "read"
+        }
+      ],
+      "variable": "_election.preVotes"
+    },
+    {
+      "edges": [
+        {
+          "from": "reset",
+          "label": "written L452 ← Set clear",
+          "to": "reset",
+          "type": "write"
+        },
+        {
+          "from": "recordGrant",
+          "label": "written L460 ← Set add",
+          "to": "recordGrant",
+          "type": "write"
+        },
+        {
+          "from": "promotePreVotesToGrants",
+          "label": "written L486 ← Set add",
+          "to": "promotePreVotesToGrants",
+          "type": "write"
+        },
+        {
+          "from": "checkQuorum",
+          "label": "read L539",
+          "to": "checkQuorum",
+          "type": "read"
+        },
+        {
+          "from": "_refreshVoterRecord",
+          "label": "written L526 ← Set delete, Set add",
+          "to": "_refreshVoterRecord",
+          "type": "write"
+        }
+      ],
+      "variable": "_grantedVotes"
+    },
+    {
+      "edges": [
+        {
+          "from": "reset",
+          "label": "written L453 ← Map clear",
+          "to": "reset",
+          "type": "write"
+        },
+        {
+          "from": "recordGrant",
+          "label": "written L459 ← Map set",
+          "to": "recordGrant",
+          "type": "write"
+        },
+        {
+          "from": "promotePreVotesToGrants",
+          "label": "written L485 ← Map set",
+          "to": "promotePreVotesToGrants",
+          "type": "write"
+        },
+        {
+          "from": "checkQuorum",
+          "label": "read L538",
+          "to": "checkQuorum",
+          "type": "read"
+        }
+      ],
+      "variable": "_voteRegistry"
+    }
+  ],
+  "whyFixWorks": "Removing the call to `this._votes.promotePreVotesToGrants` from `_startElection` ensures that the `_grantedVotes` set and `_voteRegistry` map in `VoteManager` are not pre-populated with records from the pre-vote phase. Instead, these structures will only be populated by actual, legitimate `VOTE_RESPONSE` messages received during the full election phase for the current term. This prevents the false inflation of quorum counts that was leading to split-brain scenarios and ensures that a candidate truly achieves a majority of votes before becoming a leader, adhering to Raft's safety principles."
+}

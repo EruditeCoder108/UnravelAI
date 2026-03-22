@@ -36,6 +36,70 @@ function extractFileRefsFromText(text) {
 }
 
 /**
+ * Parse a symptom for evidence of multiple DISTINCT failure behaviors.
+ * Returns an injected alert string if multi-behavior is detected, or null.
+ *
+ * Detection heuristics (in priority order):
+ *  1. Numbered list: "1. ...\n2. ..." — most explicit signal
+ *  2. Bullet list: "- ...\n- ..." with 2+ bullets
+ *  3. Explicit "two/three bugs/issues" language
+ *  4. Multi-clause conjunction signals ("additionally", "separately", etc.)
+ */
+function buildSymptomCoverageAlert(symptom) {
+    if (!symptom || symptom.length < 50) return null;
+
+    const lines = symptom.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+    // Heuristic 1: Numbered list (1. ... 2. ...)
+    // Most explicit structural signal — user intentionally enumerated separate items.
+    const numberedLines = lines.filter(l => /^\d+[\.\)]/.test(l));
+    if (numberedLines.length >= 2) {
+        return buildCoverageBlock(
+            `The symptom contains a numbered list with ${numberedLines.length} distinct behaviors`,
+            numberedLines
+        );
+    }
+
+    // Heuristic 2: Bullet list (- or * or bullet with 2+ items)
+    // Also a clear structural signal — user formatted deliberately.
+    const bulletLines = lines.filter(l => /^[-*\u2022]/.test(l));
+    if (bulletLines.length >= 2) {
+        return buildCoverageBlock(
+            `The symptom contains ${bulletLines.length} bullet-point behaviors`,
+            bulletLines
+        );
+    }
+
+    // Heuristic 3: Explicit "N independent/separate bugs/issues" language.
+    // Requires BOTH a count word AND an independence qualifier ("independent" or "separate").
+    // "two bugs" alone does NOT fire — it's too common in single-root-cause reports.
+    // "two independent bugs" or "three separate failure modes" DO fire.
+    const multiCountPattern = /\b(two|three|four|2|3|4)\s+(independent|separate)\s+(bugs?|issues?|problems?|failures?|scenarios?|modes?|root causes?)\b/i;
+    if (multiCountPattern.test(symptom)) {
+        const match = symptom.match(multiCountPattern);
+        return buildCoverageBlock(
+            `The symptom explicitly mentions "${match[0]}" \u2014 multiple independent failure modes are described`,
+            null
+        );
+    }
+
+    return null; // Single-behavior symptom — no coverage alert
+}
+
+function buildCoverageBlock(reason, behaviors) {
+    const behaviorList = behaviors
+        ? '\n' + behaviors.map((b, i) => `  Behavior ${i + 1}: ${b}`).join('\n')
+        : '';
+    return `\n\n\u26a0 SYMPTOM COVERAGE REQUIREMENT\n`
+        + `${reason}. Your analysis MUST account for EVERY described behavior.\n`
+        + `For each failure behavior, either:\n`
+        + `  A) Show it is a causal consequence of your root cause (include the causal chain), OR\n`
+        + `  B) Identify it as a SEPARATE independent root cause \u2014 add to additionalRootCauses[], OR\n`
+        + `  C) Add it to uncoveredSymptoms[] explaining why it cannot be diagnosed from the provided code.\n`
+        + `DO NOT silently ignore any described behavior.${behaviorList}\n`;
+}
+
+/**
  * Run the full Unravel analysis pipeline.
  *
  * @param {Array<{name: string, content: string}>} codeFiles - Files to analyze
@@ -173,6 +237,18 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
                 + '\nThe user\'s symptom report may be inaccurate. Investigate these contradictions before accepting the symptom framing at face value.\n\n';
             astContext += alertBlock;
             console.log('[CONTRADICTION]', contradictions);
+        }
+    }
+
+    // ── Phase 1d: Symptom Coverage Enforcement ──
+    // If the symptom description clearly enumerates multiple distinct failure behaviors
+    // (numbered list, bullet points, or multiple "also / additionally / separately" clauses),
+    // inject a coverage requirement so the LLM MUST account for every described behavior.
+    if (mode === 'debug' && symptom) {
+        const coverageAlert = buildSymptomCoverageAlert(symptom);
+        if (coverageAlert) {
+            astContext += coverageAlert;
+            console.log('[COVERAGE] Symptom coverage alert injected');
         }
     }
 
@@ -456,8 +532,14 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     // self-heal loop (Phase 6) can auto-fetch the missing file from GitHub.
     if (mode === 'debug' && !result.needsMoreInfo && _depth < 2) {
         const report = result.report || result;
-        const minimalFix = report?.minimalFix || '';
-        const codeLocation = report?.codeLocation || '';
+        // Defensively coerce to string — LLM occasionally returns these as objects
+        // (e.g. { description: "...", code: "..." }) when schema inference blends fields.
+        const minimalFix = typeof report?.minimalFix === 'string'
+            ? report.minimalFix
+            : report?.minimalFix ? JSON.stringify(report.minimalFix) : '';
+        const codeLocation = typeof report?.codeLocation === 'string'
+            ? report.codeLocation
+            : report?.codeLocation ? JSON.stringify(report.codeLocation) : '';
 
         // Signal A: model narrating its own speculation about unseen files
         const SPECULATIVE_FIX_PHRASES = [
@@ -1249,15 +1331,26 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode, symptom = '
             // but the AST tracks class properties without the prefix (just 'isReady').
             const claimedNoPfx = claimed.startsWith('this.') ? claimed.slice(5) : claimed;
             const claimedBaseNoPfx = claimedBase.startsWith('this.') ? claimedBase.slice(5) : claimedBase;
-            // Fuzzy: exact match OR [] -stripped match OR this.-stripped match OR dot-prefix match
+            // Also strip parenthetical annotations like "(in ClassName)" that LLMs sometimes append
+            // e.g. "this._map (in HotPathCache)" → "this._map" → "_map"
+            const claimedClean = claimed.replace(/\s*\(.*\)\s*$/, '').trim();
+            const claimedCleanBase = claimedClean.replace(/\[\]$/, '');
+            const claimedCleanNoPfx = claimedClean.startsWith('this.') ? claimedClean.slice(5) : claimedClean;
+            const claimedCleanBaseNoPfx = claimedCleanBase.startsWith('this.') ? claimedCleanBase.slice(5) : claimedCleanBase;
+            // Fuzzy: exact match OR [] -stripped match OR this.-stripped match OR dot-prefix match OR annotation-stripped match
             const matched = knownVars.has(claimed) ||
                 knownVars.has(claimedBase) ||
                 knownVars.has(claimedNoPfx) ||
                 knownVars.has(claimedBaseNoPfx) ||
+                knownVars.has(claimedClean) ||
+                knownVars.has(claimedCleanBase) ||
+                knownVars.has(claimedCleanNoPfx) ||
+                knownVars.has(claimedCleanBaseNoPfx) ||
                 [...knownVars].some(k =>
                     k.startsWith(claimed + '.') || claimed.startsWith(k + '.') ||
                     k.startsWith(claimedBase + '.') || claimedBase.startsWith(k + '.') ||
-                    k.startsWith(claimedNoPfx + '.') || claimedNoPfx.startsWith(k + '.')
+                    k.startsWith(claimedNoPfx + '.') || claimedNoPfx.startsWith(k + '.') ||
+                    k.startsWith(claimedCleanNoPfx + '.') || claimedCleanNoPfx.startsWith(k + '.')
                 );
             if (!matched) {
                 // Soft warning only — non-JS variables (CSS props, Python attrs) legitimately
@@ -1318,36 +1411,49 @@ function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode, symptom = '
             }
         }
 
-        // Only run caller-check if there's a signature-breaking change.
-        // Internal-only fixes (adding guards, version checks, early returns) are backward-compatible.
-        if (hasSignatureBreakingRemoval) {
-            for (const edge of callGraph) {
-                if (!modifiedFunctions.has(edge.function)) continue;
-
-                const callerBase = edge.caller.split(/[\\/]/).pop().toLowerCase();
-                if (fixText.includes(callerBase)) continue; // caller already mentioned — fine
-
-                // Skip React component files
-                const callerFileName = edge.caller.split(/[\\/]/).pop();
-                const isReactComponentFile =
-                    /\.(jsx|tsx)$/i.test(callerFileName) ||
-                    /^[A-Z]/.test(callerFileName.replace(/\.[^.]+$/, ''));
-                if (isReactComponentFile) continue;
-
-                // Skip self-referential edges
-                const calleeBase = edge.callee.split(/[\\/]/).pop().toLowerCase();
-                if (callerBase === calleeBase) continue;
-
-                failures.push({
-                    claim: `Fix Completeness: ${edge.function}`,
-                    reason: `Fix modifies ${edge.function} in ${edge.callee} but misses updates to caller ${edge.caller}`
-                });
-                confidencePenalty += 0.15;
-
-                const uncerts = report.uncertainties || result.uncertainties;
-                if (Array.isArray(uncerts)) {
-                    uncerts.push(`AST Guard: Fix modifies '${edge.function}' but misses updates to downstream caller '${callerBase}'`);
+        // Only run caller-check for functions whose own signature was changed in the diff.
+        // Build a per-function signature-change map: was a '-' removal line found that
+        // touches the declaration of that specific function (by name)?
+        const fnSignatureChanged = new Set();
+        for (const removedLine of removedLines) {
+            const stripped = removedLine.slice(1).trim();
+            if (!stripped.includes('(')) continue;
+            for (const fn of modifiedFunctions) {
+                // Check if this removal line is the function's own declaration
+                // (contains the function name immediately followed by '(')
+                const fnNameRe = new RegExp(`\\b${fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`);
+                if (fnNameRe.test(stripped)) {
+                    fnSignatureChanged.add(fn);
                 }
+            }
+        }
+
+        for (const edge of callGraph) {
+            if (!fnSignatureChanged.has(edge.function)) continue; // only check actually-changed signatures
+
+            const callerBase = edge.caller.split(/[\\/]/).pop().toLowerCase();
+            if (fixText.includes(callerBase)) continue; // caller already mentioned — fine
+
+            // Skip React component files
+            const callerFileName = edge.caller.split(/[\\/]/).pop();
+            const isReactComponentFile =
+                /\.(jsx|tsx)$/i.test(callerFileName) ||
+                /^[A-Z]/.test(callerFileName.replace(/\.[^.]+$/, ''));
+            if (isReactComponentFile) continue;
+
+            // Skip self-referential edges
+            const calleeBase = edge.callee.split(/[\\/]/).pop().toLowerCase();
+            if (callerBase === calleeBase) continue;
+
+            failures.push({
+                claim: `Fix Completeness: ${edge.function}`,
+                reason: `Fix modifies ${edge.function} in ${edge.callee} but misses updates to caller ${edge.caller}`
+            });
+            confidencePenalty += 0.15;
+
+            const uncerts = report.uncertainties || result.uncertainties;
+            if (Array.isArray(uncerts)) {
+                uncerts.push(`AST Guard: Fix modifies '${edge.function}' but misses updates to downstream caller '${callerBase}'`);
             }
         }
     }

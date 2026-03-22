@@ -33,10 +33,12 @@ New Text Document (2).txt
 plan.txt
 SKILL.md
 future-thoughts.md
-
+bug_catalog.txt
+Language guide.txt
+unravel-landing.html
 
 # Agent Config/Skills
 .agent/
 
-#old bugs
-.old bugs for initial testing/
+# old bugs
+old bugs for initial testing/

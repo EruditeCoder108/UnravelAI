@@ -1,0 +1,107 @@
+
+1. Hypothesis Tree
+Hypothesis 1: Stale Reference to the Counter Map in HotPathCache.
+Reasoning:
+In hot-path-cache.js (L33), the _cache instance of HotPathCache is initialized with the _counters Map imported from counter-store.js. This creates a direct reference (_cache._map) to the specific Map object that _counters points to at the time hot-path-cache.js is initially loaded.
+When counter-store.js::resetWindow() (L62) is called during a rotation, it reassigns its _counters variable to a new Map() object (MapB).
+Crucially, _cache._map retains its reference to the original, now-stale Map object (MapA), which is no longer used by counter-store.js's functions. All HotPathCache operations continue to operate on this stale MapA.
+Explanation of Symptoms:
+getDiagnostics().cache.size is always 0: Explains. clearForRotation() (L77 in hot-path-cache.js) calls _cache.clear(), which empties _cache._map (MapA). Since MapA is stale and never repopulated by active requests, its size remains 0.
+processRequest() returns { allowed: true, count: 0, remaining: 100 }: Partially explains. hot-path-cache.js::checkHotPath() (L40) queries the empty _cache._map (MapA), always finding no entries. It returns { count: 0, allowed: true }. This count: 0 is then used by rate-checker.js::checkLimit().
+getDiagnostics().store.entryCount is non-zero and increasing correctly: Contradicts (partially). counter-store.js::getStoreDiagnostics() reads from counter-store.js's current _counters variable (MapB), which is being correctly populated by incrementCount (as incrementCount is a live binding to the function in counter-store.js and operates on MapB). This means getCount() in rate-checker.js should also retrieve non-zero counts from MapB, eventually enforcing limits and returning non-zero counts, contradicting "stops enforcing limits entirely" and count: 0 in the final checkLimit response. The reported count: 0 is likely the cacheResult.count from checkHotPath, or a misunderstanding of the final response.
+Verdict: Survives as the primary cause of cache failure and an explanation for the count:0 in checkHotPath, but necessitates clarification on the "total bypass" and final count:0 if getCount() on MapB works as expected.
+Hypothesis 2: incrementCount functions also operate on the stale Map (MapA).
+Reasoning: This hypothesis attempts to resolve the count:0 and "total bypass" symptoms more directly. If the incrementCount functions (from request-recorder.js L14 and hot-path-cache.js L62) were somehow captured as stale closures over MapA at module load time, they would continue to write to MapA after rotation. Meanwhile, getCount() and getStoreDiagnostics() (both defined in counter-store.js) would operate on MapB (the new, empty map).
+Explanation of Symptoms:
+getDiagnostics().cache.size is always 0: Contradicts. If incrementCount writes to MapA, MapA would grow, not remain 0.
+getDiagnostics().store.entryCount is non-zero and increasing correctly: Contradicts. If incrementCount writes to MapA, then MapB (what getStoreDiagnostics reads) would remain empty, making entryCount 0.
+processRequest() returns { allowed: true, count: 0 }: Explains. getCount() (reading MapB) would always return 0, leading to allowed: true, count: 0 and total bypass.
+Verdict: Eliminated. It contradicts cache.size=0 and store.entryCount>0 simultaneously. Standard JavaScript module live bindings for functions would ensure incrementCount accesses the current _counters variable in its own module's scope.
+Hypothesis 3: policy-engine.js returns an effectively infinite limit after rotation.
+Reasoning: If evaluatePolicy (L18 in policy-engine.js) somehow determined an effectiveLimit of Infinity (or a very large number) after rotation, then currentCount < effectiveLimit would always be true, regardless of currentCount. This would cause checkLimit to always return allowed: true. The junior dev's suggestion about stale policy cache (L16) is relevant here.
+Explanation of Symptoms:
+stops enforcing limits entirely: Explains. An infinite limit would mean all requests are allowed.
+getDiagnostics().cache.size is always 0: Does not explain. This is unrelated to policy-engine.js.
+getDiagnostics().store.entryCount is non-zero and increasing correctly: Does not explain. This is unrelated to policy-engine.js.
+processRequest() returns { allowed: true, count: 0 }: Partially explains allowed: true. However, if getCount() works (as store.entryCount implies), the count in the response would be currentCount (non-zero), not 0.
+Verdict: Eliminated. Does not explain the core cache.size=0 or the count:0 in the response, only the "allowed:true" part.
+2. Root Cause
+The root cause is a stale reference to the counter Map in hot-path-cache.js. When HotPathCache is instantiated (L33), its internal _map (_cache._map) is assigned a reference to the _counters Map object that counter-store.js exports at module load time. However, counter-store.js::resetWindow() (L62) subsequently reassigns its _counters variable to a new Map object (MapB). This leaves hot-path-cache.js's _cache._map pointing to the old, cleared MapA indefinitely, causing the cache to become useless.
+3. Causal Chain
+Module Initialization:
+counter-store.js loads, initializing _counters to MapA.
+hot-path-cache.js loads. The line const _cache = new HotPathCache(_counters); (L33) causes _cache._map to store a direct reference to MapA.
+The incrementCount functions imported by request-recorder.js and hot-path-cache.js are live bindings to counter-store.js::incrementCount.
+First Window Operation:
+processRequest() calls request-recorder.js::recordRequest(), which calls counter-store.js::incrementCount(). This, and hot-path-cache.js::recordHit() (if allowed), operate on MapA.
+Counts are correctly stored in and retrieved from MapA. Limiting works as expected.
+First Window Rotation (window-manager.js::rotateWindow()):
+window-manager.js calls hot-path-cache.js::clearForRotation() (L77).
+clearForRotation() calls _cache.clear(), which clears _cache._map (i.e., MapA). _cache.size becomes 0.
+window-manager.js then calls counter-store.js::resetWindow(newWindowId) (L62).
+resetWindow(): The _counters variable within counter-store.js is reassigned to a new Map() object (MapB). The _activeWindowId is also updated.
+Permanent Bypass After Rotation:
+Stale Cache: _cache._map (in hot-path-cache.js) still points to the cleared MapA. Subsequent calls to checkHotPath() (L40 in hot-path-cache.js) query this empty MapA, always returning { allowed: true, count: 0, fromCache: true }. This explains getDiagnostics().cache.size always being 0.
+Store Disconnect: incrementCount (called by request-recorder.js and hot-path-cache.js::recordHit) is a live binding; it now operates on MapB (the new _counters in counter-store.js). MapB is correctly populated. This explains getDiagnostics().store.entryCount being non-zero and increasing.
+Limiter Ineffectiveness and count:0: rate-checker.js::checkLimit() now always bypasses the cache check because checkHotPath() returns allowed: true. It then proceeds to const currentCount = getCount(clientId);. This getCount() (from counter-store.js) correctly reads from MapB, and should return the actual, non-zero count. The reported symptom of processRequest() returning { allowed: true, count: 0 } is likely the count: 0 from the cacheResult being misattributed, or a perception that the limiter is totally ineffective because the fast path is broken and the remaining limit enforcement isn't immediately obvious in the observed output format.
+4. Proximate Trap
+A less careful engineer might blame the policy-engine.js's 30-second cache (L16, L24) for returning stale or effectively infinite limits after rotation. This is a plausible guess because incorrect policy could indeed lead to a bypass. However, this is wrong because:
+The policy cache is distinct from the counter store and cache, so it would not explain the observed getDiagnostics().cache.size being 0.
+Even with a stale or infinite policy, the rate-checker.js::checkLimit function would still call getCount(clientId) from counter-store.js, which would correctly retrieve non-zero counts from MapB (as getDiagnostics().store.entryCount confirms). This would still lead to count in the response reflecting the true usage (which would be non-zero), contradicting the reported count: 0.
+5. Minimal Fix
+The fix involves modifying HotPathCache to dynamically access the current _counters Map object from counter-store.js, rather than retaining a stale reference from its initialization.
+File: hot-path-cache.js
+Code Change:
+code
+JavaScript
+// hot-path-cache.js
+
+import {
+    _counters, // The _counters variable itself is a live binding
+    getActiveWindowId,
+    incrementCount,
+} from './counter-store.js';
+
+class HotPathCache {
+    constructor() { // Constructor no longer needs 'counterMap' argument
+        this._hits   = 0;
+        this._misses = 0;
+        this._clears = 0;
+    }
+
+    // Add a getter for '_map' that always returns the current _counters from counter-store.js
+    get _map() {
+        return _counters;
+    }
+
+    lookup(key) {
+        const val = this._map.get(key); // This will now use the live _counters
+        if (val !== undefined) { this._hits++;   return val; }
+        else                   { this._misses++;  return undefined; }
+    }
+
+    set(key, value) { this._map.set(key, value); }     // This will now use the live _counters
+    delete(key)     { return this._map.delete(key); } // This will now use the live _counters
+    get size()      { return this._map.size; }         // This will now use the live _counters
+
+    clear() {
+        this._map.clear(); // This will now clear the live _counters (MapB)
+        this._clears++;
+    }
+
+    getStats() {
+        return {
+            hits:   this._hits,
+            misses: this._misses,
+            clears: this._clears,
+            size:   this._map.size, // This will now use the live _counters.size
+        };
+    }
+}
+
+// Instantiate _cache without passing _counters as an argument
+const _cache = new HotPathCache();
+
+// ... (rest of the file remains unchanged)
+Explanation:
+By changing this._map from a constructor-assigned property to a getter (get _map() { return _counters; }), the HotPathCache instance no longer holds a fixed, stale reference to MapA. Instead, every time _cache._map is accessed (e.g., in lookup, set, clear, size), it dynamically retrieves the current _counters Map (MapB after rotation) from counter-store.js. This ensures HotPathCache always operates on the correct, active counter Map, resolving the stale reference issue. The clear() method will now correctly clear the _counters Map for the active window, aligning the cache's clearing with the store's reset during rotation.
