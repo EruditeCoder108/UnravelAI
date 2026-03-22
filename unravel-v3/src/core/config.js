@@ -741,7 +741,7 @@ export const ENGINE_SCHEMA = {
                         concept: { type: "STRING" },
                         whyItMatters: { type: "STRING" },
                         patternToAvoid: { type: "STRING" },
-                        realWorldAnalogy: { type: "STRING" }
+                        realWorldAnalogy: { type: "STRING", description: "A relatable real-world analogy explaining the bug. IMPORTANT: Use only vegetarian-friendly analogies. Do NOT reference meat, fish, hunting, slaughter, butchery, or any non-vegetarian food or activity. Prefer analogies from cooking, construction, libraries, traffic, plumbing, or everyday household situations." }
                     }
                 },
                 aiPrompt: { type: "STRING", description: "Prompt to paste into Cursor/Bolt to fix it safely." },
