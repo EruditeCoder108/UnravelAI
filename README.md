@@ -139,22 +139,20 @@ query_visual(screenshot, "button grayed out after click")  → finds responsible
 
 ```mermaid
 flowchart TD
-    A([Bug reported]) --> B{Repo size?}
+    A([Bug reported]) --> B{"Repo size?"}
     B -- ">30 files" --> C[build_map]
     B -- "Known files" --> E[analyze]
-    C --> D{Screenshot?}
-    D -- Yes --> QV[query_visual]
-    D -- No --> QG[query_graph]
+    C --> D{"Screenshot?"}
+    D -- "Yes" --> QV[query_visual]
+    D -- "No" --> QG[query_graph]
     QV --> E
     QG --> E
-    E --> F["`**critical_signal**
-    AST evidence
-    ⚡ archive hit · pattern hint`"]
-    F --> G[Agent reasons\n11-phase pipeline]
+    E --> F["**critical_signal**<br/>AST evidence<br/>⚡ archive hit · pattern hint"]
+    F --> G["Agent reasons<br/>11-phase pipeline"]
     G --> H[verify]
-    H -- PASSED --> I([Fix confirmed\npatterns + archive updated])
-    H -- REJECTED --> G
-    H -- PROTOCOL_VIOLATION --> G
+    H -- "PASSED" --> I([Fix confirmed<br/>patterns + archive updated])
+    H -- "REJECTED" --> G
+    H -- "PROTOCOL_VIOLATION" --> G
 
     style A fill:#1D9E75,stroke:#0F6E56,color:#E1F5EE
     style I fill:#1D9E75,stroke:#0F6E56,color:#E1F5EE

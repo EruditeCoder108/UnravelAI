@@ -11,7 +11,7 @@ assignees: ''
 A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
 
 **Describe the solution you'd like**
-A clear and concise description of what you want to happen. Are you suggesting a new AI mode? A new AST extraction rule? A UI enhancement?
+A clear and concise description of what you want to happen. Are you suggesting a new mode? A new AST extraction rule? A UI enhancement?
 
 **Category**
 - [ ] Engine improvement
