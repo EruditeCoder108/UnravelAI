@@ -34,27 +34,19 @@ jobs:
           node-version: '20'
 
       - name: Install Unravel
-        # Install from npm (once published) or from local path
-        # Option A — from npm:
-        #   run: npm install -g unravel-mcp
-        # Option B — from local (monorepo):
-        run: |
-          cd unravel-mcp
-          npm install
+        # Now that we've published to npm, we can just install the latest version!
+        run: npm install -g unravel-mcp
 
       - name: Run Unravel Analysis
         id: unravel
-        # --format sarif    → produces SARIF 2.1.0 for GitHub annotation
-        # --output          → write to file (stdout kept clean for logs)
-        # exit 1 if critical findings, exit 0 if clean
+        # Use the 'unravel' command (defined in package.json bin)
         run: |
-          node unravel-mcp/cli.js \
+          unravel \
             --directory . \
             --symptom "PR diff analysis — identify race conditions, floating promises, stale closures" \
             --format sarif \
             --output unravel.sarif \
             --detail standard
-        # Continue even if exit 1 so we can upload the SARIF before failing
         continue-on-error: true
 
       - name: Upload SARIF to GitHub Code Scanning
