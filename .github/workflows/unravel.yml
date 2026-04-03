@@ -35,10 +35,9 @@ jobs:
 
       - name: Run Unravel Analysis
         id: unravel
-        # Use 'npx' to run the package directly from npm.
-        # This is more robust than a global install on CI runners.
+        # Use 'npx unravel' to call the CLI detective (not the server).
         run: |
-          npx -y unravel-mcp \
+          npx -y unravel \
             --directory . \
             --symptom "PR diff analysis — identify race conditions, floating promises, stale closures" \
             --format sarif \
