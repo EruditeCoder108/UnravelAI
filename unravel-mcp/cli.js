@@ -67,7 +67,7 @@ if (args.help || (!args.directory && !args.files)) {
     process.exit(0);
 }
 
-const CORE_PATH = resolve(import.meta.dirname, '..', 'unravel-v3', 'src', 'core');
+const CORE_PATH = resolve(import.meta.dirname, 'core');
 process.env.UNRAVEL_NATIVE_BASE = pathToFileURL(resolve(import.meta.dirname, 'package.json')).href;
 
 function coreModule(filename) {
