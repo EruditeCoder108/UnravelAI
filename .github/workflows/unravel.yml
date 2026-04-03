@@ -33,15 +33,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Unravel
-        # Now that we've published to npm, we can just install the latest version!
-        run: npm install -g unravel-mcp
-
       - name: Run Unravel Analysis
         id: unravel
-        # Use the 'unravel' command (defined in package.json bin)
+        # Use 'npx' to run the package directly from npm.
+        # This is more robust than a global install on CI runners.
         run: |
-          unravel \
+          npx -y unravel-mcp \
             --directory . \
             --symptom "PR diff analysis — identify race conditions, floating promises, stale closures" \
             --format sarif \
