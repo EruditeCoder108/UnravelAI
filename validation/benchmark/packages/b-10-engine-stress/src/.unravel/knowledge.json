@@ -1,0 +1,295 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "C:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-10-engine-stress\\src",
+    "analyzedAt": "2026-03-25T16:35:03.250Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:app.ts",
+      "type": "file",
+      "name": "app.ts",
+      "filePath": "app.ts",
+      "summary": "",
+      "tags": [
+        "app"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:DiscountRegistry.ts",
+      "type": "file",
+      "name": "DiscountRegistry.ts",
+      "filePath": "DiscountRegistry.ts",
+      "summary": "",
+      "tags": [
+        "DiscountRegistry"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:OrderRouter.ts",
+      "type": "file",
+      "name": "OrderRouter.ts",
+      "filePath": "OrderRouter.ts",
+      "summary": "",
+      "tags": [
+        "OrderRouter"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:PricingEngine.ts",
+      "type": "file",
+      "name": "PricingEngine.ts",
+      "filePath": "PricingEngine.ts",
+      "summary": "Functions: fetchDiscountForCode, calculateTotal, refreshPricingRules",
+      "tags": [
+        "PricingEngine"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:PricingEngine.ts:fetchDiscountForCode",
+      "type": "function",
+      "name": "fetchDiscountForCode",
+      "filePath": "PricingEngine.ts",
+      "lineRange": [
+        12,
+        12
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:PricingEngine.ts:calculateTotal",
+      "type": "function",
+      "name": "calculateTotal",
+      "filePath": "PricingEngine.ts",
+      "lineRange": [
+        28,
+        28
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:PricingEngine.ts:refreshPricingRules",
+      "type": "function",
+      "name": "refreshPricingRules",
+      "filePath": "PricingEngine.ts",
+      "lineRange": [
+        48,
+        48
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:SessionManager.ts",
+      "type": "file",
+      "name": "SessionManager.ts",
+      "filePath": "SessionManager.ts",
+      "summary": "Functions: startSession, handleVisibilityChange, expireSession, logout, getSession",
+      "tags": [
+        "SessionManager"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:SessionManager.ts:startSession",
+      "type": "function",
+      "name": "startSession",
+      "filePath": "SessionManager.ts",
+      "lineRange": [
+        17,
+        17
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:SessionManager.ts:handleVisibilityChange",
+      "type": "function",
+      "name": "handleVisibilityChange",
+      "filePath": "SessionManager.ts",
+      "lineRange": [
+        47,
+        47
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:SessionManager.ts:expireSession",
+      "type": "function",
+      "name": "expireSession",
+      "filePath": "SessionManager.ts",
+      "lineRange": [
+        53,
+        53
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:SessionManager.ts:logout",
+      "type": "function",
+      "name": "logout",
+      "filePath": "SessionManager.ts",
+      "lineRange": [
+        60,
+        60
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:SessionManager.ts:getSession",
+      "type": "function",
+      "name": "getSession",
+      "filePath": "SessionManager.ts",
+      "lineRange": [
+        68,
+        68
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:PricingEngine.ts",
+      "target": "func:PricingEngine.ts:fetchDiscountForCode",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:PricingEngine.ts",
+      "target": "func:PricingEngine.ts:calculateTotal",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:PricingEngine.ts",
+      "target": "func:PricingEngine.ts:refreshPricingRules",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:SessionManager.ts",
+      "target": "func:SessionManager.ts:startSession",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:SessionManager.ts",
+      "target": "func:SessionManager.ts:handleVisibilityChange",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:SessionManager.ts",
+      "target": "func:SessionManager.ts:expireSession",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:SessionManager.ts",
+      "target": "func:SessionManager.ts:logout",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:SessionManager.ts",
+      "target": "func:SessionManager.ts:getSession",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:app.ts",
+      "target": "file:OrderRouter.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:OrderRouter.ts",
+      "target": "file:PricingEngine.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:OrderRouter.ts",
+      "target": "file:DiscountRegistry.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:OrderRouter.ts",
+      "target": "file:SessionManager.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:PricingEngine.ts",
+      "target": "file:DiscountRegistry.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

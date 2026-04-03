@@ -1,0 +1,166 @@
+{
+  "bugType": "TEMPORAL_LOGIC",
+  "codeLocation": "src/raft-node.js L1095",
+  "conceptExtraction": {
+    "bugCategory": "Protocol Violation",
+    "concept": "Strict adherence to consensus protocol state transitions and definitions.",
+    "patternToAvoid": "Do not conflate transient state (like pre-vote agreements) with committed state (like actual election votes). Each phase of a protocol has distinct criteria for success, and prematurely promoting or misinterpreting state can bypass critical safety checks. Also, always verify comparison operators ('>', '>=') against the protocol's exact definition of 'up-to-date' or 'sufficient'.",
+    "realWorldAnalogy": "Imagine you're organizing a community vote on a new park design. For the first step (like a pre-vote), you send out a preliminary survey to see if people are generally open to the idea of *any* new park. A majority say 'yes, we're open to exploring it.' If you then interpret these 'yes' responses as actual votes for your *specific, final design proposal* and declare victory without holding the formal vote, you've conflated the preliminary step with the final decision. When you try to start construction, you'd find most people haven't actually voted for your specific design and reject your authority, leading to chaos and potentially multiple groups trying to build different parks. The preliminary 'openness' was about process, not a final commitment.",
+    "whyItMatters": "In distributed consensus protocols like Raft, even slight deviations from the specified state transition rules or data interpretation (like 'up-to-date' logs or 'granted' votes) can lead to subtle but severe safety violations (like split-brain) or liveness issues (like prolonged elections). The protocol guarantees depend on exact compliance, and any misinterpretation breaks these fundamental properties."
+  },
+  "confidence": 0.9,
+  "diffBlock": "--- src/raft-node.js L1095\n-        if (this._election?.preVotesDone && this._election.preVotes.size > 0) {\n-            this._votes.promotePreVotesToGrants(\n-                [...this._election.preVotes],\n-                this._term\n-            );\n-        }\n--- src/raft-node.js L1839\n-        return candidateIndex > this._log.lastIndex;\n+        return candidateIndex >= this._log.lastIndex;",
+  "evidence": [
+    "src/raft-node.js L1095: `_startElection` promotes pre-votes to grants.",
+    "src/raft-node.js L500: `promotePreVotesToGrants` adds `voterId`s to `_grantedVotes`.",
+    "src/raft-node.js L539: `checkQuorum` uses `_grantedVotes` to determine quorum.",
+    "src/raft-node.js L1839: `_isLogUpToDate` uses strict `>` comparison for log index."
+  ],
+  "hypotheses": [
+    "Pre-votes are incorrectly promoted into the `_grantedVotes` set, conflating pre-vote agreement with actual full election grants.",
+    "`_isLogUpToDate` uses a strict greater-than comparison, incorrectly rejecting votes from candidates with equally up-to-date logs.",
+    "`_refreshVoterRecord` fails to update the term of a `VoteRecord` when `refreshed` is set to true."
+  ],
+  "hypothesisTree": [
+    {
+      "id": "H1",
+      "reason": "`_startElection()` (L1095) calls `_votes.promotePreVotesToGrants()` which adds `voterId`s directly into `this._grantedVotes` (L512). This conflates pre-vote success (permission to start an election) with actual vote granting for the new term, leading the candidate to prematurely believe it has quorum. This aligns with Mode A's symptom where a node wins election but fails `_confirmLeadership` as other nodes have not actually voted for it in the current term, causing split-brains.",
+      "status": "survived",
+      "text": "Pre-votes are incorrectly promoted as full votes."
+    },
+    {
+      "id": "H2",
+      "reason": "`_isLogUpToDate()` (L1839) returns `false` if `candidateIndex === this._log.lastIndex` when `candidateTerm` and `this._log.lastTerm` are equal. Raft's specification requires granting votes if the candidate's log is *at least as up-to-date*. This strict inequality causes peers to reject votes from legitimate candidates with identical logs, matching Mode B's symptom of prolonged elections and rejections.",
+      "status": "survived",
+      "text": "Strict log up-to-date check (`_isLogUpToDate`)."
+    },
+    {
+      "eliminatedBy": "src/raft-node.js L522: `record.term = currentTerm;`",
+      "id": "H3",
+      "reason": "AST confirms that `record.term` is explicitly assigned `currentTerm` at L522 immediately before `record.refreshed = true;` at L523 within `_refreshVoterRecord`. If `refreshed` is true, `term` must have been updated. The user's diagnostic output showing `term: N-1` alongside `refreshed: true` for the same record (Mode A) is inconsistent with this code's deterministic behavior.",
+      "status": "eliminated",
+      "text": "`_refreshVoterRecord` doesn't update term."
+    }
+  ],
+  "invariants": [
+    "The `VoteManager._grantedVotes` set must only contain `voterId`s that have explicitly granted a vote for the *current election term* via a `VOTE_RESPONSE` message, and must not be pre-populated by pre-vote outcomes.",
+    "The `_isLogUpToDate` function must correctly implement the Raft rule: a log is considered at least as up-to-date if its last entry has a higher term, or if terms are equal, if it has a higher or equal index.",
+    "A node must never grant a vote or become leader for a term lower than its current term.",
+    "Quorum for an election must only be achieved by collecting explicit `VOTE_RESPONSE` messages from a majority of peers *for the current election term*, after the candidate has incremented its term."
+  ],
+  "minimalFix": "For Mode A (incorrect pre-vote promotion), remove the code that promotes pre-votes to grants in `_startElection`. Pre-votes are a gate to start an election, not a substitute for actual votes.\n\nFor Mode B (strict log comparison), change the `>` operator to `>=` in `_isLogUpToDate` to correctly implement the Raft log up-to-dateness rule.\n\n```javascript\n// src/raft-node.js L1095\n        if (this._election?.preVotesDone && this._election.preVotes.size > 0) {\n            // REMOVE: Pre-votes are not actual grants for the full election.\n            // A successful pre-vote only grants permission to *start* a full election,\n            // the actual votes must still be collected in the current term.\n            // this._votes.promotePreVotesToGrants(\n            //     [...this._election.preVotes],\n            //     this._term\n            // );\n        }\n\n// src/raft-node.js L1839\n    _isLogUpToDate(candidateIndex, candidateTerm) {\n        if (candidateTerm !== this._log.lastTerm) {\n            return candidateTerm > this._log.lastTerm;\n        }\n-        return candidateIndex > this._log.lastIndex;\n+        return candidateIndex >= this._log.lastIndex;\n    }\n```",
+  "proximate_crash_site": "`_confirmLeadership()` L1850 — Node-1 steps down after peers fail to acknowledge heartbeats.",
+  "reproduction": [
+    "**Mode A:**",
+    "1. Start a 5-node Raft cluster (`Cluster(5)`).",
+    "2. Observe `_startPreVote()` followed by `_startElection()` where `_election.preVotesDone` is true.",
+    "3. The `_startElection` promotes pre-votes to grants via `_votes.promotePreVotesToGrants()` (L1095).",
+    "4. The candidate (Node-1 in the symptom) calls `_votes.checkQuorum()` (L1155) and incorrectly counts the pre-vote-promoted entries towards its quorum.",
+    "5. Node-1 transitions to LEADER via `_becomeLeader()` (L1158).",
+    "6. Node-1 calls `_confirmLeadership()` (L1850) and sends heartbeats.",
+    "7. Other nodes (Node-2, Node-3 in symptom) receive heartbeats but their local state shows they have voted for a different candidate or are in a different term, thus they do not acknowledge Node-1's leadership.",
+    "8. `_confirmLeadership()` fails to gather a quorum of acknowledgements, leading Node-1 to `_stepDown()` and a `SPLIT_BRAIN` violation is recorded.",
+    "**Mode B:**",
+    "1. Start a 5-node Raft cluster.",
+    "2. Induce network partitions between some nodes, then heal them, causing log divergence/convergence.",
+    "3. A node (e.g., Node-1) becomes a candidate and sends `VOTE_REQUEST` messages.",
+    "4. Peers (e.g., Node-4, Node-5 in symptom) receive `VOTE_REQUEST` and call `_handleVoteRequest()` (L1126).",
+    "5. Inside `_handleVoteRequest`, `_isLogUpToDate()` (L1132) is called. If the candidate's log (`msg.lastIndex`, `msg.lastTerm`) is *identically* up-to-date with the peer's log, `_isLogUpToDate` returns `false` due to the strict `>` comparison (L1839).",
+    "6. The peer rejects the vote with `reason: 'log_behind'` (L1148).",
+    "7. The candidate fails to gather a true quorum of votes, leading to election timeouts and subsequent re-elections."
+  ],
+  "rootCause": "The Raft implementation incorrectly promotes pre-vote agreements into actual vote grants, leading to premature quorum satisfaction for elections. Separately, the log up-to-dateness check (`_isLogUpToDate`) uses a strict greater-than comparison, causing legitimate candidates with equally up-to-date logs to be rejected during voting.",
+  "secondaryTags": [
+    "Raft Protocol Deviation",
+    "Consensus Safety",
+    "Liveness Issue"
+  ],
+  "symptom": "In a 5-node cluster under production load, two interleaved failure modes appear: Mode A (frequent, ~1 in 8 election cycles): A node wins a leader election and begins heartbeating, but `_confirmLeadership()` fails — only 1 or 2 peers acknowledge. The node steps down immediately. `SafetyMonitor` records a `SPLIT_BRAIN` violation: two nodes were briefly both in state `leader` for the same term. Mode B (infrequent, ~1 in 40 election cycles): An election takes unusually long. A candidate receives what appears to be a quorum but `_becomeLeader` is never called. A second election fires. Mode B almost always follows a period where some peers were network-partitioned and recently rejoined. Both modes produce `SafetyMonitor.violations()` entries of type `SPLIT_BRAIN`.",
+  "timelineEdges": [
+    {
+      "from": "Candidate (Node A)",
+      "label": "achieves pre-vote quorum",
+      "to": "Candidate (Node A)"
+    },
+    {
+      "from": "Candidate (Node A)",
+      "label": "calls _startElection()",
+      "to": "Candidate (Node A)"
+    },
+    {
+      "from": "Candidate (Node A)",
+      "isBugPoint": true,
+      "label": "calls promotePreVotesToGrants() (incorrectly counts pre-votes as full votes)",
+      "to": "VoteManager"
+    },
+    {
+      "from": "Candidate (Node A)",
+      "label": "sends VOTE_REQUESTs to peers",
+      "to": "Peers"
+    },
+    {
+      "from": "Peer",
+      "label": "receives VOTE_REQUEST",
+      "to": "Peer"
+    },
+    {
+      "from": "Peer",
+      "isBugPoint": true,
+      "label": "calls _isLogUpToDate() with strict comparison (incorrectly rejects votes with identical logs)",
+      "to": "_isLogUpToDate function"
+    },
+    {
+      "from": "Peer",
+      "label": "rejects vote (Mode B symptom)",
+      "to": "Candidate (Node A)"
+    },
+    {
+      "from": "Candidate (Node A)",
+      "label": "calls checkQuorum()",
+      "to": "VoteManager"
+    },
+    {
+      "from": "VoteManager",
+      "isBugPoint": true,
+      "label": "incorrectly reports quorum due to pre-vote inflation (Mode A symptom)",
+      "to": "Candidate (Node A)"
+    },
+    {
+      "from": "Candidate (Node A)",
+      "label": "calls _becomeLeader()",
+      "to": "Candidate (Node A)"
+    },
+    {
+      "from": "Leader (Node A)",
+      "label": "calls _confirmLeadership()",
+      "to": "Leader (Node A)"
+    },
+    {
+      "from": "Leader (Node A)",
+      "label": "sends HEARTBEATs",
+      "to": "Peers"
+    },
+    {
+      "from": "Peer",
+      "label": "acknowledges or rejects HEARTBEAT",
+      "to": "Leader (Node A)"
+    },
+    {
+      "from": "Leader (Node A)",
+      "isBugPoint": true,
+      "label": "fails to get quorum for heartbeats (Mode A symptom)",
+      "to": "Leader (Node A)"
+    },
+    {
+      "from": "Leader (Node A)",
+      "label": "steps down, records SPLIT_BRAIN violation",
+      "to": "SafetyMonitor"
+    }
+  ],
+  "uncertainties": [],
+  "uncoveredSymptoms": [
+    "\"The `term: N-1` voters have `refreshed: true`\" in `getDiagnostics()` for Mode A: Static analysis suggests that if `_refreshVoterRecord` (L520) runs, it would update the `term` to `currentTerm` (N) while setting `refreshed` to `true`. The reported state of `term: N-1` and `refreshed: true` simultaneously is inconsistent with the deterministic code flow after `checkQuorum` is invoked. This specific diagnostic observation remains anomalous from the provided code, though the underlying root cause of pre-vote conflation is clear."
+  ],
+  "variableState": [],
+  "whyFixWorks": "The fix for Mode A removes the call to `promotePreVotesToGrants` from `_startElection`. This ensures that the `_grantedVotes` set in the `VoteManager` will only contain actual votes received during the current term's full election phase. This prevents the candidate from prematurely believing it has a quorum based on prior pre-vote agreements, thus ensuring that leadership is only declared after a true majority of current-term votes have been collected, resolving the split-brain scenario.\n\nThe fix for Mode B changes the log comparison in `_isLogUpToDate` from `>` to `>=`. This aligns the logic with the Raft specification, allowing peers to correctly grant votes to candidates whose logs are equally or more up-to-date than their own. This ensures that legitimate candidates can achieve quorum, preventing prolonged elections and unnecessary rejections based on identical logs."
+}

@@ -1,0 +1,73 @@
+name: Unravel AST Analysis
+
+# Runs on every PR and push to main.
+# Annotates PRs with structural findings (race conditions, floating promises, etc.)
+# via SARIF upload to GitHub's code scanning dashboard.
+#
+# Exit codes:
+#   0 — no critical findings (workflow passes)
+#   1 — critical findings (workflow fails, PR blocked)
+#   2 — analysis error (workflow fails)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  unravel:
+    name: Unravel AST Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for SARIF upload to GitHub code scanning
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Unravel
+        # Install from npm (once published) or from local path
+        # Option A — from npm:
+        #   run: npm install -g unravel-mcp
+        # Option B — from local (monorepo):
+        run: |
+          cd unravel-mcp
+          npm install
+
+      - name: Run Unravel Analysis
+        id: unravel
+        # --format sarif    → produces SARIF 2.1.0 for GitHub annotation
+        # --output          → write to file (stdout kept clean for logs)
+        # exit 1 if critical findings, exit 0 if clean
+        run: |
+          node unravel-mcp/cli.js \
+            --directory . \
+            --symptom "PR diff analysis — identify race conditions, floating promises, stale closures" \
+            --format sarif \
+            --output unravel.sarif \
+            --detail standard
+        # Continue even if exit 1 so we can upload the SARIF before failing
+        continue-on-error: true
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: unravel.sarif
+          # Annotations appear directly on diff lines in the PR
+          category: unravel-ast
+
+      - name: Fail if critical findings
+        # Re-check exit code from the analysis step
+        if: steps.unravel.outcome == 'failure'
+        run: |
+          echo "Unravel found critical structural issues. See Security > Code Scanning for annotations."
+          exit 1

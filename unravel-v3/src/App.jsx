@@ -5,7 +5,7 @@ import {
     BrainCircuit, User, FolderTree, FileCode, Network, PauseCircle,
     Clock, Database, AlertOctagon, GitMerge, BookOpen, RefreshCw,
     ShieldAlert, Lightbulb, Key, ChevronRight, Baby, Palette, Book, Code, MessageSquare, Languages,
-    Github, X, Link, Shield, Bug, Eye, Layers, Moon, Sun, Monitor, Download
+    Github, X, Link, Shield, Bug, Eye, Layers, Moon, Sun, Monitor, Download, Trash2, ImageIcon
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import {
@@ -655,6 +655,8 @@ export default function App() {
     const [model, setModel] = useState('');
     const [apiKey, setApiKey] = useState('');
     const [showKey, setShowKey] = useState(false);
+    const [embeddingApiKey, setEmbeddingApiKey] = useState(() => localStorage.getItem('unravel_key_embedding') || '');
+    const [showEmbeddingKey, setShowEmbeddingKey] = useState(false);
 
     const [inputType, setInputType] = useState('paste');
     const [pastedFiles, setPastedFiles] = useState([{ name: '', content: '' }]);
@@ -662,6 +664,8 @@ export default function App() {
     const [githubUrl, setGithubUrl] = useState('');
     const [githubError, setGithubError] = useState('');
     const [userError, setUserError] = useState('');
+    const [queryImage, setQueryImage] = useState(null); // §3.5: data-URL of attached screenshot for visual KG routing
+    const queryImageInputRef = useRef(null);
 
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisError, setAnalysisError] = useState('');
@@ -680,6 +684,9 @@ export default function App() {
     const [preset, setPreset] = useState('full');
     const [outputSections, setOutputSections] = useState(null); // null = use preset default
     const [progressStages, setProgressStages] = useState([]);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [reentryMessage, setReentryMessage] = useState(null);  // null = no re-entry
+    const [multipleSurvivors, setMultipleSurvivors] = useState(false);
     
     // ── Theming System ──
     const [theme, setTheme] = useState('dark');
@@ -690,6 +697,19 @@ export default function App() {
     const dirInputRef = useRef(null);
     const githubRepoContext = useRef(null); // Stores { owner, repo, branch, tree } for missing-files callback
     const abortControllerRef = useRef(null);
+
+    // ── Knowledge Graph State ──────────────────────────────────────────────────
+    // projectGraph: the in-memory KG (loaded from IDB or just built)
+    // graphStatus:  null | 'loading' | 'ready' | 'building' | 'error'
+    // graphKey:     stable 'owner/repo@branch' string — changes only when URL changes
+    const [projectGraph, setProjectGraph] = useState(null);
+    const [graphStatus, setGraphStatus]   = useState(null);
+    const [graphKey, setGraphKey]         = useState(null);
+    // 'structural' = fast, 0 API calls | 'llm' = enriched with file summaries + layer labels
+    const [mapBuildMode, setMapBuildMode] = useState('structural');
+    // Maps panel
+    const [showMapsPanel, setShowMapsPanel] = useState(false);
+    const [allMaps, setAllMaps]             = useState([]);
 
     // ── One-time storage restore (guard prevents double-run in React StrictMode) ──
     const initStorageOnce = useRef(false);
@@ -733,6 +753,55 @@ export default function App() {
         const finishTimer = setTimeout(() => setIsInitialLoading(false), 3800);
         return () => { clearTimeout(exitTimer); clearTimeout(finishTimer); };
     }, []);
+
+    // ── Elapsed timer for loading step ──
+    useEffect(() => {
+        if (step !== 3) return;
+        setElapsedSeconds(0);
+        const t = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
+        return () => clearInterval(t);
+    }, [step]);
+
+    // ── Auto-load cached KG when GitHub URL changes ────────────────────────────
+    // Runs whenever the user types/edits the GitHub URL in github input mode.
+    // Computes the stable repo key and checks IndexedDB (no LLM cost, ~1ms).
+    useEffect(() => {
+        if (inputType !== 'github') return;
+        const trimmed = githubUrl.trim();
+        if (!trimmed) { setGraphStatus(null); setProjectGraph(null); setGraphKey(null); return; }
+
+        const match = trimmed.match(/github\.com\/([^\/]+)\/([^\/\/?#]+)/);
+        if (!match) return;
+        const [, owner, repo] = match;
+
+        // Parse optional branch from URL: github.com/owner/repo/tree/BRANCH
+        const branchMatch = trimmed.match(/github\.com\/[^\/]+\/[^\/]+\/tree\/([^\/\/?#]+)/);
+        const branch = branchMatch ? branchMatch[1] : 'default';
+        const key = `${owner}/${repo}@${branch}`;
+
+        if (key === graphKey) return; // same repo, already handled
+        setGraphKey(key);
+        setGraphStatus('loading');
+        setProjectGraph(null);
+
+        (async () => {
+            try {
+                const { computeProjectKey, loadGraphIDB } = await import('./core/graph-storage-idb.js');
+                const idbKey = await computeProjectKey([`${owner}/${repo}`]);
+                const cached = await loadGraphIDB(idbKey);
+                if (cached) {
+                    setProjectGraph(cached);
+                    setGraphStatus('ready');
+                    console.log(`[KG] Loaded cached graph for ${owner}/${repo}: ${cached.nodes?.length || 0} nodes, ${cached.edges?.length || 0} edges`);
+                } else {
+                    setGraphStatus(null); // no cached map — show Build button
+                }
+            } catch (err) {
+                console.warn('[KG] IDB load failed:', err.message);
+                setGraphStatus(null);
+            }
+        })();
+    }, [githubUrl, inputType]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Session save
     useEffect(() => {
@@ -942,11 +1011,42 @@ export default function App() {
         const errorType = classifyErrorType(effectiveSymptom);
         console.log(`[ROUTER] Error type classified: ${errorType}`);
 
-        // ── Pass 1: Model sees tree structure → selects initial files ──
+        // ── Pass 0: Knowledge Graph Router (0 API calls) ──────────────────────
+        // If a cached graph exists for this repo, use graph traversal to select
+        // files. Skips the LLM router entirely — saves ~2s + API token cost.
         let candidates = allCandidates;
+        let _usedGraphRouter = false;
+
+        if (projectGraph && allCandidates.length > 5) {
+            try {
+                const { queryGraphForFiles } = await import('./core/search.js');
+                const graphResults = queryGraphForFiles(projectGraph, effectiveSymptom, 15);
+                if (graphResults && graphResults.length >= 3) {
+                    const selectedPaths = new Set(
+                        graphResults.map(r => {
+                            // queryGraphForFiles returns string file paths directly, not objects
+                            const p = typeof r === 'string' ? r : (r.filePath || r.path || r.name || '');
+                            // Normalize: strip repo prefix if present (e.g. "my-repo/src/foo.js" → "src/foo.js")
+                            return p.startsWith(`${repo}/`) ? p.slice(repo.length + 1) : p;
+                        })
+                    );
+                    const graphFiltered = allCandidates.filter(f => selectedPaths.has(f.path));
+                    if (graphFiltered.length >= 2) {
+                        candidates = graphFiltered;
+                        _usedGraphRouter = true;
+                        onProgress?.(`MAP ROUTER: Selected ${candidates.length} files via knowledge graph (0 API calls)`);
+                        console.log(`[KG] Graph router: ${candidates.length} files from ${allCandidates.length} candidates`);
+                    }
+                }
+            } catch (graphErr) {
+                console.warn('[KG] Graph router failed, falling back to LLM router:', graphErr.message);
+            }
+        }
+
+        // ── Pass 1: LLM Router (fallback when no graph cached) ───────────────
         const allPaths = allCandidates.map(f => `${repo}/${f.path}`);
 
-        if (allCandidates.length > 10 && apiKey && provider && model) {
+        if (!_usedGraphRouter && allCandidates.length > 10 && apiKey && provider && model) {
             try {
                 onProgress?.(`ROUTER AGENT: Analyzing ${allCandidates.length} files in repo structure...`);
                 const routerPrompt = buildRouterPrompt(allPaths, effectiveSymptom, analysisMode);
@@ -1103,13 +1203,342 @@ export default function App() {
         }));
     };
 
+    // ═══ BUILD PROJECT MAP ════════════════════════════════
+    // Downloads ALL files for the current GitHub repo, runs the WASM AST
+    // bridge on them, builds a KnowledgeGraph, and saves it to IndexedDB.
+    // After this, every future analysis on this repo will use graph-based
+    // file selection instead of the LLM router (0 API calls, ~10ms).
+    const handleBuildProjectMap = async () => {
+        if (!githubUrl.trim()) return;
+
+        const urlMatch = githubUrl.trim().match(/github\.com\/([^\/]+)\/([^\/\/?#]+)/);
+        if (!urlMatch) return;
+        const [, owner, repo] = urlMatch;
+
+        setGraphStatus('building');
+        setProjectGraph(null);
+        setLoadingStage('MAP: Fetching repository tree…');
+
+        try {
+            // ── 1. Resolve branch ─────────────────────────────────────────────
+            const branchMatch = githubUrl.trim().match(/github\.com\/[^\/]+\/[^\/]+\/tree\/([^\/\/?#]+)/);
+            let branch = branchMatch ? branchMatch[1] : null;
+            if (!branch) {
+                const metaRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+                if (metaRes.ok) {
+                    const meta = await metaRes.json();
+                    branch = meta.default_branch || 'main';
+                } else {
+                    branch = 'main';
+                }
+            }
+
+            // ── 2. Fetch full repo tree ───────────────────────────────────────
+            setLoadingStage(`MAP: Fetching file tree (${owner}/${repo}@${branch})…`);
+            const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`);
+            if (!treeRes.ok) throw new Error(`GitHub tree API error: ${treeRes.status}`);
+            const treeData = await treeRes.json();
+
+            const BLACKLIST = ['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '__pycache__', 'package-lock.json', 'yarn.lock'];
+            const VALID_EXTS = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
+            const MAX_FILES = 400; // keep map-building practical
+
+            const candidates = (treeData.tree || [])
+                .filter(f =>
+                    f.type === 'blob' &&
+                    f.size < 400_000 &&
+                    VALID_EXTS.some(ext => f.path.endsWith(ext)) &&
+                    !BLACKLIST.some(bl => f.path.includes(`${bl}/`) || f.path === bl)
+                )
+                .slice(0, MAX_FILES);
+
+            if (candidates.length === 0) throw new Error('No JS/TS source files found in repository.');
+            setLoadingStage(`MAP: Downloading ${candidates.length} files…`);
+
+            // ── 3. Download all files in batches of 10 ────────────────────────
+            const downloaded = [];
+            for (let i = 0; i < candidates.length; i += 10) {
+                const batch = candidates.slice(i, i + 10);
+                const results = await Promise.all(batch.map(async (f) => {
+                    try {
+                        const res = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${f.path}`);
+                        if (!res.ok) return null;
+                        const content = await res.text();
+                        return { name: `${repo}/${f.path}`, content };
+                    } catch { return null; }
+                }));
+                downloaded.push(...results.filter(Boolean));
+                setLoadingStage(`MAP: Downloaded ${downloaded.length}/${candidates.length} files…`);
+            }
+
+            if (downloaded.length === 0) throw new Error('All file downloads failed.');
+
+            // ── 4. WASM AST extraction ────────────────────────────────────────
+            setLoadingStage(`MAP: Analyzing ${downloaded.length} files with tree-sitter WASM…`);
+            const { attachStructuralAnalysis } = await import('./core/ast-bridge-browser.js');
+            const enriched = await attachStructuralAnalysis(downloaded);
+
+            // ── 5. Build knowledge graph ────────────────────────────────────
+            setLoadingStage('MAP: Building knowledge graph…');
+            const { GraphBuilder }  = await import('./core/graph-builder.js');
+            const { detectLayers }  = await import('./core/layer-detector.js');
+
+            const builder = new GraphBuilder(`${owner}/${repo}`, '');
+
+            // LLM-Enhanced mode: analyze a sample of key files for summaries
+            let projectDescription = `GitHub repo: ${owner}/${repo}`;
+            let llmLayerData = [];
+            if (mapBuildMode === 'llm' && apiKey && provider && model) {
+                try {
+                    setLoadingStage('MAP: LLM analyzing project structure…');
+                    const { buildProjectSummaryPrompt, parseProjectSummaryResponse } = await import('./core/llm-analyzer.js');
+                    const PRIORITY = ['index', 'main', 'app', 'server', 'config'];
+                    const sample = [...enriched]
+                        .sort((a, b) => {
+                            const aBase = a.name.split('/').pop().toLowerCase();
+                            const bBase = b.name.split('/').pop().toLowerCase();
+                            const aP = PRIORITY.findIndex(p => aBase.startsWith(p));
+                            const bP = PRIORITY.findIndex(p => bBase.startsWith(p));
+                            return (aP === -1 ? 999 : aP) - (bP === -1 ? 999 : bP);
+                        })
+                        .slice(0, 5)
+                        .map(f => ({ path: f.name, content: f.content }));
+                    const summaryRaw = await callProvider({
+                        provider, apiKey, model,
+                        systemPrompt: 'You are a code analysis assistant. Return only JSON.',
+                        userPrompt: buildProjectSummaryPrompt(enriched.map(f => f.name), sample),
+                    });
+                    const summaryParsed = parseProjectSummaryResponse(typeof summaryRaw === 'string' ? summaryRaw : '');
+                    if (summaryParsed) {
+                        projectDescription = summaryParsed.description || projectDescription;
+                        llmLayerData = summaryParsed.layers || [];
+                    }
+                } catch (llmErr) {
+                    console.warn('[KG] LLM project summary failed, continuing structural only:', llmErr.message);
+                }
+            }
+
+            // ── Pass 1: add file nodes + import edges ──
+            for (const file of enriched) {
+                if (file.structuralAnalysis) {
+                    builder.addFileWithAnalysis(file.name, file.structuralAnalysis, {});
+                    for (const imp of (file.structuralAnalysis.imports || [])) {
+                        if (imp.resolvedPath) builder.addImportEdge(file.name, imp.resolvedPath);
+                    }
+                } else {
+                    builder.addFile(file.name);
+                }
+            }
+
+            // ── Pass 2 (Phase A2 + A+1): resolve function calls → cross-file call edges ──
+            //
+            // A+1 upgrade: import-guided resolution before global name lookup.
+            // Priority:
+            //   1. If callee is explicitly imported in THIS file (resolvedPath known) → use that file.
+            //   2. Else: check global fnToFile. Skip if 0 matches (built-in) or 2+ matches (ambiguous).
+            //
+            // Collision guard: build fnToFile as a multi-map (name → Set<filePath>) so we can
+            // detect ambiguity instead of silently picking whichever file was indexed first.
+
+            // Build multi-map: functionName → Set of filePaths that define it
+            const fnToFiles = new Map(); // 'functionName' → Set<filePath>
+            for (const file of enriched) {
+                for (const fn of (file.structuralAnalysis?.functions || [])) {
+                    if (!fnToFiles.has(fn.name)) fnToFiles.set(fn.name, new Set());
+                    fnToFiles.get(fn.name).add(file.name);
+                }
+            }
+
+            // Pre-index imports per file: calleeName → resolvedPath
+            // We extract the last segment of the import path as the likely symbol name.
+            // e.g. import { validateToken } from './auth/validateToken' → 'validateToken' → 'auth/validateToken.js'
+            // Since we don't parse named specifiers (only the source path), we index by
+            // the stem of the resolved path as a heuristic: resolvedPath stem → resolvedPath.
+            const fileImportIndex = new Map(); // filePath → Map<stem, resolvedPath>
+            for (const file of enriched) {
+                const importMap = new Map();
+                for (const imp of (file.structuralAnalysis?.imports || [])) {
+                    if (!imp.resolvedPath) continue;
+                    // Index by filename stem (e.g. 'validateToken' from 'src/auth/validateToken.ts')
+                    const stem = imp.resolvedPath.split('/').pop().replace(/\.[^.]+$/, '');
+                    importMap.set(stem, imp.resolvedPath);
+                    // Also index by the source path's last segment stem (handle './validate-token' → 'validate-token')
+                    const srcStem = imp.source.split('/').pop().replace(/\.[^.]+$/, '');
+                    if (!importMap.has(srcStem)) importMap.set(srcStem, imp.resolvedPath);
+                }
+                fileImportIndex.set(file.name, importMap);
+            }
+
+            let callEdgesAdded = 0;
+            let importGuided = 0;
+            let collisionSkipped = 0;
+
+            for (const file of enriched) {
+                const importMap = fileImportIndex.get(file.name) || new Map();
+                for (const call of (file.structuralAnalysis?.calls || [])) {
+                    const callee = call.callee;
+                    let calleeFile = null;
+
+                    // Step 1: import-guided — check if callee matches a known import stem
+                    const importResolved = importMap.get(callee);
+                    if (importResolved && importResolved !== file.name) {
+                        calleeFile = importResolved;
+                        importGuided++;
+                    } else {
+                        // Step 2: global fnToFile with collision guard
+                        const candidates = fnToFiles.get(callee);
+                        if (!candidates || candidates.size === 0) continue;      // external/built-in
+                        if (candidates.size > 1) { collisionSkipped++; continue; } // ambiguous — skip
+                        const [single] = candidates;
+                        if (single !== file.name) calleeFile = single;
+                    }
+
+                    if (calleeFile) {
+                        builder.addCallEdge(file.name, call.caller, calleeFile, call.callee);
+                        callEdgesAdded++;
+                    }
+                }
+            }
+            console.log(`[KG] Phase A2+A+1: added ${callEdgesAdded} cross-file call edges (import-guided: ${importGuided}, collision-skipped: ${collisionSkipped})`);
+
+            const { applyLLMLayers } = await import('./core/layer-detector.js');
+            const rawGraph = builder.build(projectDescription, []);
+            const layers   = llmLayerData.length > 0
+                ? applyLLMLayers(rawGraph, llmLayerData)
+                : detectLayers(rawGraph);
+            const graph    = builder.build(projectDescription, [], layers);
+
+            // ── 6. Persist to IndexedDB ───────────────────────────────────────
+            setLoadingStage('MAP: Saving to browser storage…');
+            const { computeProjectKey, saveGraphIDB, saveGraphMeta } = await import('./core/graph-storage-idb.js');
+            const idbKey = await computeProjectKey([`${owner}/${repo}`]);
+            await saveGraphIDB(idbKey, graph);
+            await saveGraphMeta(idbKey, {
+                repoName: `${owner}/${repo}`,
+                repoUrl: `https://github.com/${owner}/${repo}`,
+                nodeCount: graph.nodes.length,
+                edgeCount: graph.edges.length,
+                builtAt: new Date().toISOString(),
+                mode: mapBuildMode,
+            });
+            setAllMaps(prev => {
+                const filtered = prev.filter(m => m.key !== idbKey);
+                return [{ key: idbKey, meta: { repoName: `${owner}/${repo}`, repoUrl: `https://github.com/${owner}/${repo}`, nodeCount: graph.nodes.length, edgeCount: graph.edges.length, builtAt: new Date().toISOString(), mode: mapBuildMode } }, ...filtered];
+            });
+
+            setProjectGraph(graph);
+            setGraphKey(`${owner}/${repo}@${branch}`);
+            setGraphStatus('ready');
+            setLoadingStage('');
+            console.log(`[KG] Map built: ${graph.nodes.length} nodes, ${graph.edges.length} edges — saved to IndexedDB`);
+
+            // §3.2: Embed hub nodes for semantic routing (fire-and-forget)
+            // Uses embeddingApiKey if set, otherwise provider apiKey (works when provider=gemini)
+            const _embedKey = embeddingApiKey || (provider === 'gemini' ? apiKey : '');
+            if (_embedKey) {
+                const { embedChangedNodes } = await import('./core/embedding-browser.js');
+                embedChangedNodes(graph, _embedKey)
+                    .then(count => {
+                        if (count > 0) return saveGraphIDB(idbKey, graph); // re-save with embeddings
+                    })
+                    .catch(err => console.warn('[KG] Embedding failed (non-fatal):', err.message));
+            }
+
+        } catch (err) {
+            console.error('[KG] Build Project Map failed:', err);
+            setGraphStatus('error');
+            setLoadingStage('');
+        }
+    };
+
+    // ── Rebuild (clear IDB entry and rebuild) ──────────────────────────────────
+    const handleRebuildMap = async () => {
+        if (!githubUrl.trim()) return;
+        const urlMatch = githubUrl.trim().match(/github\.com\/([^\/]+)\/([^\/\/?#]+)/);
+        if (!urlMatch) return;
+        const [, owner, repo] = urlMatch;
+        try {
+            const { computeProjectKey, deleteGraphIDB } = await import('./core/graph-storage-idb.js');
+            const idbKey = await computeProjectKey([`${owner}/${repo}`]);
+            await deleteGraphIDB(idbKey);
+            setAllMaps(prev => prev.filter(m => m.key !== idbKey));
+        } catch { /* ignore */ }
+        setProjectGraph(null);
+        setGraphStatus(null);
+        handleBuildProjectMap();
+    };
+
+    // ── Maps Panel — load all stored graphs metadata ───────────────────────────
+    const loadAllMaps = async () => {
+        try {
+            const {
+                listAllGraphMeta, listAllGraphKeys, loadGraphIDB, saveGraphMeta,
+            } = await import('./core/graph-storage-idb.js');
+
+            const [all, graphKeys] = await Promise.all([listAllGraphMeta(), listAllGraphKeys()]);
+            const metaKeySet = new Set(all.map(m => m.key));
+
+            // Backfill: graphs built before v2 have no meta entry — synthesize from graph
+            for (const key of graphKeys) {
+                if (metaKeySet.has(key)) continue;
+                try {
+                    const graph = await loadGraphIDB(key);
+                    if (!graph) continue;
+                    const meta = {
+                        repoName:  graph.project?.name || `(graph ${key.slice(7, 15)})`,
+                        repoUrl:   graph.project?.name?.includes('/')
+                            ? `https://github.com/${graph.project.name}` : '',
+                        nodeCount: graph.nodes?.length ?? 0,
+                        edgeCount: graph.edges?.length ?? 0,
+                        builtAt:   graph.project?.analyzedAt || new Date().toISOString(),
+                        mode:      'structural',
+                    };
+                    await saveGraphMeta(key, meta);
+                    all.push({ key, meta });
+                    console.log('[KG] Backfilled meta for', meta.repoName);
+                } catch { /* skip corrupt entries */ }
+            }
+
+            all.sort((a, b) => new Date(b.meta?.builtAt || 0) - new Date(a.meta?.builtAt || 0));
+            setAllMaps(all);
+        } catch (err) {
+            console.warn('[KG] Failed to list maps:', err.message);
+        }
+    };
+
+    const handleDeleteMap = async (key, repoName) => {
+        try {
+            const { deleteGraphIDB } = await import('./core/graph-storage-idb.js');
+            await deleteGraphIDB(key);
+            setAllMaps(prev => prev.filter(m => m.key !== key));
+            // If deleted map was the active one, reset KG state
+            if (projectGraph && graphKey && graphKey.startsWith(repoName)) {
+                setProjectGraph(null);
+                setGraphStatus(null);
+                setGraphKey(null);
+            }
+        } catch (err) {
+            console.warn('[KG] Delete failed:', err.message);
+        }
+    };
+
+    const handleLoadMapRepo = (meta) => {
+        setGithubUrl(meta.repoUrl || `https://github.com/${meta.repoName}`);
+        setInputType('github');
+        setShowMapsPanel(false);
+    };
+
     // ═══ THE ENGINE ═══════════════════════════════════════
     const executeAnalysis = async (resumeWithExtra = false) => {
         setIsAnalyzing(true);
         setAnalysisError('');
         setStep(3);
         setProgressStages([]);
+        setElapsedSeconds(0);
+        setReentryMessage(null);
+        setMultipleSurvivors(false);
         if (!resumeWithExtra) { setViewMode(null); setMissingFileRequest(null); }
+
 
         abortControllerRef.current = new AbortController();
         const signal = abortControllerRef.current.signal;
@@ -1172,6 +1601,16 @@ export default function App() {
                 codeFiles = [...codeFiles, ...additionalFiles.filter(f => f.name && f.content)];
             }
 
+            // ── §3.3: Compute projectKey for diagnosis archive ──
+            // Derives a stable IDB fingerprint from the file names being analyzed.
+            // Passed to orchestrate() so Phase 1f (archive search) and post-verify
+            // archiving are active. Silent no-op if computation fails.
+            let _projectKey = '';
+            try {
+                const { computeProjectKey } = await import('./core/graph-storage-idb.js');
+                _projectKey = await computeProjectKey(codeFiles.map(f => f.name));
+            } catch { /* non-fatal — archive silently skipped */ }
+
             // ── Run the core engine pipeline via orchestrate() ──
             const result = await orchestrate(codeFiles, userError, {
                 provider,
@@ -1185,11 +1624,28 @@ export default function App() {
                 outputSections,
                 sourceMode: inputType,   // 'github' | 'upload' | 'paste'
                 signal,
+                projectKey: _projectKey, // §3.3: diagnosis archive IDB key
+                embeddingApiKey,         // §3.2/3.3: separate Gemini key for semantic routing
+                knowledgeGraph: projectGraph || null, // §3.1/3.2: pass IDB-built KG for Phase 0.5 routing
+                queryImage: queryImage || undefined,   // §3.5: screenshot for visual KG routing (image+text fusion)
                 onProgress: (msg) => {
                     // Handle both string and structured progress
                     if (typeof msg === 'string') {
                         setLoadingStage(msg);
                     } else if (msg && typeof msg === 'object') {
+                        // Re-entry event — Phase 5.5 adversarial eliminated survivor
+                        if (msg.type === 'REENTRY') {
+                            setReentryMessage(`Hypothesis eliminated under adversarial check — running expanded analysis (pass ${msg.iteration || 2}/${2})...`);
+                            // Reset adversarial stage dot back to pending
+                            setProgressStages(prev => prev.filter(s => s.stage !== 'adversarial'));
+                            setLoadingStage('Expanded analysis — rebuilding hypotheses...');
+                            return;
+                        }
+                        // Multiple survivors event
+                        if (msg.type === 'MULTIPLE_SURVIVORS') {
+                            setMultipleSurvivors(true);
+                            return;
+                        }
                         setLoadingStage(msg.label || '');
                         setProgressStages(prev => {
                             const existing = prev.findIndex(s => s.stage === msg.stage);
@@ -1422,6 +1878,27 @@ export default function App() {
                     </div>
                     
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        {/* Maps Button — global, always visible */}
+                        <button
+                            id="btn-maps-header"
+                            onClick={() => { loadAllMaps(); setShowMapsPanel(true); }}
+                            className="matte-button"
+                            title="Browse stored knowledge maps"
+                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', background: 'transparent', border: '1px solid var(--border-heavy)', position: 'relative' }}
+                        >
+                            <Database size={18} />
+                            <span className="hide-on-mobile" style={{ fontSize: 16, fontWeight: 700 }}>Maps</span>
+                            {allMaps.length > 0 && (
+                                <span style={{
+                                    position: 'absolute', top: -6, right: -6,
+                                    fontSize: 10, fontWeight: 700,
+                                    width: 18, height: 18, borderRadius: '50%',
+                                    background: 'var(--accent-purple)',
+                                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>{allMaps.length}</span>
+                            )}
+                        </button>
+
                         {/* History Button */}
                         <button onClick={() => setHistoryOpen(true)} className="matte-button" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', background: 'transparent', border: '1px solid var(--border-heavy)' }}>
                             <Clock size={18} /> <span className="hide-on-mobile" style={{ fontSize: 16, fontWeight: 700 }}>History</span>
@@ -1498,6 +1975,74 @@ export default function App() {
                 </div>
             )}
 
+            {/* Global Knowledge Maps Drawer */}
+            {showMapsPanel && (
+                <div
+                    style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end' }}
+                    onClick={() => setShowMapsPanel(false)}
+                >
+                    <div
+                        style={{ width: 440, maxWidth: '92vw', background: 'var(--surface-base)', borderLeft: '1px solid var(--border-light)', height: '100%', display: 'flex', flexDirection: 'column', animation: 'slideInRight 0.3s ease-out' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(168,85,247,0.04)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700, fontSize: 17, color: 'var(--text-primary)' }}>
+                                <Database size={19} color="var(--accent-purple)" />
+                                Knowledge Maps
+                                <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: 'var(--accent-purple)' }}>{allMaps.length}</span>
+                            </div>
+                            <button onClick={() => setShowMapsPanel(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 4 }}><X size={20} /></button>
+                        </div>
+                        <div style={{ flex: 1, overflowY: 'auto', padding: allMaps.length === 0 ? 0 : '8px 0' }}>
+                            {allMaps.length === 0 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-tertiary)', padding: 32 }}>
+                                    <Database size={36} style={{ opacity: 0.2 }} />
+                                    <div style={{ fontSize: 15, fontWeight: 600 }}>No Knowledge Maps yet</div>
+                                    <div style={{ fontSize: 13, textAlign: 'center', lineHeight: 1.5 }}>Go to a GitHub repo and click <strong style={{ color: 'var(--text-secondary)' }}>Build Project Map</strong>.</div>
+                                </div>
+                            ) : (
+                                allMaps.map(({ key, meta }, idx) => {
+                                    const isActive = graphKey && graphKey.startsWith(meta?.repoName || '___');
+                                    const date = meta?.builtAt ? new Date(meta.builtAt) : null;
+                                    const dateStr = date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown';
+                                    const timeStr = date ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+                                    return (
+                                        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 24px', borderBottom: idx < allMaps.length - 1 ? '1px solid var(--border-light)' : 'none', background: isActive ? 'rgba(34,197,94,0.04)' : 'transparent', transition: 'background 0.15s' }}>
+                                            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--surface-elevated)', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                <Database size={15} color="var(--accent-purple)" />
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                                                    {isActive && <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent-green)', flexShrink: 0 }} />}
+                                                    <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta?.repoName || 'Unknown repo'}</span>
+                                                    {meta?.mode === 'llm' && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'rgba(168,85,247,0.15)', color: 'var(--accent-purple)', flexShrink: 0 }}>LLM+</span>}
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 10, fontSize: 12, color: 'var(--text-tertiary)' }}>
+                                                    <span><strong style={{ color: 'var(--text-secondary)' }}>{meta?.nodeCount ?? '?'}</strong> nodes</span>
+                                                    <span><strong style={{ color: 'var(--text-secondary)' }}>{meta?.edgeCount ?? '?'}</strong> edges</span>
+                                                    <span>{dateStr} {timeStr}</span>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                                                <button onClick={() => handleLoadMapRepo(meta)} style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--accent-blue)', cursor: 'pointer' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(56,189,248,0.08)'; }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>Load</button>
+                                                <button onClick={() => handleDeleteMap(key, meta?.repoName || '')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer' }} onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent-red)'; e.currentTarget.style.borderColor = 'rgba(255,59,48,0.4)'; }} onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.borderColor = 'var(--border-light)'; }}><Trash2 size={13} /></button>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                        <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-tertiary)' }}>
+                            <span>Stored in browser IndexedDB</span>
+                            {allMaps.length > 0 && (
+                                <button onClick={async () => { if (!confirm('Delete all ' + allMaps.length + ' stored maps? This cannot be undone.')) return; for (const { key, meta } of [...allMaps]) { await handleDeleteMap(key, meta?.repoName || ''); } }} style={{ fontSize: 12, color: 'var(--accent-red)', background: 'transparent', border: 'none', cursor: 'pointer' }}>Delete all</button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+
             <main style={{ ...S.wrap, paddingTop: 48, paddingBottom: 40, position: 'relative', zIndex: 10 }}>
 
                 {/* ═══ STEP 1: Profile + API Key ═══ */}
@@ -1554,6 +2099,28 @@ export default function App() {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, color: 'var(--text-tertiary)', fontSize: 14 }}>
                                         <Shield size={16} />
                                         Stored locally in browser localStorage. Never transmitted elsewhere.
+                                    </div>
+
+                                    {/* §3.2/3.3: Gemini Embedding Key */}
+                                    <div style={{ marginTop: 20, padding: '14px 16px', background: 'rgba(168,85,247,0.07)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: 8 }}>
+                                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--accent-purple)', marginBottom: 6 }}>⚡ Gemini Embedding Key — Optional</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 10, lineHeight: 1.5 }}>
+                                            Enables semantic file routing &amp; diagnosis memory. Required if your analysis provider is not Gemini. Leave blank when using Gemini above.
+                                        </div>
+                                        <div style={{ position: 'relative' }}>
+                                            <input
+                                                type={showEmbeddingKey ? 'text' : 'password'}
+                                                className="glass-input"
+                                                style={{ width: '100%', paddingRight: 80, fontSize: 14 }}
+                                                placeholder="AIza... (Gemini API key)"
+                                                value={embeddingApiKey}
+                                                onChange={(e) => { setEmbeddingApiKey(e.target.value); localStorage.setItem('unravel_key_embedding', e.target.value); }}
+                                                id="embedding-api-key-input"
+                                            />
+                                            <button onClick={() => setShowEmbeddingKey(s => !s)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'var(--surface-hover)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 600, padding: '3px 8px', cursor: 'pointer' }}>
+                                                {showEmbeddingKey ? 'HIDE' : 'SHOW'}
+                                            </button>
+                                        </div>
                                     </div>
 
                                 </div>
@@ -1695,6 +2262,130 @@ export default function App() {
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* ── Knowledge Graph Controls ─────────────────────────────── */}
+                                    {githubUrl.trim() && /^https?:\/\/github\.com\/.+\/.+/.test(githubUrl.trim()) && (
+                                        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+
+                                            {/* Cached badge */}
+                                            {graphStatus === 'ready' && projectGraph && (
+                                                <div id="kg-badge" style={{
+                                                    display: 'flex', alignItems: 'center', gap: 8,
+                                                    padding: '8px 14px', borderRadius: 'var(--radius-md)',
+                                                    background: 'rgba(34,197,94,0.08)',
+                                                    border: '1px solid rgba(34,197,94,0.25)',
+                                                    fontSize: 13, fontWeight: 600,
+                                                    color: 'var(--accent-green)',
+                                                }}>
+                                                    <Database size={14} />
+                                                    Map cached · {projectGraph.nodes?.length || 0} nodes · {projectGraph.edges?.length || 0} edges
+                                                    <button
+                                                        id="btn-rebuild-map"
+                                                        onClick={handleRebuildMap}
+                                                        title="Rebuild knowledge graph"
+                                                        style={{ background: 'transparent', border: 'none', color: 'var(--accent-green)', cursor: 'pointer', padding: '2px 4px', opacity: 0.7, fontSize: 14, lineHeight: 1 }}
+                                                    >↺</button>
+                                                </div>
+                                            )}
+
+                                            {/* Building spinner */}
+                                            {graphStatus === 'building' && (
+                                                <div id="kg-building" style={{
+                                                    display: 'flex', alignItems: 'center', gap: 8,
+                                                    padding: '8px 14px', borderRadius: 'var(--radius-md)',
+                                                    background: 'rgba(56,189,248,0.08)',
+                                                    border: '1px solid rgba(56,189,248,0.2)',
+                                                    fontSize: 13, color: 'var(--accent-cyan)',
+                                                }}>
+                                                    <Loader2 size={14} className="animate-spin" />
+                                                    Building knowledge map…
+                                                </div>
+                                            )}
+
+                                            {/* Error state */}
+                                            {graphStatus === 'error' && (
+                                                <div style={{
+                                                    display: 'flex', alignItems: 'center', gap: 8,
+                                                    padding: '8px 14px', borderRadius: 'var(--radius-md)',
+                                                    background: 'rgba(255,59,48,0.08)',
+                                                    border: '1px solid rgba(255,59,48,0.25)',
+                                                    fontSize: 13, color: 'var(--accent-red)',
+                                                }}>
+                                                    <AlertTriangle size={14} /> Map build failed
+                                                    <button
+                                                        onClick={handleBuildProjectMap}
+                                                        style={{ background: 'transparent', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+                                                    >Retry</button>
+                                                </div>
+                                            )}
+
+                                            {/* Build button + mode toggle */}
+                                            {(graphStatus === null || graphStatus === 'error') && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                    <button
+                                                        id="btn-build-map"
+                                                        onClick={handleBuildProjectMap}
+                                                        className="matte-button"
+                                                        style={{
+                                                            display: 'flex', alignItems: 'center', gap: 8,
+                                                            padding: '8px 16px', fontSize: 13, fontWeight: 600,
+                                                            color: 'var(--accent-purple)',
+                                                            border: '1px solid rgba(168,85,247,0.35)',
+                                                            background: 'rgba(168,85,247,0.07)',
+                                                            borderRadius: 'var(--radius-md)',
+                                                        }}
+                                                    >
+                                                        <Network size={14} />
+                                                        Build Project Map
+                                                        <span style={{ fontSize: 11, opacity: 0.7, fontWeight: 400 }}>(0 API calls · faster routing)</span>
+                                                    </button>
+                                                    {/* Build mode toggle — shown when API key available */}
+                                                    {apiKey.trim() && (
+                                                        <div style={{
+                                                            display: 'flex', borderRadius: 'var(--radius-sm)',
+                                                            border: '1px solid var(--border-light)',
+                                                            overflow: 'hidden', fontSize: 12,
+                                                        }}>
+                                                            <button
+                                                                id="btn-map-mode-structural"
+                                                                onClick={() => setMapBuildMode('structural')}
+                                                                style={{
+                                                                    padding: '6px 10px', border: 'none', cursor: 'pointer',
+                                                                    fontFamily: 'inherit', fontWeight: 600,
+                                                                    background: mapBuildMode === 'structural' ? 'var(--surface-hover)' : 'transparent',
+                                                                    color: mapBuildMode === 'structural' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                                                                    transition: 'all 0.15s',
+                                                                }}
+                                                                title="No API calls — pure structural analysis"
+                                                            >Structural</button>
+                                                             <button
+                                                                 id="btn-map-mode-llm"
+                                                                 onClick={() => setMapBuildMode('llm')}
+                                                                 style={{
+                                                                     padding: '6px 10px', border: 'none', cursor: 'pointer',
+                                                                     fontFamily: 'inherit', fontWeight: 600,
+                                                                     background: mapBuildMode === 'llm' ? 'var(--surface-hover)' : 'transparent',
+                                                                     color: mapBuildMode === 'llm' ? 'var(--accent-purple)' : 'var(--text-tertiary)',
+                                                                     transition: 'all 0.15s',
+                                                                 }}
+                                                                 title="1 LLM call for project summary + better layer labels"
+                                                             >LLM-Enhanced</button>
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                             )}
+
+                                             {/* IDB loading status */}
+                                             {graphStatus === 'loading' && (
+                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-tertiary)' }}>
+                                                     <Loader2 size={12} className="animate-spin" />
+                                                     Checking for cached map...
+                                                 </div>
+                                             )}
+                                        </div>
+                                    )}
+
+
                                     {githubError && (
                                         <div style={{ background: 'rgba(255,59,48,0.1)', border: '1px solid rgba(255,59,48,0.3)', padding: 12, borderRadius: 'var(--radius-sm)', color: 'var(--accent-red)', fontSize: 15, marginTop: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                                             <AlertTriangle size={16} /> {githubError}
@@ -1835,8 +2526,63 @@ export default function App() {
                                                 ? "What do you want to understand about this code? Leave empty for full architecture overview."
                                                 : "Any specific security concerns? Leave empty to scan for common vulnerabilities."
                                         }
-                                        style={{ minHeight: 120, fontSize: 16 }}
                                     />
+
+                                    {/* §3.5: Screenshot attachment — debug mode only */}
+                                    {analysisMode === 'debug' && (
+                                        <div style={{ marginTop: 10 }}>
+                                            {queryImage ? (
+                                                // Preview + clear
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: 8 }}>
+                                                    <img src={queryImage} alt="screenshot" style={{ width: 56, height: 40, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(168,85,247,0.3)' }} />
+                                                    <div style={{ flex: 1, fontSize: 13, color: 'var(--accent-purple)', fontWeight: 600 }}>
+                                                        <div>Screenshot attached</div>
+                                                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400, marginTop: 2 }}>KG router will fuse image + text embeddings (60/40)</div>
+                                                    </div>
+                                                    <button
+                                                        id="btn-clear-screenshot"
+                                                        onClick={() => setQueryImage(null)}
+                                                        title="Remove screenshot"
+                                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: 4, borderRadius: 4 }}
+                                                        onMouseEnter={e => e.currentTarget.style.color = 'var(--accent-red)'}
+                                                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-tertiary)'}
+                                                    ><X size={16} /></button>
+                                                </div>
+                                            ) : (
+                                                // Upload button
+                                                <button
+                                                    id="btn-attach-screenshot"
+                                                    onClick={() => queryImageInputRef.current?.click()}
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: 8,
+                                                        padding: '8px 14px', background: 'transparent',
+                                                        border: '1px dashed var(--border-heavy)', borderRadius: 8,
+                                                        color: 'var(--text-tertiary)', cursor: 'pointer',
+                                                        fontSize: 13, fontFamily: 'inherit', transition: 'all 0.2s',
+                                                    }}
+                                                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(168,85,247,0.5)'; e.currentTarget.style.color = 'var(--accent-purple)'; }}
+                                                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-heavy)'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+                                                >
+                                                    <ImageIcon size={15} />
+                                                    Attach screenshot <span style={{ opacity: 0.6 }}>(optional — improves file routing)</span>
+                                                </button>
+                                            )}
+                                            <input
+                                                ref={queryImageInputRef}
+                                                type="file"
+                                                accept="image/png,image/jpeg,image/webp,image/gif"
+                                                style={{ display: 'none' }}
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (!file) return;
+                                                    const reader = new FileReader();
+                                                    reader.onload = (ev) => setQueryImage(ev.target.result); // data-URL
+                                                    reader.readAsDataURL(file);
+                                                    e.target.value = ''; // allow re-selecting same file
+                                                }}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
 
                                 {analysisError && (
@@ -1873,6 +2619,7 @@ export default function App() {
 
                 {/* ═══ STEP 3: Loading with Structured Progress ═══ */}
                 {step === 3 && (
+
                     <div className="animate-in" style={{ paddingTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
                         <SvgLoader />
                         <h2 style={{ fontSize: 36, fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-primary)', letterSpacing: 2, marginBottom: 8 }}>
@@ -1914,9 +2661,10 @@ export default function App() {
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, position: 'relative' }}>
                                             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
                                                 <Loader2 size={18} className="animate-spin" style={{ color: activeColor }} />
-                                                {loadingStage || 'Initializing analysis pipeline...'}
+                                                {reentryMessage || loadingStage || 'Initializing analysis pipeline...'}
                                             </div>
-                                            <div style={{ fontSize: 14, fontWeight: 600, color: activeColor }}>
+                                            <div style={{ fontSize: 14, fontWeight: 600, color: activeColor, display: 'flex', gap: 12, alignItems: 'center' }}>
+                                                <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>{elapsedSeconds}s</span>
                                                 {Math.round(progressPct)}%
                                             </div>
                                         </div>
@@ -1970,6 +2718,20 @@ export default function App() {
                                     </>
                                 );
                             })()}
+                            {/* Re-entry indicator */}
+                            {reentryMessage && (
+                                <div style={{ marginTop: 16, padding: '10px 14px', background: 'var(--accent-orange)11', border: '1px solid var(--accent-orange)55', borderRadius: 8, fontSize: 13, color: 'var(--accent-orange)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <AlertTriangle size={14} />
+                                    {reentryMessage}
+                                </div>
+                            )}
+                            {/* Multiple survivors banner */}
+                            {multipleSurvivors && (
+                                <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--accent-orange)11', border: '1px solid var(--accent-orange)', borderRadius: 8, fontSize: 13, color: 'var(--accent-orange)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <AlertTriangle size={14} />
+                                    Multiple explanations survived adversarial checks — all candidates will be shown
+                                </div>
+                            )}
                         </div>
 
                         {/* Terminate Analysis Button */}

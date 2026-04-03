@@ -1,6 +1,0 @@
-{
-    "id": "counter_leak_missing_decrement",
-    "category": "data_flow",
-    "difficulty": "medium",
-    "symptom": "The app's loading indicator never disappears after any request fails. getStats().active keeps growing even when no requests are in flight. After several failed requests the active count is permanently inflated and the UI shows a loading spinner that never clears."
-}

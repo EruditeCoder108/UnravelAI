@@ -17,16 +17,21 @@ import { parseCode, initParser } from './ast-engine-ts.js';
 
 /**
  * @param {Array<{name: string, content: string}>} files
+ * @param {Function} [parseCodeFn] — optional injected parser (e.g. native tree-sitter).
+ *   When provided, initParser() (WASM) is NOT called. The fn must have the same
+ *   signature as parseCode(code, filename) and return a tree-sitter tree.
  * @returns {Promise<{ moduleMap: Object, asts: Map }>}
  */
-export async function buildModuleMap(files) {
-    await initParser(); // tree-sitter WASM: lazy init, no-op after first call
-    const moduleMap = {};
+export async function buildModuleMap(files, parseCodeFn = null) {
+    // Only call WASM initParser if no native parser was injected
+    if (!parseCodeFn) await initParser();
+    const _parse = parseCodeFn || parseCode;
+    const moduleMap = Object.create(null); // null prototype — file/symbol names as keys
     const asts = new Map(); // filename → tree-sitter tree (reuse later)
 
     for (const file of files) {
         const shortName = file.name.split(/[\\/]/).pop();
-        const tree = parseCode(file.content, shortName);
+        const tree = _parse(file.content, shortName);
         if (!tree) continue;
         asts.set(shortName, tree);
 
@@ -138,7 +143,7 @@ export async function buildModuleMap(files) {
  * @returns {Object} symbolOrigins - { "varName": { file, line, importedBy: [{file, localName, line}] } }
  */
 export function resolveSymbolOrigins(moduleMap) {
-    const symbolOrigins = {};
+    const symbolOrigins = Object.create(null);
 
     for (const [fileName, mod] of Object.entries(moduleMap)) {
         for (const [localName, importInfo] of Object.entries(mod.imports)) {
@@ -183,7 +188,7 @@ export function resolveSymbolOrigins(moduleMap) {
  * @returns {Object} crossFileChains - { "varName [originFile]": { writes: [{fn, line, file}], reads: [{fn, line, file}] } }
  */
 export function expandMutationChains(perFileMutations, symbolOrigins, moduleMap) {
-    const crossFileChains = {};
+    const crossFileChains = Object.create(null);
 
     for (const [key, data] of Object.entries(perFileMutations)) {
         // Key format: "varName [fileName]"
@@ -305,11 +310,30 @@ export function emitRiskSignals(crossFileChains, perFileMutations, symbolOrigins
     }
 
     // ── Pattern 3: Unawaited async call ──
-    // DEFERRED: findTimingNodes() does not currently track whether a call
-    // is awaited (no isAwaited field). Firing on every fetch()/Promise would
-    // generate false positives on valid `await fetch()` calls.
-    // TODO: Add AwaitExpression detection to findTimingNodes, then re-enable.
-    // See: https://github.com/EruditeCoder108/UnravelAI/issues (unawaited_promise)
+    // Only fires for async-producing APIs (fetch, .then, DB queries, etc.).
+    // setTimeout/setInterval are intentionally excluded — they are always
+    // fire-and-forget by design. We check t.isAwaited (added to findTimingNodes)
+    // to distinguish `await fetch()` from a floating `fetch()`.
+    const ASYNC_PRODUCING_APIS = new Set([
+        'fetch', 'axios', 'got', 'request',
+        'then', 'catch', 'finally',
+        'readFile', 'writeFile', 'readdir',
+        'connect', 'query', 'findOne', 'save', 'create',
+        'send', 'post', 'put', 'patch',
+    ]);
+    for (const t of timingNodes || []) {
+        // Only flag APIs that return Promises and were NOT awaited
+        const apiBase = t.api?.split('(')[0]; // strip e.g. 'addEventListener("click")'
+        if (t.isAwaited !== false) continue;  // awaited, or no isAwaited field (old format)
+        if (!ASYNC_PRODUCING_APIS.has(apiBase)) continue;
+        riskSignals.push({
+            type: 'unawaited_promise',
+            function: apiBase,
+            file: t.file || '',
+            line: t.line,
+            fn: t.enclosingFn,
+        });
+    }
 
     // Deduplicate signals (same type + variable + file + line)
     const seen = new Set();
@@ -425,13 +449,13 @@ export async function selectFilesByGraph(allFiles, symptom, crossFileData) {
         const result = await buildModuleMap(jsFiles);
         moduleMap = result.moduleMap;
         callGraph = buildCallGraph(moduleMap, result.asts);
-        crossFileChains = {};
+        crossFileChains = Object.create(null);
     }
 
     // ── Step 1: Find entry point ──
     // Score each file by: symptom keyword match + import count (most-imported = most central)
     const fileNames = Object.keys(moduleMap);
-    const scores = {};
+    const scores = Object.create(null);
     for (const name of fileNames) scores[name] = 0;
 
     // Symptom keyword matching
@@ -440,7 +464,7 @@ export async function selectFilesByGraph(allFiles, symptom, crossFileData) {
 
     for (const file of jsFiles) {
         const shortName = file.name.split(/[\\/]/).pop();
-        if (!scores.hasOwnProperty(shortName)) continue;
+        if (!Object.prototype.hasOwnProperty.call(scores, shortName)) continue;
 
         // Filename matches symptom
         const nameLower = shortName.toLowerCase().replace(/\.\w+$/, '');
@@ -458,7 +482,7 @@ export async function selectFilesByGraph(allFiles, symptom, crossFileData) {
     // Import centrality: files imported by many others are more central
     for (const [, mod] of Object.entries(moduleMap)) {
         for (const [, importInfo] of Object.entries(mod.imports)) {
-            if (scores.hasOwnProperty(importInfo.from)) {
+            if (Object.prototype.hasOwnProperty.call(scores, importInfo.from)) {
                 scores[importInfo.from] += 2;
             }
         }
@@ -559,14 +583,15 @@ export async function selectFilesByGraph(allFiles, symptom, crossFileData) {
  * @param {Object} perFileAnalysis - The raw output from runMultiFileAnalysis()
  * @returns {{ formatted: string, raw: Object }}
  */
-export async function runCrossFileAnalysis(files, perFileAnalysis) {
+export async function runCrossFileAnalysis(files, perFileAnalysis, parseCodeFn = null) {
     // Only analyze JS/TS files
     const jsFiles = files.filter(f => /\.(js|jsx|ts|tsx)$/i.test(f.name));
     if (jsFiles.length < 2) {
         return { formatted: '', raw: null }; // No cross-file analysis for single files
     }
 
-    const { moduleMap, asts } = await buildModuleMap(jsFiles);
+    // Thread the injected parser through to buildModuleMap (skips WASM initParser)
+    const { moduleMap, asts } = await buildModuleMap(jsFiles, parseCodeFn);
     const symbolOrigins = resolveSymbolOrigins(moduleMap);
     const crossFileChains = expandMutationChains(
         perFileAnalysis?.mutations || {},

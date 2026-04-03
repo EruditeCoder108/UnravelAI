@@ -1,0 +1,4078 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "javascript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\unravel-vscode",
+    "analyzedAt": "2026-04-03T13:48:09.752Z",
+    "gitCommitHash": ""
+  },
+  "files": {
+    "src/core/ast-bridge.js": "sha256:b8012891e77e293b4849ca206f64404f02939678d519e86a0ff67c1e02bfe11c",
+    "src/core/ast-engine-ts.js": "sha256:f2e157051207e0bf213f7040e5333a5594a564495edb0d9d0503bd492a867cca",
+    "src/core/ast-project.js": "sha256:1e129025189e1c44eb4a580db8b23ae26a43ca4d10d08e240edc0cdf5d0c303b",
+    "src/core/config.js": "sha256:9a4407ae6c52b4f7cdf2b7d0dc6a216894c54544150473e834e2ef6e03a2fe58",
+    "src/core/graph-builder.js": "sha256:040cd08e30b74a25154d5105f8b6f751a990214c837c108ba6fa4e6392e94a7c",
+    "src/core/graph-storage.js": "sha256:9be92df0a1f6bcf5a9c66449ce4e4ba275034e8e9154feab8472b738f3994b35",
+    "src/core/index.js": "sha256:0cac69ef812156a7eb144c52a084674f928d954496ca8616095cfe057f965194",
+    "src/core/indexer.js": "sha256:d1bd1eac7a7f6cdc78bb94394b49cdda89403acc5a835e31e70a554fc4110751",
+    "src/core/layer-detector.js": "sha256:18ca717eeca0804e7288a668cb711d703305adb993d987e0b4d56f0c70931e87",
+    "src/core/llm-analyzer.js": "sha256:88d8d32add8d51070c893194b9fe331188549e472d98108d1e828e4c15bd7ee7",
+    "src/core/orchestrate.js": "sha256:909ed27c8d14c40063604bcfb06c07ec09fe25c38ad7e2fa516d86befa3b577a",
+    "src/core/parse-json.js": "sha256:80157f6eaa450a589f676fe625289f4008794346125240ddf501390dc08001a9",
+    "src/core/pattern-store.js": "sha256:3e75946286ac975fc73a172411af7888dd6afc9c66a2ce94c3e4e802826e389e",
+    "src/core/provider.js": "sha256:3c2ca78bd2cd14ec655cebfd07a392a0bc925cc7337f60efdc13be98edd26321",
+    "src/core/search.js": "sha256:e70cc900099e03f3456051b1233ea966346773c124a9b490912137a8a0f3a446"
+  },
+  "nodes": [
+    {
+      "id": "file:src/core/ast-bridge.js",
+      "type": "file",
+      "name": "ast-bridge.js",
+      "filePath": "src/core/ast-bridge.js",
+      "summary": "Attach structuralAnalysis to each file object. Pure-JS regex — no WASM, no Node.js APIs. Works in all environments. — AST analysis engine. 10 detector/parser functions.",
+      "tags": [
+        "ast-analysis",
+        "src-core-ast-bridge"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:normalizeKey",
+      "type": "function",
+      "name": "normalizeKey",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        18,
+        18
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:extractImportSources",
+      "type": "function",
+      "name": "extractImportSources",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        41,
+        41
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:stripComments",
+      "type": "function",
+      "name": "stripComments",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        64,
+        64
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:extractFunctions",
+      "type": "function",
+      "name": "extractFunctions",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        82,
+        82
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:extractClasses",
+      "type": "function",
+      "name": "extractClasses",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        105,
+        105
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:extractExports",
+      "type": "function",
+      "name": "extractExports",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        126,
+        126
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:resolveImportPath",
+      "type": "function",
+      "name": "resolveImportPath",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        146,
+        146
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:analyzeFile",
+      "type": "function",
+      "name": "analyzeFile",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        190,
+        190
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:attachStructuralAnalysis",
+      "type": "function",
+      "name": "attachStructuralAnalysis",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        214,
+        214
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-bridge.js:attachStructuralAnalysisToChanged",
+      "type": "function",
+      "name": "attachStructuralAnalysisToChanged",
+      "filePath": "src/core/ast-bridge.js",
+      "lineRange": [
+        244,
+        244
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/ast-engine-ts.js",
+      "type": "file",
+      "name": "ast-engine-ts.js",
+      "filePath": "src/core/ast-engine-ts.js",
+      "summary": "Initialize the tree-sitter WASM parser. Must be called (and awaited) before any parseCode() calls. Safe to call multiple times — no-ops after first. — AST analysis engine. 58 detector/parser functions",
+      "tags": [
+        "request-handler",
+        "knowledge-graph",
+        "ast-analysis",
+        "formatting",
+        "src-core-ast-engine-ts"
+      ],
+      "complexity": "high",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:initParser",
+      "type": "function",
+      "name": "initParser",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        53,
+        53
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:parseCode",
+      "type": "function",
+      "name": "parseCode",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        194,
+        194
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:buildScopeMap",
+      "type": "function",
+      "name": "buildScopeMap",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        244,
+        244
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_collectImportBindings",
+      "type": "function",
+      "name": "_collectImportBindings",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        261,
+        261
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_walkImportClause",
+      "type": "function",
+      "name": "_walkImportClause",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        275,
+        275
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_collectTopLevelBindings",
+      "type": "function",
+      "name": "_collectTopLevelBindings",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        299,
+        299
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_collectVarBindings",
+      "type": "function",
+      "name": "_collectVarBindings",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        315,
+        315
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_collectDestructuredBindings",
+      "type": "function",
+      "name": "_collectDestructuredBindings",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        331,
+        331
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_collectDestructuredMutations",
+      "type": "function",
+      "name": "_collectDestructuredMutations",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        351,
+        351
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_walkForScopes",
+      "type": "function",
+      "name": "_walkForScopes",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        381,
+        381
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_collectParams",
+      "type": "function",
+      "name": "_collectParams",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        410,
+        410
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_collectFunctionBindings",
+      "type": "function",
+      "name": "_collectFunctionBindings",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        431,
+        431
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_collectBindingsInBlock",
+      "type": "function",
+      "name": "_collectBindingsInBlock",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        438,
+        438
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:getBinding",
+      "type": "function",
+      "name": "getBinding",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        464,
+        464
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:hasOwnBinding",
+      "type": "function",
+      "name": "hasOwnBinding",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        481,
+        481
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:findScopeForNode",
+      "type": "function",
+      "name": "findScopeForNode",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        491,
+        491
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:getEnclosingFunction",
+      "type": "function",
+      "name": "getEnclosingFunction",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        521,
+        521
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:isConditionalContext",
+      "type": "function",
+      "name": "isConditionalContext",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        543,
+        543
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_getFunctionName",
+      "type": "function",
+      "name": "_getFunctionName",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        554,
+        554
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:getMemberExpressionName",
+      "type": "function",
+      "name": "getMemberExpressionName",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        581,
+        581
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:extractMutationChains",
+      "type": "function",
+      "name": "extractMutationChains",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        607,
+        607
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:trackClosureCaptures",
+      "type": "function",
+      "name": "trackClosureCaptures",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        791,
+        791
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:findTimingNodes",
+      "type": "function",
+      "name": "findTimingNodes",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        854,
+        854
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:runFullAnalysis",
+      "type": "function",
+      "name": "runFullAnalysis",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        917,
+        917
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:runMultiFileAnalysis",
+      "type": "function",
+      "name": "runMultiFileAnalysis",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        963,
+        963
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:isWrappedInMemoHook",
+      "type": "function",
+      "name": "isWrappedInMemoHook",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1224,
+        1224
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectReactPatterns",
+      "type": "function",
+      "name": "detectReactPatterns",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1250,
+        1250
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:extractOptionFlag",
+      "type": "function",
+      "name": "extractOptionFlag",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1463,
+        1463
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectListenerParity",
+      "type": "function",
+      "name": "detectListenerParity",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1486,
+        1486
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectDirectStateMutations",
+      "type": "function",
+      "name": "detectDirectStateMutations",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1605,
+        1605
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:isAwaited",
+      "type": "function",
+      "name": "isAwaited",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1722,
+        1722
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectFloatingPromises",
+      "type": "function",
+      "name": "detectFloatingPromises",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1744,
+        1744
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:extractAsyncFunctionNames",
+      "type": "function",
+      "name": "extractAsyncFunctionNames",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1814,
+        1814
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:collectUnawaitedCallsForCrossFile",
+      "type": "function",
+      "name": "collectUnawaitedCallsForCrossFile",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1856,
+        1856
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectGlobalMutationBeforeAwait",
+      "type": "function",
+      "name": "detectGlobalMutationBeforeAwait",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        1925,
+        1925
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:buildCausalChains",
+      "type": "function",
+      "name": "buildCausalChains",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2123,
+        2123
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectMultiSourceRace",
+      "type": "function",
+      "name": "detectMultiSourceRace",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2266,
+        2266
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:extractModuleLevelBindings",
+      "type": "function",
+      "name": "extractModuleLevelBindings",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2302,
+        2302
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_extractClassConstructorCaptures",
+      "type": "function",
+      "name": "_extractClassConstructorCaptures",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2414,
+        2414
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_resolveModuleToFile",
+      "type": "function",
+      "name": "_resolveModuleToFile",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2465,
+        2465
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectConstructorCapturedReference",
+      "type": "function",
+      "name": "detectConstructorCapturedReference",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2486,
+        2486
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectStaleModuleCaptures",
+      "type": "function",
+      "name": "detectStaleModuleCaptures",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2583,
+        2583
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:buildFunctionBodyMap",
+      "type": "function",
+      "name": "buildFunctionBodyMap",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2679,
+        2679
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectForEachCollectionMutation",
+      "type": "function",
+      "name": "detectForEachCollectionMutation",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2733,
+        2733
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:findCallsOnTarget",
+      "type": "function",
+      "name": "findCallsOnTarget",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2756,
+        2756
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:collectStandaloneCallees",
+      "type": "function",
+      "name": "collectStandaloneCallees",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2777,
+        2777
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:detectStrictComparisonInPredicateGate",
+      "type": "function",
+      "name": "detectStrictComparisonInPredicateGate",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2911,
+        2911
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:getEnclosingPredicateName",
+      "type": "function",
+      "name": "getEnclosingPredicateName",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2921,
+        2921
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:isPredicateName",
+      "type": "function",
+      "name": "isPredicateName",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2943,
+        2943
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:nodeText",
+      "type": "function",
+      "name": "nodeText",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        2948,
+        2948
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:formatAnalysis",
+      "type": "function",
+      "name": "formatAnalysis",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        3012,
+        3012
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_extractFnName",
+      "type": "function",
+      "name": "_extractFnName",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        3373,
+        3373
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_extractFunctionsAndClasses",
+      "type": "function",
+      "name": "_extractFunctionsAndClasses",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        3398,
+        3398
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:walk",
+      "type": "function",
+      "name": "walk",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        3402,
+        3402
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_extractImports",
+      "type": "function",
+      "name": "_extractImports",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        3454,
+        3454
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:_extractExports",
+      "type": "function",
+      "name": "_extractExports",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        3506,
+        3506
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:extractStructuralInfo",
+      "type": "function",
+      "name": "extractStructuralInfo",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        3569,
+        3569
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-engine-ts.js:runStructuralAnalysis",
+      "type": "function",
+      "name": "runStructuralAnalysis",
+      "filePath": "src/core/ast-engine-ts.js",
+      "lineRange": [
+        3599,
+        3599
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "high",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/ast-project.js",
+      "type": "file",
+      "name": "ast-project.js",
+      "filePath": "src/core/ast-project.js",
+      "summary": "When provided, initParser() (WASM) is NOT called. The fn must have the same signature as parseCode(code, filename) and return a tree-sitter tree. — AST analysis engine. 10 detector/parser functions.",
+      "tags": [
+        "knowledge-graph",
+        "ast-analysis",
+        "formatting",
+        "src-core-ast-project"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:buildModuleMap",
+      "type": "function",
+      "name": "buildModuleMap",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        25,
+        25
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:resolveSymbolOrigins",
+      "type": "function",
+      "name": "resolveSymbolOrigins",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        145,
+        145
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:expandMutationChains",
+      "type": "function",
+      "name": "expandMutationChains",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        190,
+        190
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:emitRiskSignals",
+      "type": "function",
+      "name": "emitRiskSignals",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        265,
+        265
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:buildCallGraph",
+      "type": "function",
+      "name": "buildCallGraph",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        359,
+        359
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:selectFilesByGraph",
+      "type": "function",
+      "name": "selectFilesByGraph",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        431,
+        431
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:runCrossFileAnalysis",
+      "type": "function",
+      "name": "runCrossFileAnalysis",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        586,
+        586
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:formatCrossFileContext",
+      "type": "function",
+      "name": "formatCrossFileContext",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        631,
+        631
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:isLikelyNodeModule",
+      "type": "function",
+      "name": "isLikelyNodeModule",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        703,
+        703
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/ast-project.js:resolveModuleName",
+      "type": "function",
+      "name": "resolveModuleName",
+      "filePath": "src/core/ast-project.js",
+      "lineRange": [
+        743,
+        743
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/config.js",
+      "type": "file",
+      "name": "config.js",
+      "filePath": "src/core/config.js",
+      "summary": "Deterministic error-type classifier — no LLM cost. Returns one of: 'PACKAGE_RESOLUTION' | 'BUILD_CONFIG' | 'RUNTIME_TYPE' | 'RUNTIME_LOGIC' Currently  — Diagnostic pipeline. Runs the multi-phase analy",
+      "tags": [
+        "request-handler",
+        "orchestration",
+        "formatting",
+        "src-core-config"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/config.js:buildSharedPhases",
+      "type": "function",
+      "name": "buildSharedPhases",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        157,
+        157
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:buildDebugPrompt",
+      "type": "function",
+      "name": "buildDebugPrompt",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        226,
+        226
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:buildExplainPrompt",
+      "type": "function",
+      "name": "buildExplainPrompt",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        382,
+        382
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:buildSecurityPrompt",
+      "type": "function",
+      "name": "buildSecurityPrompt",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        444,
+        444
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:_formatPrompt",
+      "type": "function",
+      "name": "_formatPrompt",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        486,
+        486
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:buildSystemPrompt",
+      "type": "function",
+      "name": "buildSystemPrompt",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        553,
+        553
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:classifyErrorType",
+      "type": "function",
+      "name": "classifyErrorType",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        569,
+        569
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:buildRouterPrompt",
+      "type": "function",
+      "name": "buildRouterPrompt",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        614,
+        614
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:buildSecondPassRouterPrompt",
+      "type": "function",
+      "name": "buildSecondPassRouterPrompt",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        690,
+        690
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:buildDynamicSchema",
+      "type": "function",
+      "name": "buildDynamicSchema",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        1202,
+        1202
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:buildDynamicSchemaInstruction",
+      "type": "function",
+      "name": "buildDynamicSchemaInstruction",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        1229,
+        1229
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/config.js:estimateRuntime",
+      "type": "function",
+      "name": "estimateRuntime",
+      "filePath": "src/core/config.js",
+      "lineRange": [
+        1316,
+        1316
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/graph-builder.js",
+      "type": "file",
+      "name": "graph-builder.js",
+      "filePath": "src/core/graph-builder.js",
+      "summary": "GraphBuilder accumulates nodes and edges then produces a KnowledgeGraph. Usage: const builder = new GraphBuilder('my-app', 'abc123', existingFileHashe — 2 functions: detectLanguage, mergeGraphUpdate.",
+      "tags": [
+        "knowledge-graph",
+        "src-core-graph-builder"
+      ],
+      "complexity": "low",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/graph-builder.js:detectLanguage",
+      "type": "function",
+      "name": "detectLanguage",
+      "filePath": "src/core/graph-builder.js",
+      "lineRange": [
+        22,
+        22
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-builder.js:mergeGraphUpdate",
+      "type": "function",
+      "name": "mergeGraphUpdate",
+      "filePath": "src/core/graph-builder.js",
+      "lineRange": [
+        176,
+        176
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/core/graph-builder.js:GraphBuilder",
+      "type": "class",
+      "name": "GraphBuilder",
+      "filePath": "src/core/graph-builder.js",
+      "lineRange": [
+        39,
+        39
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/graph-storage.js",
+      "type": "file",
+      "name": "graph-storage.js",
+      "filePath": "src/core/graph-storage.js",
+      "summary": "Compute SHA-256 hex hash of a string. Uses Node.js crypto (sync) when available (VS Code / indexer). Falls back to FNV-1a 32-bit in browser where _req — Knowledge graph construction and management. 15",
+      "tags": [
+        "knowledge-graph",
+        "storage",
+        "memory",
+        "src-core-graph-storage"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:computeContentHashSync",
+      "type": "function",
+      "name": "computeContentHashSync",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        28,
+        28
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:computeContentHashAsync",
+      "type": "function",
+      "name": "computeContentHashAsync",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        49,
+        49
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:getChangedFiles",
+      "type": "function",
+      "name": "getChangedFiles",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        72,
+        72
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:_isNodeAvailable",
+      "type": "function",
+      "name": "_isNodeAvailable",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        95,
+        95
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:_ensureDir",
+      "type": "function",
+      "name": "_ensureDir",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        99,
+        99
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:saveGraph",
+      "type": "function",
+      "name": "saveGraph",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        108,
+        108
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:loadGraph",
+      "type": "function",
+      "name": "loadGraph",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        117,
+        117
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:saveMeta",
+      "type": "function",
+      "name": "saveMeta",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        128,
+        128
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:loadMeta",
+      "type": "function",
+      "name": "loadMeta",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        137,
+        137
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:_openIDB",
+      "type": "function",
+      "name": "_openIDB",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        153,
+        153
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:computeProjectKey",
+      "type": "function",
+      "name": "computeProjectKey",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        175,
+        175
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:saveGraphIDB",
+      "type": "function",
+      "name": "saveGraphIDB",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        181,
+        181
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:loadGraphIDB",
+      "type": "function",
+      "name": "loadGraphIDB",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        193,
+        193
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:loadDiagnosisArchiveIDB",
+      "type": "function",
+      "name": "loadDiagnosisArchiveIDB",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        214,
+        214
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/graph-storage.js:appendDiagnosisEntryIDB",
+      "type": "function",
+      "name": "appendDiagnosisEntryIDB",
+      "filePath": "src/core/graph-storage.js",
+      "lineRange": [
+        237,
+        237
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/index.js",
+      "type": "file",
+      "name": "index.js",
+      "filePath": "src/core/index.js",
+      "summary": "index.js — imports: ./config.js, ./ast-engine-ts.js, ./ast-project.js.",
+      "tags": [
+        "entry-point",
+        "src-core-index"
+      ],
+      "complexity": "low",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/core/indexer.js",
+      "type": "file",
+      "name": "indexer.js",
+      "filePath": "src/core/indexer.js",
+      "summary": "Analyze a single file via LLM. Falls back to empty metadata if the call fails. Bug #1 fix: callProvider takes a FLAT options object, not (messages[],  — Knowledge graph construction and management. 6 ",
+      "tags": [
+        "knowledge-graph",
+        "ast-analysis",
+        "src-core-indexer"
+      ],
+      "complexity": "low",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/indexer.js:_currentGitHash",
+      "type": "function",
+      "name": "_currentGitHash",
+      "filePath": "src/core/indexer.js",
+      "lineRange": [
+        41,
+        41
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/indexer.js:_projectName",
+      "type": "function",
+      "name": "_projectName",
+      "filePath": "src/core/indexer.js",
+      "lineRange": [
+        52,
+        52
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/indexer.js:_pickSampleFiles",
+      "type": "function",
+      "name": "_pickSampleFiles",
+      "filePath": "src/core/indexer.js",
+      "lineRange": [
+        57,
+        57
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/indexer.js:_analyzeFile",
+      "type": "function",
+      "name": "_analyzeFile",
+      "filePath": "src/core/indexer.js",
+      "lineRange": [
+        78,
+        78
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/indexer.js:buildKnowledgeGraph",
+      "type": "function",
+      "name": "buildKnowledgeGraph",
+      "filePath": "src/core/indexer.js",
+      "lineRange": [
+        118,
+        118
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/indexer.js:updateKnowledgeGraph",
+      "type": "function",
+      "name": "updateKnowledgeGraph",
+      "filePath": "src/core/indexer.js",
+      "lineRange": [
+        232,
+        232
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/layer-detector.js",
+      "type": "file",
+      "name": "layer-detector.js",
+      "filePath": "src/core/layer-detector.js",
+      "summary": "Bug #6 fix: check BOTH directory segments AND the filename (without extension). Previously, a flat file like `src/userController.js` would not match ' — 6 functions: toLayerId, matchFileToLayer, detec",
+      "tags": [
+        "search",
+        "src-core-layer-detector"
+      ],
+      "complexity": "low",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/layer-detector.js:toLayerId",
+      "type": "function",
+      "name": "toLayerId",
+      "filePath": "src/core/layer-detector.js",
+      "lineRange": [
+        18,
+        18
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/layer-detector.js:matchFileToLayer",
+      "type": "function",
+      "name": "matchFileToLayer",
+      "filePath": "src/core/layer-detector.js",
+      "lineRange": [
+        33,
+        33
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/layer-detector.js:detectLayers",
+      "type": "function",
+      "name": "detectLayers",
+      "filePath": "src/core/layer-detector.js",
+      "lineRange": [
+        60,
+        60
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/layer-detector.js:buildLayerDetectionPrompt",
+      "type": "function",
+      "name": "buildLayerDetectionPrompt",
+      "filePath": "src/core/layer-detector.js",
+      "lineRange": [
+        87,
+        87
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/layer-detector.js:parseLayerDetectionResponse",
+      "type": "function",
+      "name": "parseLayerDetectionResponse",
+      "filePath": "src/core/layer-detector.js",
+      "lineRange": [
+        98,
+        98
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/layer-detector.js:applyLLMLayers",
+      "type": "function",
+      "name": "applyLLMLayers",
+      "filePath": "src/core/layer-detector.js",
+      "lineRange": [
+        118,
+        118
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/llm-analyzer.js",
+      "type": "file",
+      "name": "llm-analyzer.js",
+      "filePath": "src/core/llm-analyzer.js",
+      "summary": "Build the per-file analysis prompt. Returns a string to send to callProvider(). — 5 functions: buildFileAnalysisPrompt, buildProjectSummaryPrompt, _extractJson, parseFileAnalysisResponse, parseProject",
+      "tags": [
+        "src-core-llm-analyzer"
+      ],
+      "complexity": "low",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/llm-analyzer.js:buildFileAnalysisPrompt",
+      "type": "function",
+      "name": "buildFileAnalysisPrompt",
+      "filePath": "src/core/llm-analyzer.js",
+      "lineRange": [
+        18,
+        18
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/llm-analyzer.js:buildProjectSummaryPrompt",
+      "type": "function",
+      "name": "buildProjectSummaryPrompt",
+      "filePath": "src/core/llm-analyzer.js",
+      "lineRange": [
+        50,
+        50
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/llm-analyzer.js:_extractJson",
+      "type": "function",
+      "name": "_extractJson",
+      "filePath": "src/core/llm-analyzer.js",
+      "lineRange": [
+        79,
+        79
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/llm-analyzer.js:parseFileAnalysisResponse",
+      "type": "function",
+      "name": "parseFileAnalysisResponse",
+      "filePath": "src/core/llm-analyzer.js",
+      "lineRange": [
+        99,
+        99
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/llm-analyzer.js:parseProjectSummaryResponse",
+      "type": "function",
+      "name": "parseProjectSummaryResponse",
+      "filePath": "src/core/llm-analyzer.js",
+      "lineRange": [
+        127,
+        127
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/orchestrate.js",
+      "type": "file",
+      "name": "orchestrate.js",
+      "filePath": "src/core/orchestrate.js",
+      "summary": "Extract filename references from a text string. Module-level version — safe to call from Phase 5.6 outside verifyClaims. — Diagnostic pipeline. Runs the multi-phase analysis protocol. 18 functions.",
+      "tags": [
+        "orchestration",
+        "src-core-orchestrate"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:extractFileRefsFromText",
+      "type": "function",
+      "name": "extractFileRefsFromText",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        36,
+        36
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:buildSymptomCoverageAlert",
+      "type": "function",
+      "name": "buildSymptomCoverageAlert",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        57,
+        57
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:buildCoverageBlock",
+      "type": "function",
+      "name": "buildCoverageBlock",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        98,
+        98
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:orchestrate",
+      "type": "function",
+      "name": "orchestrate",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        130,
+        130
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:sanitizeFileContent",
+      "type": "function",
+      "name": "sanitizeFileContent",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        545,
+        545
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:checkFileCompleteness",
+      "type": "function",
+      "name": "checkFileCompleteness",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1103,
+        1103
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:_validateLayerBoundaryShape",
+      "type": "function",
+      "name": "_validateLayerBoundaryShape",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1185,
+        1185
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:checkSolvability",
+      "type": "function",
+      "name": "checkSolvability",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1209,
+        1209
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:verifyClaims",
+      "type": "function",
+      "name": "verifyClaims",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1361,
+        1361
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:findFile",
+      "type": "function",
+      "name": "findFile",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1403,
+        1403
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:fragmentNearLine",
+      "type": "function",
+      "name": "fragmentNearLine",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1418,
+        1418
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:extractLineRefs",
+      "type": "function",
+      "name": "extractLineRefs",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1430,
+        1430
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:extractFileRefs",
+      "type": "function",
+      "name": "extractFileRefs",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1444,
+        1444
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:extractFileLinePairs",
+      "type": "function",
+      "name": "extractFileLinePairs",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1475,
+        1475
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:checkSymptomContradictions",
+      "type": "function",
+      "name": "checkSymptomContradictions",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1894,
+        1894
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:elapsed",
+      "type": "function",
+      "name": "elapsed",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        159,
+        159
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:layerClassification",
+      "type": "function",
+      "name": "layerClassification",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1281,
+        1281
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/orchestrate.js:rawFileName",
+      "type": "function",
+      "name": "rawFileName",
+      "filePath": "src/core/orchestrate.js",
+      "lineRange": [
+        1614,
+        1614
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/parse-json.js",
+      "type": "file",
+      "name": "parse-json.js",
+      "filePath": "src/core/parse-json.js",
+      "summary": "Parse JSON from an AI response string. — 5 functions: parseAIJson, migrateSchema, findJsonCandidates, sanitizeLiteralNewlines, repairTruncatedJson.",
+      "tags": [
+        "src-core-parse-json"
+      ],
+      "complexity": "low",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/parse-json.js:parseAIJson",
+      "type": "function",
+      "name": "parseAIJson",
+      "filePath": "src/core/parse-json.js",
+      "lineRange": [
+        17,
+        17
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/parse-json.js:migrateSchema",
+      "type": "function",
+      "name": "migrateSchema",
+      "filePath": "src/core/parse-json.js",
+      "lineRange": [
+        83,
+        83
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/parse-json.js:findJsonCandidates",
+      "type": "function",
+      "name": "findJsonCandidates",
+      "filePath": "src/core/parse-json.js",
+      "lineRange": [
+        127,
+        127
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/parse-json.js:sanitizeLiteralNewlines",
+      "type": "function",
+      "name": "sanitizeLiteralNewlines",
+      "filePath": "src/core/parse-json.js",
+      "lineRange": [
+        172,
+        172
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/parse-json.js:repairTruncatedJson",
+      "type": "function",
+      "name": "repairTruncatedJson",
+      "filePath": "src/core/parse-json.js",
+      "lineRange": [
+        206,
+        206
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/pattern-store.js",
+      "type": "file",
+      "name": "pattern-store.js",
+      "filePath": "src/core/pattern-store.js",
+      "summary": "Extract structural event tokens from astRaw output. These tokens are matched against stored pattern signatures. — Knowledge graph construction and management. 10 functions.",
+      "tags": [
+        "knowledge-graph",
+        "search",
+        "storage",
+        "src-core-pattern-store"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:hashSignature",
+      "type": "function",
+      "name": "hashSignature",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        34,
+        34
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:extractSignature",
+      "type": "function",
+      "name": "extractSignature",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        308,
+        308
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:matchPatterns",
+      "type": "function",
+      "name": "matchPatterns",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        441,
+        441
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:getNodeBoosts",
+      "type": "function",
+      "name": "getNodeBoosts",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        475,
+        475
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:learnFromDiagnosis",
+      "type": "function",
+      "name": "learnFromDiagnosis",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        512,
+        512
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:penalizePattern",
+      "type": "function",
+      "name": "penalizePattern",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        535,
+        535
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:loadPatterns",
+      "type": "function",
+      "name": "loadPatterns",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        552,
+        552
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:savePatterns",
+      "type": "function",
+      "name": "savePatterns",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        573,
+        573
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:getPatternCount",
+      "type": "function",
+      "name": "getPatternCount",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        591,
+        591
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/pattern-store.js:getAllPatterns",
+      "type": "function",
+      "name": "getAllPatterns",
+      "filePath": "src/core/pattern-store.js",
+      "lineRange": [
+        592,
+        592
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/provider.js",
+      "type": "file",
+      "name": "provider.js",
+      "filePath": "src/core/provider.js",
+      "summary": "Fetch with exponential backoff retry. Retries on 429 (rate limit) and 5xx (server errors). — 3 functions: fetchWithRetry, callProvider, callProviderStreaming.",
+      "tags": [
+        "src-core-provider"
+      ],
+      "complexity": "low",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/provider.js:fetchWithRetry",
+      "type": "function",
+      "name": "fetchWithRetry",
+      "filePath": "src/core/provider.js",
+      "lineRange": [
+        12,
+        12
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/provider.js:callProvider",
+      "type": "function",
+      "name": "callProvider",
+      "filePath": "src/core/provider.js",
+      "lineRange": [
+        47,
+        47
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/provider.js:callProviderStreaming",
+      "type": "function",
+      "name": "callProviderStreaming",
+      "filePath": "src/core/provider.js",
+      "lineRange": [
+        98,
+        98
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/search.js",
+      "type": "file",
+      "name": "search.js",
+      "filePath": "src/core/search.js",
+      "summary": "Score a single node against a set of query tokens. Returns a score in [0, 1] where 1 = perfect match. Weights: name=0.4, tags=0.3, summary=0.2, filePa — Knowledge graph construction and management. 4 ",
+      "tags": [
+        "knowledge-graph",
+        "search",
+        "src-core-search"
+      ],
+      "complexity": "low",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/core/search.js:scoreNode",
+      "type": "function",
+      "name": "scoreNode",
+      "filePath": "src/core/search.js",
+      "lineRange": [
+        19,
+        19
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/search.js:expandOneHop",
+      "type": "function",
+      "name": "expandOneHop",
+      "filePath": "src/core/search.js",
+      "lineRange": [
+        102,
+        102
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/search.js:expandWeighted",
+      "type": "function",
+      "name": "expandWeighted",
+      "filePath": "src/core/search.js",
+      "lineRange": [
+        130,
+        130
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/core/search.js:queryGraphForFiles",
+      "type": "function",
+      "name": "queryGraphForFiles",
+      "filePath": "src/core/search.js",
+      "lineRange": [
+        190,
+        190
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/core/search.js:SearchEngine",
+      "type": "class",
+      "name": "SearchEngine",
+      "filePath": "src/core/search.js",
+      "lineRange": [
+        59,
+        59
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "low",
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:normalizeKey",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:extractImportSources",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:stripComments",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:extractFunctions",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:extractClasses",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:extractExports",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:resolveImportPath",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:analyzeFile",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:attachStructuralAnalysis",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-bridge.js",
+      "target": "func:src/core/ast-bridge.js:attachStructuralAnalysisToChanged",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:initParser",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:parseCode",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:buildScopeMap",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_collectImportBindings",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_walkImportClause",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_collectTopLevelBindings",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_collectVarBindings",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_collectDestructuredBindings",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_collectDestructuredMutations",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_walkForScopes",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_collectParams",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_collectFunctionBindings",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_collectBindingsInBlock",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:getBinding",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:hasOwnBinding",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:findScopeForNode",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:getEnclosingFunction",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:isConditionalContext",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_getFunctionName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:getMemberExpressionName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:extractMutationChains",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:trackClosureCaptures",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:findTimingNodes",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:runFullAnalysis",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:runMultiFileAnalysis",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:isWrappedInMemoHook",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectReactPatterns",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:extractOptionFlag",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectListenerParity",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectDirectStateMutations",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:isAwaited",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectFloatingPromises",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:extractAsyncFunctionNames",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:collectUnawaitedCallsForCrossFile",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectGlobalMutationBeforeAwait",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:buildCausalChains",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectMultiSourceRace",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:extractModuleLevelBindings",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_extractClassConstructorCaptures",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_resolveModuleToFile",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectConstructorCapturedReference",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectStaleModuleCaptures",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:buildFunctionBodyMap",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectForEachCollectionMutation",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:findCallsOnTarget",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:collectStandaloneCallees",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:detectStrictComparisonInPredicateGate",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:getEnclosingPredicateName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:isPredicateName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:nodeText",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:formatAnalysis",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_extractFnName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_extractFunctionsAndClasses",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:walk",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_extractImports",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:_extractExports",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:extractStructuralInfo",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-engine-ts.js",
+      "target": "func:src/core/ast-engine-ts.js:runStructuralAnalysis",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:buildModuleMap",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:resolveSymbolOrigins",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:expandMutationChains",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:emitRiskSignals",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:buildCallGraph",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:selectFilesByGraph",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:runCrossFileAnalysis",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:formatCrossFileContext",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:isLikelyNodeModule",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "func:src/core/ast-project.js:resolveModuleName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:buildSharedPhases",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:buildDebugPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:buildExplainPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:buildSecurityPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:_formatPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:buildSystemPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:classifyErrorType",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:buildRouterPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:buildSecondPassRouterPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:buildDynamicSchema",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:buildDynamicSchemaInstruction",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/config.js",
+      "target": "func:src/core/config.js:estimateRuntime",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-builder.js",
+      "target": "func:src/core/graph-builder.js:detectLanguage",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-builder.js",
+      "target": "func:src/core/graph-builder.js:mergeGraphUpdate",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-builder.js",
+      "target": "class:src/core/graph-builder.js:GraphBuilder",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:computeContentHashSync",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:computeContentHashAsync",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:getChangedFiles",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:_isNodeAvailable",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:_ensureDir",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:saveGraph",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:loadGraph",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:saveMeta",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:loadMeta",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:_openIDB",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:computeProjectKey",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:saveGraphIDB",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:loadGraphIDB",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:loadDiagnosisArchiveIDB",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/graph-storage.js",
+      "target": "func:src/core/graph-storage.js:appendDiagnosisEntryIDB",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "func:src/core/indexer.js:_currentGitHash",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "func:src/core/indexer.js:_projectName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "func:src/core/indexer.js:_pickSampleFiles",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "func:src/core/indexer.js:_analyzeFile",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "func:src/core/indexer.js:buildKnowledgeGraph",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "func:src/core/indexer.js:updateKnowledgeGraph",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/layer-detector.js",
+      "target": "func:src/core/layer-detector.js:toLayerId",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/layer-detector.js",
+      "target": "func:src/core/layer-detector.js:matchFileToLayer",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/layer-detector.js",
+      "target": "func:src/core/layer-detector.js:detectLayers",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/layer-detector.js",
+      "target": "func:src/core/layer-detector.js:buildLayerDetectionPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/layer-detector.js",
+      "target": "func:src/core/layer-detector.js:parseLayerDetectionResponse",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/layer-detector.js",
+      "target": "func:src/core/layer-detector.js:applyLLMLayers",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/llm-analyzer.js",
+      "target": "func:src/core/llm-analyzer.js:buildFileAnalysisPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/llm-analyzer.js",
+      "target": "func:src/core/llm-analyzer.js:buildProjectSummaryPrompt",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/llm-analyzer.js",
+      "target": "func:src/core/llm-analyzer.js:_extractJson",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/llm-analyzer.js",
+      "target": "func:src/core/llm-analyzer.js:parseFileAnalysisResponse",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/llm-analyzer.js",
+      "target": "func:src/core/llm-analyzer.js:parseProjectSummaryResponse",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:extractFileRefsFromText",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:buildSymptomCoverageAlert",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:buildCoverageBlock",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:orchestrate",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:sanitizeFileContent",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:checkFileCompleteness",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:_validateLayerBoundaryShape",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:checkSolvability",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:verifyClaims",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:findFile",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:fragmentNearLine",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:extractLineRefs",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:extractFileRefs",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:extractFileLinePairs",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:checkSymptomContradictions",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:elapsed",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:layerClassification",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "func:src/core/orchestrate.js:rawFileName",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/parse-json.js",
+      "target": "func:src/core/parse-json.js:parseAIJson",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/parse-json.js",
+      "target": "func:src/core/parse-json.js:migrateSchema",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/parse-json.js",
+      "target": "func:src/core/parse-json.js:findJsonCandidates",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/parse-json.js",
+      "target": "func:src/core/parse-json.js:sanitizeLiteralNewlines",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/parse-json.js",
+      "target": "func:src/core/parse-json.js:repairTruncatedJson",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:hashSignature",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:extractSignature",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:matchPatterns",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:getNodeBoosts",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:learnFromDiagnosis",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:penalizePattern",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:loadPatterns",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:savePatterns",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:getPatternCount",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/pattern-store.js",
+      "target": "func:src/core/pattern-store.js:getAllPatterns",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/provider.js",
+      "target": "func:src/core/provider.js:fetchWithRetry",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/provider.js",
+      "target": "func:src/core/provider.js:callProvider",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/provider.js",
+      "target": "func:src/core/provider.js:callProviderStreaming",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/search.js",
+      "target": "func:src/core/search.js:scoreNode",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/search.js",
+      "target": "func:src/core/search.js:expandOneHop",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/search.js",
+      "target": "func:src/core/search.js:expandWeighted",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/search.js",
+      "target": "func:src/core/search.js:queryGraphForFiles",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/search.js",
+      "target": "class:src/core/search.js:SearchEngine",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/ast-project.js",
+      "target": "file:src/core/ast-engine-ts.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/index.js",
+      "target": "file:src/core/config.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/index.js",
+      "target": "file:src/core/ast-engine-ts.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/index.js",
+      "target": "file:src/core/ast-project.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/index.js",
+      "target": "file:src/core/parse-json.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/index.js",
+      "target": "file:src/core/provider.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/index.js",
+      "target": "file:src/core/orchestrate.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "file:src/core/graph-builder.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "file:src/core/layer-detector.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "file:src/core/llm-analyzer.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "file:src/core/graph-storage.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/indexer.js",
+      "target": "file:src/core/search.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "file:src/core/config.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "file:src/core/ast-engine-ts.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "file:src/core/ast-project.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "file:src/core/parse-json.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "file:src/core/provider.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "file:src/core/search.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "file:src/core/graph-storage.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "file:src/core/ast-bridge.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/orchestrate.js",
+      "target": "file:src/core/pattern-store.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/provider.js",
+      "target": "file:src/core/config.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": [],
+  "meta": {
+    "include": [
+      "src/core"
+    ],
+    "exclude": [
+      "node_modules",
+      "dist",
+      "wasm"
+    ]
+  }
+}

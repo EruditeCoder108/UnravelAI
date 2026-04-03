@@ -1,6 +1,0 @@
-{
-    "id": "settimeout_captures_before_assignment",
-    "category": "async",
-    "difficulty": "hard",
-    "symptom": "The WebSocket reconnect logic triggers an infinite reconnect loop every 5 seconds even when the connection is healthy. The socket.readyState check never reaches OPEN — the reconnect timer always takes the else-if branch and calls connect() again, creating a new socket on top of an existing one."
-}

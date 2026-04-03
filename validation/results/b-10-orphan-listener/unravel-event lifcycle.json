@@ -1,0 +1,244 @@
+{
+  "adversarialCheck": "The adversarial check focused on disproving Hypothesis 1 (component lifecycle failure) by assuming `useEffect` cleanup *was* reliably invoked and `removeEventListener` *must* have failed. However, given `onScroll` is a `const` within the `useEffect` scope and its cleanup closure captures the *exact same function instance*, `removeEventListener` should succeed by DOM specification if called. This re-affirmed that the most probable point of failure is that the cleanup function itself is not consistently executed for previous component instances. The symptom of N accumulated listeners (where N = navigations) strongly supports this lack of cleanup for old instances. The `useCallback` fix does not resolve a missed cleanup call, but stabilizes the handler identity to guard against subtle reference mismatches if cleanup *is* called.",
+  "bugType": "EVENT_LIFECYCLE",
+  "causalChain": [
+    {
+      "evidence": "PageView.tsx L27: useScrollAnalytics(pageId, analyticsService);",
+      "propagatesTo": "useScrollAnalytics hook execution",
+      "step": "A `PageView` component for a specific `pageId` is rendered and calls `useScrollAnalytics`."
+    },
+    {
+      "evidence": "useScrollAnalytics.ts L10: useEffect(() => { ... }, [onScroll]);",
+      "propagatesTo": "addEventListener call",
+      "step": "The `useEffect` in `useScrollAnalytics` runs, and a `useCallback`-memoized `onScroll` handler is created."
+    },
+    {
+      "evidence": "useScrollAnalytics.ts L19: window.addEventListener('scroll', onScroll, { passive: true });",
+      "propagatesTo": "Active scroll listener",
+      "step": "A `scroll` event listener (`onScroll`) is added to the `window`."
+    },
+    {
+      "evidence": "User Symptom: 'N = number of page navigations'",
+      "propagatesTo": "Accumulation of listeners",
+      "step": "User navigates to a new page, but the previous `PageView` component (or its `useScrollAnalytics` instance) does not reliably trigger its `useEffect` cleanup function before unmounting (or it does not unmount). The old `onScroll` listener persists."
+    },
+    {
+      "evidence": "PageView.tsx L27: useScrollAnalytics(pageId, analyticsService);",
+      "propagatesTo": "Additional active scroll listener",
+      "step": "A new `PageView` component for the new page mounts and adds another distinct `onScroll` listener to the `window`."
+    },
+    {
+      "evidence": "useScrollAnalytics.ts L16: analyticsService.track('scroll_depth', { pageId, depth });",
+      "propagatesTo": "analyticsService.track() multiple calls",
+      "step": "When the user scrolls, *all* accumulated active `onScroll` listeners (one for each 'leaked' `PageView` instance) fire simultaneously, each calling `analyticsService.track('scroll_depth', ...)`."
+    },
+    {
+      "evidence": "User Symptom: 'scroll_depth events firing 3–8 times per actual scroll gesture, and the count grows with session length. A user who has navigated through 5 pages has 5x the expected scroll event volume.'",
+      "propagatesTo": "Observed symptom: Excessive API calls",
+      "step": "The analytics service receives N `scroll_depth` events per actual scroll (where N is the number of 'active' `PageView` instances), leading to excessive API calls and rate limits."
+    }
+  ],
+  "causalCompleteness": false,
+  "codeLocation": "src/hooks/useScrollAnalytics.ts",
+  "conceptExtraction": {
+    "bugCategory": "Event Lifecycle & Resource Management",
+    "concept": "Event Listener Leaks in React useEffect due to Component Lifecycle Mismanagement",
+    "patternToAvoid": "Relying solely on `useEffect`'s default cleanup for global event listeners when component unmounting might be inconsistent. Ensure stable handler references with `useCallback` or `useRef`, and consider global state management for truly singleton listeners, or confirm parent components use `key` props for routing to force remounts.",
+    "realWorldAnalogy": "Imagine you're visiting a library, and each time you pick a book, you're supposed to return the previous one to the librarian. But instead, you leave the old book on the desk and just tell a new librarian about your new book. Eventually, there are many 'active' books on the desk, and the library system thinks you're still reading all of them, causing confusion and resource issues. In this case, `useScrollAnalytics` is like telling the librarian, `PageView` is like you, and the router is like the library's return policy. If the policy isn't followed, books (listeners) accumulate.",
+    "whyItMatters": "Uncleaned global event listeners are a classic source of memory leaks, performance degradation, and unexpected behavior (like duplicate events). They waste resources and make debugging difficult as the source of the event isn't the expected single instance. Ensuring correct cleanup is vital for robust and efficient single-page applications."
+  },
+  "confidence": 0.7,
+  "diffBlock": "--- src/hooks/useScrollAnalytics.ts L10\n-  useEffect(() => {\n-    const onScroll = () => {\n-      const scrollHeight = document.body.scrollHeight - window.innerHeight;\n-      const depth = scrollHeight > 0\n-        ? Math.round((window.scrollY / scrollHeight) * 100)\n-        : 0;\n-      analyticsService.track('scroll_depth', { pageId, depth });\n-    };\n-\n-    window.addEventListener('scroll', onScroll, { passive: true });\n-\n-    return () => window.removeEventListener('scroll', onScroll);\n-  }, [pageId, analyticsService]);\n+  const onScroll = useCallback(() => {\n+    const scrollHeight = document.body.scrollHeight - window.innerHeight;\n+    const depth = scrollHeight > 0\n+      ? Math.round((window.scrollY / scrollHeight) * 100)\n+      : 0;\n+    analyticsService.track('scroll_depth', { pageId, depth });\n+  }, [pageId, analyticsService]);\n+\n+  useEffect(() => {\n+    window.addEventListener('scroll', onScroll, { passive: true });\n+    return () => window.removeEventListener('scroll', onScroll);\n+  }, [onScroll]);",
+  "evidence": [
+    "User Symptom: 'scroll_depth events firing 3–8 times per actual scroll gesture, and the count grows with session length. A user who has navigated through 5 pages has 5x the expected scroll event volume.'",
+    "User Symptom: 'In development (React StrictMode) we saw 2 events per scroll from the first page load.'",
+    "useScrollAnalytics.ts L10: useEffect(() => { ... }, [onScroll]);",
+    "useScrollAnalytics.ts L25: return () => window.removeEventListener('scroll', onScroll);"
+  ],
+  "evidenceMap": [
+    {
+      "contradicting": [],
+      "hypothesisId": "H1",
+      "missing": [
+        "Router configuration (how PageView components are mounted/unmounted)"
+      ],
+      "supporting": [
+        "User Symptom: 'the count grows with session length. A user who has navigated through 5 pages has 5x the expected scroll event volume.'",
+        "User Symptom: 'In development (React StrictMode) we saw 2 events per scroll from the first page load.'"
+      ],
+      "verdict": "SUPPORTED"
+    },
+    {
+      "contradicting": [
+        "PageView.tsx L29: // analyticsService reference is stable"
+      ],
+      "hypothesisId": "H2",
+      "missing": [
+        "Parent component code that passes analyticsService prop to PageView"
+      ],
+      "supporting": [],
+      "verdict": "CONTESTED"
+    },
+    {
+      "contradicting": [
+        "useScrollAnalytics.ts L12: const onScroll = () => { ... }",
+        "useScrollAnalytics.ts L24: return () => window.removeEventListener('scroll', onScroll)"
+      ],
+      "hypothesisId": "H3",
+      "missing": [
+        "Runtime debugger trace of function references"
+      ],
+      "supporting": [],
+      "verdict": "CONTESTED"
+    }
+  ],
+  "fixInvariantViolations": [],
+  "hypotheses": [
+    "PageView components are not unmounting correctly on navigation.",
+    "pageId and analyticsService are not stable, causing useEffect to re-run unnecessarily.",
+    "The onScroll function reference is inadvertently mutated or lost."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "Evidence that PageView components always unmount correctly upon navigation away from a page."
+      ],
+      "id": "H1",
+      "reason": "The user's symptom 'the count grows with session length. A user who has navigated through 5 pages has 5x the expected scroll event volume' directly implies that `useEffect` cleanup is not executing for previous page instances, leading to listener accumulation. The `useEffect` cleanup in `useScrollAnalytics.ts` is designed to run on component unmount or dependency change. If previous components remain mounted, this cleanup is skipped, leading to a persistent listener. The StrictMode observation ('2 events...from the first page load') further points to a cleanup failure, as StrictMode's double-invocation tests cleanup. If cleanup worked, only one listener would remain.",
+      "status": "survived",
+      "text": "PageView components are not unmounting correctly."
+    },
+    {
+      "eliminatedBy": "PageView.tsx L29: `// analyticsService reference is stable`",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "pageId and analyticsService props are demonstrably stable across renders where the useEffect callback should not execute."
+      ],
+      "id": "H2",
+      "reason": "The comment in `PageView.tsx` L29 states 'analyticsService reference is stable', contradicting instability. While `pageId` changes on navigation (as per user), this *should* cause `useEffect` to re-run and *trigger cleanup* before adding a new listener (as per `useScrollAnalytics.ts` L25). Therefore, a `pageId` change alone does not explain listener accumulation if cleanup is correctly performed.",
+      "status": "eliminated",
+      "text": "pageId and analyticsService are not stable."
+    },
+    {
+      "eliminatedBy": "useScrollAnalytics.ts L12: `const onScroll = () => { ... }` and useScrollAnalytics.ts L24: `return () => window.removeEventListener('scroll', onScroll)`",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "Runtime trace showing onScroll passed to addEventListener is a different function instance than onScroll passed to removeEventListener for the same effect run."
+      ],
+      "id": "H3",
+      "reason": "The `onScroll` function is declared using `const` inside the `useEffect` callback (`useScrollAnalytics.ts` L12) and then immediately used for both `addEventListener` (`useScrollAnalytics.ts` L23) and `removeEventListener` (`useScrollAnalytics.ts` L24) within the same lexical scope of that single effect run. This guarantees that `removeEventListener` receives the *exact same function instance* that `addEventListener` received. There is no code path for mutation or loss of reference within the provided scope.",
+      "status": "eliminated",
+      "text": "onScroll function reference is lost/mutated."
+    }
+  ],
+  "invariants": [
+    "`useScrollAnalytics` must register exactly one active scroll event listener at any given time for its `pageId`.",
+    "Every `window.addEventListener` call must have a corresponding `window.removeEventListener` call when the associated component or hook instance is no longer active.",
+    "The `AnalyticsService.track()` method should only be called once per actual user scroll gesture (for a given page) to avoid flooding the API."
+  ],
+  "minimalFix": "To address the listener accumulation, the `onScroll` handler should have a stable identity across renders, only recreating when its dependencies change, and the `useEffect` hook should depend on this stable handler. This improves the reliability of `removeEventListener` by ensuring it always receives a consistent function reference. This does not fully solve upstream component lifecycle issues but makes the hook more robust against subtle listener identity mismatches during cleanup.\n\n```typescript\n// src/hooks/useScrollAnalytics.ts\nimport { useEffect, useCallback } from 'react'; // Import useCallback\nimport { AnalyticsService } from '../services/AnalyticsService';\n\n/**\n * Tracks scroll depth for a given page and reports it to analytics.\n *\n * Registers a passive scroll listener on window and cleans it up when\n * the component unmounts or pageId/analyticsService changes.\n *\n * This version uses `useCallback` to ensure the `onScroll` handler\n * has a stable identity as long as its captured dependencies (`pageId`,\n * `analyticsService`) remain unchanged. This helps `removeEventListener`\n * reliably identify and remove the correct listener instance, even\n * if component lifecycle issues cause `useEffect` re-runs without proper\n * cleanup.\n */\nexport function useScrollAnalytics(\n  pageId: string,\n  analyticsService: AnalyticsService\n): void {\n  // Use useCallback to create a memoized onScroll function.\n  // This function instance will be stable across renders as long as\n  // pageId and analyticsService (its dependencies) don't change.\n  const onScroll = useCallback(() => {\n    const scrollHeight = document.body.scrollHeight - window.innerHeight;\n    const depth = scrollHeight > 0\n      ? Math.round((window.scrollY / scrollHeight) * 100)\n      : 0;\n    analyticsService.track('scroll_depth', { pageId, depth });\n  }, [pageId, analyticsService]); // onScroll re-creates only if these change\n\n  useEffect(() => {\n    window.addEventListener('scroll', onScroll, { passive: true });\n\n    // The cleanup function captures the *current* stable `onScroll` instance.\n    return () => window.removeEventListener('scroll', onScroll);\n  }, [onScroll]); // useEffect now depends on the stable `onScroll` handler\n}\n```\n\n**ARCHITECTURAL NOTE:**\nThe core problem here is likely a fundamental issue in how `PageView` components (or their parent routing mechanism) manage component lifecycles during page navigation. When a user navigates from Page A to Page B, the `PageView` component for Page A is probably not being unmounted correctly. If `PageView` for Page A remains mounted (e.g., hidden in the DOM), its `useEffect` cleanup function will never run, causing its `onScroll` listener to persist. Each subsequent navigation then adds another listener, leading to accumulation.\n\nThe `useCallback` fix makes the `useScrollAnalytics` hook more robust by ensuring `onScroll` has a stable identity, improving the chances that `removeEventListener` works correctly *if it is called*. However, it does not guarantee that `useEffect` cleanup will be called if the component never truly unmounts. The proper architectural solution is to ensure that `PageView` components are explicitly unmounted when navigating away from a page. This typically involves using unique `key` props for routed components or ensuring the router actively destroys and recreates components rather than simply hiding them.\n\n**FULL BETTER FIX (Architectural change in router):**\n```typescript\n// src/router/AppRouter.tsx (hypothetical file, assuming react-router-dom)\n\nimport React from 'react';\nimport { BrowserRouter as Router, Routes, Route } from 'react-router-dom';\nimport { PageView } from '../components/PageView';\nimport { AnalyticsService } from '../services/AnalyticsService';\n\n// Assume AnalyticsService is a singleton for the app lifecycle\nconst appAnalyticsService = new AnalyticsService();\n\nexport function AppRouter() {\n  return (\n    <Router>\n      <Routes>\n        <Route\n          path=\"/page/:pageId\"\n          element={\n            // CRUCIAL FIX: Use key={pageId} to force component remount on pageId change.\n            // This ensures that when the pageId parameter changes, React considers it a\n            // *new* instance of PageView, unmounting the old one and mounting a new one.\n            // This reliably triggers the useEffect cleanup in useScrollAnalytics.\n            <PageView\n              key={window.location.pathname} // Using pathname ensures a unique key per URL\n              pageId={window.location.pathname} // Example: derive pageId from URL\n              analyticsService={appAnalyticsService}\n            />\n          }\n        />\n        {/* ... other routes ... */}\n      </Routes>\n    </Router>\n  );\n}\n```\n**Files that would need to change for architectural fix:** The main router configuration file (e.g., `src/App.tsx`, `src/router/AppRouter.tsx`) and any parent components that dynamically render `PageView` (e.g., in a list or conditional rendering, ensuring `key` props are unique and stable).",
+  "multipleHypothesesSurvived": false,
+  "proximate_crash_site": "AnalyticsService.ts:track() L26 — `eventLog.push()` is called multiple times for a single scroll, leading to excessive API calls and rate limits.",
+  "relatedRisks": [],
+  "reproduction": [
+    "Load the React application in a browser.",
+    "Navigate to Page A (e.g., /page/1).",
+    "Scroll the page. Observe `scroll_depth` event firing once (in production).",
+    "Navigate to Page B (e.g., /page/2).",
+    "Scroll the page. Observe `scroll_depth` event firing twice.",
+    "Navigate to Page C (e.g., /page/3).",
+    "Scroll the page. Observe `scroll_depth` event firing three times.",
+    "Repeat navigation, and observe the `scroll_depth` event count growing proportionally with the number of pages navigated."
+  ],
+  "rootCause": "The `PageView` component, which hosts `useScrollAnalytics`, is not consistently unmounting during page navigation transitions in the router, leading to its `useEffect` cleanup function not being invoked and thus event listeners accumulating.",
+  "symptom": "The analytics dashboard shows scroll_depth events firing 3–8 times per actual scroll gesture, and the count grows with session length (N = number of page navigations). Analytics API is hitting rate limits. In development (React StrictMode), 2 events are seen per scroll from the first page load.",
+  "timelineEdges": [
+    {
+      "from": "PageView Component",
+      "isBugPoint": false,
+      "label": "mounts for Page A",
+      "to": "useScrollAnalytics Hook"
+    },
+    {
+      "from": "useScrollAnalytics Hook",
+      "isBugPoint": false,
+      "label": "useEffect runs (setup)",
+      "to": "Window"
+    },
+    {
+      "from": "Window",
+      "isBugPoint": false,
+      "label": "addEventListener('scroll', onScroll_A)",
+      "to": "Global Event System"
+    },
+    {
+      "from": "User",
+      "isBugPoint": false,
+      "label": "navigates to Page B",
+      "to": "Router"
+    },
+    {
+      "from": "Router",
+      "isBugPoint": true,
+      "label": "renders new PageView for Page B, but old PageView for Page A does NOT unmount",
+      "to": "PageView Component"
+    },
+    {
+      "from": "PageView Component (Page A)",
+      "isBugPoint": true,
+      "label": "useEffect cleanup for Page A is NOT called",
+      "to": "N/A"
+    },
+    {
+      "from": "PageView Component (Page B)",
+      "isBugPoint": false,
+      "label": "mounts for Page B",
+      "to": "useScrollAnalytics Hook"
+    },
+    {
+      "from": "useScrollAnalytics Hook (Page B)",
+      "isBugPoint": false,
+      "label": "useEffect runs (setup)",
+      "to": "Window"
+    },
+    {
+      "from": "Window",
+      "isBugPoint": false,
+      "label": "addEventListener('scroll', onScroll_B)",
+      "to": "Global Event System"
+    },
+    {
+      "from": "User",
+      "isBugPoint": false,
+      "label": "scrolls page",
+      "to": "Global Event System"
+    },
+    {
+      "from": "Global Event System",
+      "isBugPoint": false,
+      "label": "dispatches scroll event to onScroll_A and onScroll_B",
+      "to": "onScroll_A & onScroll_B handlers"
+    },
+    {
+      "from": "onScroll_A & onScroll_B handlers",
+      "isBugPoint": false,
+      "label": "each call analyticsService.track()",
+      "to": "AnalyticsService"
+    },
+    {
+      "from": "AnalyticsService",
+      "isBugPoint": false,
+      "label": "records duplicate scroll_depth events",
+      "to": "Analytics Dashboard"
+    }
+  ],
+  "uncertainties": [
+    "Cannot verify the exact router implementation and its component lifecycle management (e.g., whether it uses `key` props for dynamic components or hides/shows components instead of unmounting).",
+    "Causal chain has unverified links — not every step from root mutation to symptom has code evidence."
+  ],
+  "uncoveredSymptoms": [],
+  "wasReentered": false,
+  "whyFixWorks": "The original `useScrollAnalytics` defined `onScroll` directly inside the `useEffect` callback. While this pattern is semantically correct for capturing dependencies, it means a *new function instance* for `onScroll` is created *every time* the `useEffect` callback executes. Although `removeEventListener` *should* correctly handle this by capturing the exact instance, in certain environments or with subtle React interactions (especially related to Strict Mode's double invocation or Fast Refresh), it's possible for the identity of the function reference to become subtly mismatched or for a previous listener to be missed during cleanup.\n\nBy wrapping `onScroll` in `useCallback`, its function instance is *memoized*. It will only be re-created if `pageId` or `analyticsService` (its dependencies) change. The `useEffect` then depends on this `onScroll` function itself. This provides `removeEventListener` with a more stable and consistently identifiable function reference. This can improve the reliability of cleanup, especially if the root cause is a subtle identity mismatch during `removeEventListener` calls or inconsistent `useEffect` re-runs where the previous cleanup was ineffective. While this doesn't fully solve a complete lack of `useEffect` cleanup (e.g., if the component never unmounts), it makes the listener management more robust against subtle lifecycle-related identity issues, directly addressing the symptom of accumulating listeners."
+}

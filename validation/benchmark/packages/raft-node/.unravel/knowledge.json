@@ -1,0 +1,823 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "javascript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\raft-node\\",
+    "analyzedAt": "2026-03-26T04:10:41.684Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:src/raft-node.js",
+      "type": "file",
+      "name": "raft-node.js",
+      "filePath": "src/raft-node.js",
+      "summary": "Functions: p",
+      "tags": [
+        "src-raft-node"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/raft-node.js:p",
+      "type": "function",
+      "name": "p",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2395,
+        2395
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:ClusterConfig",
+      "type": "class",
+      "name": "ClusterConfig",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        50,
+        50
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:LogEntry",
+      "type": "class",
+      "name": "LogEntry",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        101,
+        101
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:PersistentLog",
+      "type": "class",
+      "name": "PersistentLog",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        138,
+        138
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:MessageDeduplicator",
+      "type": "class",
+      "name": "MessageDeduplicator",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        250,
+        250
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:StateMachine",
+      "type": "class",
+      "name": "StateMachine",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        292,
+        292
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:VoteRecord",
+      "type": "class",
+      "name": "VoteRecord",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        379,
+        379
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:ElectionState",
+      "type": "class",
+      "name": "ElectionState",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        400,
+        400
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:PeerReplicationState",
+      "type": "class",
+      "name": "PeerReplicationState",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        436,
+        436
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:VoteManager",
+      "type": "class",
+      "name": "VoteManager",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        470,
+        470
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:LeaderState",
+      "type": "class",
+      "name": "LeaderState",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        569,
+        569
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:SnapshotManager",
+      "type": "class",
+      "name": "SnapshotManager",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        624,
+        624
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:MembershipChangeManager",
+      "type": "class",
+      "name": "MembershipChangeManager",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        694,
+        694
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:SafetyMonitor",
+      "type": "class",
+      "name": "SafetyMonitor",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        744,
+        744
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:MetricsCollector",
+      "type": "class",
+      "name": "MetricsCollector",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        801,
+        801
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:RaftNode",
+      "type": "class",
+      "name": "RaftNode",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        853,
+        853
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:InMemoryTransport",
+      "type": "class",
+      "name": "InMemoryTransport",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        1669,
+        1669
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:Cluster",
+      "type": "class",
+      "name": "Cluster",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        1710,
+        1710
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:ReadIndexPipeline",
+      "type": "class",
+      "name": "ReadIndexPipeline",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        1769,
+        1769
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:CircuitBreaker",
+      "type": "class",
+      "name": "CircuitBreaker",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        1822,
+        1822
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:BatchWriter",
+      "type": "class",
+      "name": "BatchWriter",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        1900,
+        1900
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:PeerHealthMonitor",
+      "type": "class",
+      "name": "PeerHealthMonitor",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        1972,
+        1972
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:ConfigValidator",
+      "type": "class",
+      "name": "ConfigValidator",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2044,
+        2044
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:SnapshotChunker",
+      "type": "class",
+      "name": "SnapshotChunker",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2093,
+        2093
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:RaftNodeBuilder",
+      "type": "class",
+      "name": "RaftNodeBuilder",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2125,
+        2125
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:RaftTestHarness",
+      "type": "class",
+      "name": "RaftTestHarness",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2200,
+        2200
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:GossipLayer",
+      "type": "class",
+      "name": "GossipLayer",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2287,
+        2287
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:LinearizabilityChecker",
+      "type": "class",
+      "name": "LinearizabilityChecker",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2355,
+        2355
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:BackpressureController",
+      "type": "class",
+      "name": "BackpressureController",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2408,
+        2408
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:ElectionAnalyzer",
+      "type": "class",
+      "name": "ElectionAnalyzer",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2457,
+        2457
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:WireEncoder",
+      "type": "class",
+      "name": "WireEncoder",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2511,
+        2511
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:NetworkSimulator",
+      "type": "class",
+      "name": "NetworkSimulator",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2544,
+        2544
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:LogReplicationPipeline",
+      "type": "class",
+      "name": "LogReplicationPipeline",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2636,
+        2636
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:CommitTracker",
+      "type": "class",
+      "name": "CommitTracker",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2721,
+        2721
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:TermStore",
+      "type": "class",
+      "name": "TermStore",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2779,
+        2779
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/raft-node.js:RaftMetricsAggregator",
+      "type": "class",
+      "name": "RaftMetricsAggregator",
+      "filePath": "src/raft-node.js",
+      "lineRange": [
+        2821,
+        2821
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/raft-node.js",
+      "target": "func:src/raft-node.js:p",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:ClusterConfig",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:LogEntry",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:PersistentLog",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:MessageDeduplicator",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:StateMachine",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:VoteRecord",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:ElectionState",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:PeerReplicationState",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:VoteManager",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:LeaderState",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:SnapshotManager",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:MembershipChangeManager",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:SafetyMonitor",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:MetricsCollector",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:RaftNode",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:InMemoryTransport",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:Cluster",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:ReadIndexPipeline",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:CircuitBreaker",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:BatchWriter",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:PeerHealthMonitor",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:ConfigValidator",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:SnapshotChunker",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:RaftNodeBuilder",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:RaftTestHarness",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:GossipLayer",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:LinearizabilityChecker",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:BackpressureController",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:ElectionAnalyzer",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:WireEncoder",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:NetworkSimulator",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:LogReplicationPipeline",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:CommitTracker",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:TermStore",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/raft-node.js",
+      "target": "class:src/raft-node.js:RaftMetricsAggregator",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

@@ -1,0 +1,220 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-11-dropped-field",
+    "analyzedAt": "2026-03-26T02:08:01.806Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/mappers/ExternalMapper.ts",
+      "type": "file",
+      "name": "ExternalMapper.ts",
+      "filePath": "src/mappers/ExternalMapper.ts",
+      "summary": "",
+      "tags": [
+        "src-mappers-ExternalMapper"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/mappers/ExternalMapper.ts:ExternalMapper",
+      "type": "class",
+      "name": "ExternalMapper",
+      "filePath": "src/mappers/ExternalMapper.ts",
+      "lineRange": [
+        3,
+        3
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/mappers/ProfileMapper.ts",
+      "type": "file",
+      "name": "ProfileMapper.ts",
+      "filePath": "src/mappers/ProfileMapper.ts",
+      "summary": "",
+      "tags": [
+        "src-mappers-ProfileMapper"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/mappers/ProfileMapper.ts:ProfileMapper",
+      "type": "class",
+      "name": "ProfileMapper",
+      "filePath": "src/mappers/ProfileMapper.ts",
+      "lineRange": [
+        3,
+        3
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/models/UserProfile.ts",
+      "type": "file",
+      "name": "UserProfile.ts",
+      "filePath": "src/models/UserProfile.ts",
+      "summary": "",
+      "tags": [
+        "src-models-UserProfile"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/services/ProfileService.ts",
+      "type": "file",
+      "name": "ProfileService.ts",
+      "filePath": "src/services/ProfileService.ts",
+      "summary": "Functions: fetchFromApi",
+      "tags": [
+        "src-services-ProfileService"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/services/ProfileService.ts:fetchFromApi",
+      "type": "function",
+      "name": "fetchFromApi",
+      "filePath": "src/services/ProfileService.ts",
+      "lineRange": [
+        7,
+        7
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/services/ProfileService.ts:ProfileService",
+      "type": "class",
+      "name": "ProfileService",
+      "filePath": "src/services/ProfileService.ts",
+      "lineRange": [
+        20,
+        20
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/mappers/ExternalMapper.ts",
+      "target": "class:src/mappers/ExternalMapper.ts:ExternalMapper",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/mappers/ProfileMapper.ts",
+      "target": "class:src/mappers/ProfileMapper.ts:ProfileMapper",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/ProfileService.ts",
+      "target": "func:src/services/ProfileService.ts:fetchFromApi",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/ProfileService.ts",
+      "target": "class:src/services/ProfileService.ts:ProfileService",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/mappers/ExternalMapper.ts",
+      "target": "file:src/models/UserProfile.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/mappers/ProfileMapper.ts",
+      "target": "file:src/models/UserProfile.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/ProfileService.ts",
+      "target": "file:src/models/UserProfile.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/ProfileService.ts",
+      "target": "file:src/mappers/ExternalMapper.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/ProfileService.ts",
+      "target": "file:src/mappers/ProfileMapper.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

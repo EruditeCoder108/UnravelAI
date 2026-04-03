@@ -36,6 +36,11 @@
             {
                 "command": "unravel.clearDiagnostics",
                 "title": "Unravel: Clear Diagnostics"
+            },
+            {
+                "command": "unravel.initKnowledgeGraph",
+                "title": "Unravel: Initialize Knowledge Graph",
+                "icon": "$(symbol-namespace)"
             }
         ],
         "menus": {
@@ -119,6 +124,14 @@
                     ],
                     "default": "english",
                     "description": "Output language for the analysis report."
+                },
+                "unravel.excludeFolders": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "Folder names or glob patterns to exclude from Knowledge Graph indexing (e.g. 'Understand-Anything-Clone', 'validation', 'old bugs for initial testing'). These are added on top of the default exclusions (node_modules, dist, .git, build, .next)."
                 }
             }
         }

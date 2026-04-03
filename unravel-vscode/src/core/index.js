@@ -35,8 +35,8 @@ export { runFullAnalysis, runMultiFileAnalysis, initParser } from './ast-engine-
 // Cross-file AST resolution
 export { runCrossFileAnalysis, buildModuleMap, resolveSymbolOrigins, expandMutationChains, emitRiskSignals, buildCallGraph, selectFilesByGraph } from './ast-project.js';
 
-// Robust AI JSON parser
-export { parseAIJson } from './parse-json.js';
+// Robust AI JSON parser + schema migration
+export { parseAIJson, migrateSchema } from './parse-json.js';
 
 // API provider caller
 export { callProvider, callProviderStreaming } from './provider.js';

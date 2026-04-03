@@ -1,7 +1,0 @@
-{
-    "root_cause": "handleSubmit closes over count but count is not in useCallback's dependency array. The callback is memoized with the initial count value (0) and never recreated when count changes. onSuccess(count) always passes 0. The UI shows the correct count because setCount uses the functional updater form (c => c + 1) which does not depend on the closure.",
-    "root_cause_file": "useFormSubmit.js",
-    "root_cause_line": 10,
-    "fix": "Add count to the useCallback dependency array: [onSuccess, submitting, count]. Or use submitCountRef.current instead of count in the onSuccess call since the ref is always current.",
-    "root_cause_keywords": ["count missing from deps", "useCallback stale closure", "onSuccess receives 0", "memoized with initial value"]
-}

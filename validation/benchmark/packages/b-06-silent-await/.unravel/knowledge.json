@@ -1,0 +1,192 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-06-silent-await",
+    "analyzedAt": "2026-03-26T02:00:19.846Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/app/Application.ts",
+      "type": "file",
+      "name": "Application.ts",
+      "filePath": "src/app/Application.ts",
+      "summary": "",
+      "tags": [
+        "src-app-Application"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/app/Application.ts:Application",
+      "type": "class",
+      "name": "Application",
+      "filePath": "src/app/Application.ts",
+      "lineRange": [
+        20,
+        20
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/repositories/UserRepository.ts",
+      "type": "file",
+      "name": "UserRepository.ts",
+      "filePath": "src/repositories/UserRepository.ts",
+      "summary": "",
+      "tags": [
+        "src-repositories-UserRepository"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/repositories/UserRepository.ts:UserRepository",
+      "type": "class",
+      "name": "UserRepository",
+      "filePath": "src/repositories/UserRepository.ts",
+      "lineRange": [
+        22,
+        22
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/services/DatabaseService.ts",
+      "type": "file",
+      "name": "DatabaseService.ts",
+      "filePath": "src/services/DatabaseService.ts",
+      "summary": "",
+      "tags": [
+        "src-services-DatabaseService"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/services/DatabaseService.ts:DatabaseNotReadyError",
+      "type": "class",
+      "name": "DatabaseNotReadyError",
+      "filePath": "src/services/DatabaseService.ts",
+      "lineRange": [
+        1,
+        1
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/services/DatabaseService.ts:DatabaseService",
+      "type": "class",
+      "name": "DatabaseService",
+      "filePath": "src/services/DatabaseService.ts",
+      "lineRange": [
+        25,
+        25
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/app/Application.ts",
+      "target": "class:src/app/Application.ts:Application",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/repositories/UserRepository.ts",
+      "target": "class:src/repositories/UserRepository.ts:UserRepository",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/DatabaseService.ts",
+      "target": "class:src/services/DatabaseService.ts:DatabaseNotReadyError",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/DatabaseService.ts",
+      "target": "class:src/services/DatabaseService.ts:DatabaseService",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app/Application.ts",
+      "target": "file:src/services/DatabaseService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app/Application.ts",
+      "target": "file:src/repositories/UserRepository.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/repositories/UserRepository.ts",
+      "target": "file:src/services/DatabaseService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

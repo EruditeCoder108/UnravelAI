@@ -1,0 +1,278 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-05-fickle-like",
+    "analyzedAt": "2026-03-26T01:59:03.246Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/api/likesRouter.ts",
+      "type": "file",
+      "name": "likesRouter.ts",
+      "filePath": "src/api/likesRouter.ts",
+      "summary": "",
+      "tags": [
+        "src-api-likesRouter"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/services/likeService.ts",
+      "type": "file",
+      "name": "likeService.ts",
+      "filePath": "src/services/likeService.ts",
+      "summary": "Functions: clearWriteLog, applyOptimisticLike, handleWebSocketLikeEvent, reconcileFinalCount",
+      "tags": [
+        "src-services-likeService"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/services/likeService.ts:clearWriteLog",
+      "type": "function",
+      "name": "clearWriteLog",
+      "filePath": "src/services/likeService.ts",
+      "lineRange": [
+        19,
+        19
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/services/likeService.ts:applyOptimisticLike",
+      "type": "function",
+      "name": "applyOptimisticLike",
+      "filePath": "src/services/likeService.ts",
+      "lineRange": [
+        27,
+        27
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/services/likeService.ts:handleWebSocketLikeEvent",
+      "type": "function",
+      "name": "handleWebSocketLikeEvent",
+      "filePath": "src/services/likeService.ts",
+      "lineRange": [
+        38,
+        38
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/services/likeService.ts:reconcileFinalCount",
+      "type": "function",
+      "name": "reconcileFinalCount",
+      "filePath": "src/services/likeService.ts",
+      "lineRange": [
+        47,
+        47
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/store/optimisticStore.ts",
+      "type": "file",
+      "name": "optimisticStore.ts",
+      "filePath": "src/store/optimisticStore.ts",
+      "summary": "",
+      "tags": [
+        "src-store-optimisticStore"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/store/optimisticStore.ts:OptimisticStore",
+      "type": "class",
+      "name": "OptimisticStore",
+      "filePath": "src/store/optimisticStore.ts",
+      "lineRange": [
+        19,
+        19
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/ws/wsHandler.ts",
+      "type": "file",
+      "name": "wsHandler.ts",
+      "filePath": "src/ws/wsHandler.ts",
+      "summary": "Functions: handleWsMessage, simulateServerBroadcast",
+      "tags": [
+        "src-ws-wsHandler"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/ws/wsHandler.ts:handleWsMessage",
+      "type": "function",
+      "name": "handleWsMessage",
+      "filePath": "src/ws/wsHandler.ts",
+      "lineRange": [
+        19,
+        19
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/ws/wsHandler.ts:simulateServerBroadcast",
+      "type": "function",
+      "name": "simulateServerBroadcast",
+      "filePath": "src/ws/wsHandler.ts",
+      "lineRange": [
+        51,
+        51
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/services/likeService.ts",
+      "target": "func:src/services/likeService.ts:clearWriteLog",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/likeService.ts",
+      "target": "func:src/services/likeService.ts:applyOptimisticLike",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/likeService.ts",
+      "target": "func:src/services/likeService.ts:handleWebSocketLikeEvent",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/likeService.ts",
+      "target": "func:src/services/likeService.ts:reconcileFinalCount",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/store/optimisticStore.ts",
+      "target": "class:src/store/optimisticStore.ts:OptimisticStore",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/ws/wsHandler.ts",
+      "target": "func:src/ws/wsHandler.ts:handleWsMessage",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/ws/wsHandler.ts",
+      "target": "func:src/ws/wsHandler.ts:simulateServerBroadcast",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/api/likesRouter.ts",
+      "target": "file:src/services/likeService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/api/likesRouter.ts",
+      "target": "file:src/store/optimisticStore.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/likeService.ts",
+      "target": "file:src/store/optimisticStore.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/ws/wsHandler.ts",
+      "target": "file:src/services/likeService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

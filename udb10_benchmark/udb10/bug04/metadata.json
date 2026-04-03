@@ -1,6 +1,0 @@
-{
-    "id": "promise_all_shared_state_race",
-    "category": "async",
-    "difficulty": "medium",
-    "symptom": "The requestId field in aggregateUserData results is non-deterministic — sometimes it matches the profile requestId, sometimes the orders requestId. Tracing and logging systems downstream are receiving inconsistent requestId values for the same aggregation call."
-}

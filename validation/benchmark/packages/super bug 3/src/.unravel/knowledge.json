@@ -1,0 +1,1078 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "javascript"
+    ],
+    "frameworks": [],
+    "description": "C:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\super bug 3\\src",
+    "analyzedAt": "2026-03-26T08:34:21.637Z",
+    "gitCommitHash": ""
+  },
+  "files": {
+    "connection-pool.js": "sha256:836c7ff3227a97f97372e75ac13712decc5c983d2ee0011135bc0c8e48edb309",
+    "health-monitor.js": "sha256:e4c2325801c81030bebf165870485e5863565516b8efb633355d867ace3518f3",
+    "index.js": "sha256:404621dae97dfcf19d5d6f868de94586d8119774759c4b10751e4bf1e5084adb",
+    "metrics-collector.js": "sha256:e7c17c3409539dd095641389aaa7fb6e2eb433f232cab761a7824cc919b86158",
+    "priority-queue.js": "sha256:b9d38ec1da39d3f2647e5b4e127bb0ef39f01e3f3765c28a964f4f037a40579b",
+    "retry-policy.js": "sha256:175be9f7d0f092aadc1b358e300e80b5ea3649d81096e3952341d9964c4cbe22",
+    "scheduler.js": "sha256:437cb9330c170ba6c1b19b7e0d98918ae84782268663cf944354b719b1f61c6e",
+    "worker.js": "sha256:6995dd76e15d4ccdbc6d7f74d9ce498b447bdf5653403a41512b786ab14a0cf5"
+  },
+  "nodes": [
+    {
+      "id": "file:connection-pool.js",
+      "type": "file",
+      "name": "connection-pool.js",
+      "filePath": "connection-pool.js",
+      "summary": "Functions: initPool, getConnection, releaseConnection, drainPool, getPoolDiagnostics",
+      "tags": [
+        "connection-pool"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:connection-pool.js:initPool",
+      "type": "function",
+      "name": "initPool",
+      "filePath": "connection-pool.js",
+      "lineRange": [
+        5,
+        5
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:connection-pool.js:getConnection",
+      "type": "function",
+      "name": "getConnection",
+      "filePath": "connection-pool.js",
+      "lineRange": [
+        30,
+        30
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:connection-pool.js:releaseConnection",
+      "type": "function",
+      "name": "releaseConnection",
+      "filePath": "connection-pool.js",
+      "lineRange": [
+        45,
+        45
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:connection-pool.js:drainPool",
+      "type": "function",
+      "name": "drainPool",
+      "filePath": "connection-pool.js",
+      "lineRange": [
+        54,
+        54
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:connection-pool.js:getPoolDiagnostics",
+      "type": "function",
+      "name": "getPoolDiagnostics",
+      "filePath": "connection-pool.js",
+      "lineRange": [
+        64,
+        64
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:health-monitor.js",
+      "type": "file",
+      "name": "health-monitor.js",
+      "filePath": "health-monitor.js",
+      "summary": "Functions: startHealthMonitor, onHealthAlert, stopHealthMonitor, getLastHealthCheck",
+      "tags": [
+        "health-monitor"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:health-monitor.js:startHealthMonitor",
+      "type": "function",
+      "name": "startHealthMonitor",
+      "filePath": "health-monitor.js",
+      "lineRange": [
+        7,
+        7
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:health-monitor.js:onHealthAlert",
+      "type": "function",
+      "name": "onHealthAlert",
+      "filePath": "health-monitor.js",
+      "lineRange": [
+        45,
+        45
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:health-monitor.js:stopHealthMonitor",
+      "type": "function",
+      "name": "stopHealthMonitor",
+      "filePath": "health-monitor.js",
+      "lineRange": [
+        49,
+        49
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:health-monitor.js:getLastHealthCheck",
+      "type": "function",
+      "name": "getLastHealthCheck",
+      "filePath": "health-monitor.js",
+      "lineRange": [
+        56,
+        56
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:index.js",
+      "type": "file",
+      "name": "index.js",
+      "filePath": "index.js",
+      "summary": "Functions: bootstrap, submitBatch, runProcessingCycle, shutdown, getSystemDiagnostics",
+      "tags": [
+        "index"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:index.js:bootstrap",
+      "type": "function",
+      "name": "bootstrap",
+      "filePath": "index.js",
+      "lineRange": [
+        14,
+        14
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:index.js:submitBatch",
+      "type": "function",
+      "name": "submitBatch",
+      "filePath": "index.js",
+      "lineRange": [
+        45,
+        45
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:index.js:runProcessingCycle",
+      "type": "function",
+      "name": "runProcessingCycle",
+      "filePath": "index.js",
+      "lineRange": [
+        52,
+        52
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:index.js:shutdown",
+      "type": "function",
+      "name": "shutdown",
+      "filePath": "index.js",
+      "lineRange": [
+        65,
+        65
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:index.js:getSystemDiagnostics",
+      "type": "function",
+      "name": "getSystemDiagnostics",
+      "filePath": "index.js",
+      "lineRange": [
+        77,
+        77
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:metrics-collector.js",
+      "type": "file",
+      "name": "metrics-collector.js",
+      "filePath": "metrics-collector.js",
+      "summary": "Functions: recordCompletion, recordFailure, flushMetrics, getMetricsDiagnostics",
+      "tags": [
+        "metrics-collector"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:metrics-collector.js:recordCompletion",
+      "type": "function",
+      "name": "recordCompletion",
+      "filePath": "metrics-collector.js",
+      "lineRange": [
+        6,
+        6
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:metrics-collector.js:recordFailure",
+      "type": "function",
+      "name": "recordFailure",
+      "filePath": "metrics-collector.js",
+      "lineRange": [
+        14,
+        14
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:metrics-collector.js:flushMetrics",
+      "type": "function",
+      "name": "flushMetrics",
+      "filePath": "metrics-collector.js",
+      "lineRange": [
+        22,
+        22
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:metrics-collector.js:getMetricsDiagnostics",
+      "type": "function",
+      "name": "getMetricsDiagnostics",
+      "filePath": "metrics-collector.js",
+      "lineRange": [
+        60,
+        60
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:priority-queue.js",
+      "type": "file",
+      "name": "priority-queue.js",
+      "filePath": "priority-queue.js",
+      "summary": "Functions: enqueue, peekNext, removeById, rebalance, getEntries, getDiagnostics",
+      "tags": [
+        "priority-queue"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:priority-queue.js:enqueue",
+      "type": "function",
+      "name": "enqueue",
+      "filePath": "priority-queue.js",
+      "lineRange": [
+        4,
+        4
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:priority-queue.js:peekNext",
+      "type": "function",
+      "name": "peekNext",
+      "filePath": "priority-queue.js",
+      "lineRange": [
+        12,
+        12
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:priority-queue.js:removeById",
+      "type": "function",
+      "name": "removeById",
+      "filePath": "priority-queue.js",
+      "lineRange": [
+        23,
+        23
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:priority-queue.js:rebalance",
+      "type": "function",
+      "name": "rebalance",
+      "filePath": "priority-queue.js",
+      "lineRange": [
+        30,
+        30
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:priority-queue.js:getEntries",
+      "type": "function",
+      "name": "getEntries",
+      "filePath": "priority-queue.js",
+      "lineRange": [
+        41,
+        41
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:priority-queue.js:getDiagnostics",
+      "type": "function",
+      "name": "getDiagnostics",
+      "filePath": "priority-queue.js",
+      "lineRange": [
+        45,
+        45
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:retry-policy.js",
+      "type": "file",
+      "name": "retry-policy.js",
+      "filePath": "retry-policy.js",
+      "summary": "Functions: configureDefaults, addOverride, getRetryPolicy, getPolicyDiagnostics",
+      "tags": [
+        "retry-policy"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:retry-policy.js:configureDefaults",
+      "type": "function",
+      "name": "configureDefaults",
+      "filePath": "retry-policy.js",
+      "lineRange": [
+        6,
+        6
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:retry-policy.js:addOverride",
+      "type": "function",
+      "name": "addOverride",
+      "filePath": "retry-policy.js",
+      "lineRange": [
+        11,
+        11
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:retry-policy.js:getRetryPolicy",
+      "type": "function",
+      "name": "getRetryPolicy",
+      "filePath": "retry-policy.js",
+      "lineRange": [
+        19,
+        19
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:retry-policy.js:getPolicyDiagnostics",
+      "type": "function",
+      "name": "getPolicyDiagnostics",
+      "filePath": "retry-policy.js",
+      "lineRange": [
+        34,
+        34
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:scheduler.js",
+      "type": "file",
+      "name": "scheduler.js",
+      "filePath": "scheduler.js",
+      "summary": "Functions: pickNextTask, verifyTaskNotCancelled, startRebalanceCycle, stopRebalanceCycle, getSchedulerDiagnostics",
+      "tags": [
+        "scheduler"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:scheduler.js:pickNextTask",
+      "type": "function",
+      "name": "pickNextTask",
+      "filePath": "scheduler.js",
+      "lineRange": [
+        8,
+        8
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:scheduler.js:verifyTaskNotCancelled",
+      "type": "function",
+      "name": "verifyTaskNotCancelled",
+      "filePath": "scheduler.js",
+      "lineRange": [
+        28,
+        28
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:scheduler.js:startRebalanceCycle",
+      "type": "function",
+      "name": "startRebalanceCycle",
+      "filePath": "scheduler.js",
+      "lineRange": [
+        34,
+        34
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:scheduler.js:stopRebalanceCycle",
+      "type": "function",
+      "name": "stopRebalanceCycle",
+      "filePath": "scheduler.js",
+      "lineRange": [
+        42,
+        42
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:scheduler.js:getSchedulerDiagnostics",
+      "type": "function",
+      "name": "getSchedulerDiagnostics",
+      "filePath": "scheduler.js",
+      "lineRange": [
+        49,
+        49
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:worker.js",
+      "type": "file",
+      "name": "worker.js",
+      "filePath": "worker.js",
+      "summary": "Functions: createWorkers, replaceWorkerPool, getWorkerPool, processNext, executeTask, getWorkerDiagnostics",
+      "tags": [
+        "worker"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:worker.js:createWorkers",
+      "type": "function",
+      "name": "createWorkers",
+      "filePath": "worker.js",
+      "lineRange": [
+        9,
+        9
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:worker.js:replaceWorkerPool",
+      "type": "function",
+      "name": "replaceWorkerPool",
+      "filePath": "worker.js",
+      "lineRange": [
+        24,
+        24
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:worker.js:getWorkerPool",
+      "type": "function",
+      "name": "getWorkerPool",
+      "filePath": "worker.js",
+      "lineRange": [
+        39,
+        39
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:worker.js:processNext",
+      "type": "function",
+      "name": "processNext",
+      "filePath": "worker.js",
+      "lineRange": [
+        43,
+        43
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:worker.js:executeTask",
+      "type": "function",
+      "name": "executeTask",
+      "filePath": "worker.js",
+      "lineRange": [
+        79,
+        79
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:worker.js:getWorkerDiagnostics",
+      "type": "function",
+      "name": "getWorkerDiagnostics",
+      "filePath": "worker.js",
+      "lineRange": [
+        106,
+        106
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:connection-pool.js",
+      "target": "func:connection-pool.js:initPool",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:connection-pool.js",
+      "target": "func:connection-pool.js:getConnection",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:connection-pool.js",
+      "target": "func:connection-pool.js:releaseConnection",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:connection-pool.js",
+      "target": "func:connection-pool.js:drainPool",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:connection-pool.js",
+      "target": "func:connection-pool.js:getPoolDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:health-monitor.js",
+      "target": "func:health-monitor.js:startHealthMonitor",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:health-monitor.js",
+      "target": "func:health-monitor.js:onHealthAlert",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:health-monitor.js",
+      "target": "func:health-monitor.js:stopHealthMonitor",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:health-monitor.js",
+      "target": "func:health-monitor.js:getLastHealthCheck",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "func:index.js:bootstrap",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "func:index.js:submitBatch",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "func:index.js:runProcessingCycle",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "func:index.js:shutdown",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "func:index.js:getSystemDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:metrics-collector.js",
+      "target": "func:metrics-collector.js:recordCompletion",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:metrics-collector.js",
+      "target": "func:metrics-collector.js:recordFailure",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:metrics-collector.js",
+      "target": "func:metrics-collector.js:flushMetrics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:metrics-collector.js",
+      "target": "func:metrics-collector.js:getMetricsDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:priority-queue.js",
+      "target": "func:priority-queue.js:enqueue",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:priority-queue.js",
+      "target": "func:priority-queue.js:peekNext",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:priority-queue.js",
+      "target": "func:priority-queue.js:removeById",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:priority-queue.js",
+      "target": "func:priority-queue.js:rebalance",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:priority-queue.js",
+      "target": "func:priority-queue.js:getEntries",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:priority-queue.js",
+      "target": "func:priority-queue.js:getDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:retry-policy.js",
+      "target": "func:retry-policy.js:configureDefaults",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:retry-policy.js",
+      "target": "func:retry-policy.js:addOverride",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:retry-policy.js",
+      "target": "func:retry-policy.js:getRetryPolicy",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:retry-policy.js",
+      "target": "func:retry-policy.js:getPolicyDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:scheduler.js",
+      "target": "func:scheduler.js:pickNextTask",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:scheduler.js",
+      "target": "func:scheduler.js:verifyTaskNotCancelled",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:scheduler.js",
+      "target": "func:scheduler.js:startRebalanceCycle",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:scheduler.js",
+      "target": "func:scheduler.js:stopRebalanceCycle",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:scheduler.js",
+      "target": "func:scheduler.js:getSchedulerDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:worker.js",
+      "target": "func:worker.js:createWorkers",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:worker.js",
+      "target": "func:worker.js:replaceWorkerPool",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:worker.js",
+      "target": "func:worker.js:getWorkerPool",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:worker.js",
+      "target": "func:worker.js:processNext",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:worker.js",
+      "target": "func:worker.js:executeTask",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:worker.js",
+      "target": "func:worker.js:getWorkerDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:health-monitor.js",
+      "target": "file:worker.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "file:priority-queue.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "file:scheduler.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "file:worker.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "file:health-monitor.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "file:metrics-collector.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "file:retry-policy.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:index.js",
+      "target": "file:connection-pool.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:scheduler.js",
+      "target": "file:priority-queue.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:worker.js",
+      "target": "file:scheduler.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:worker.js",
+      "target": "file:metrics-collector.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:worker.js",
+      "target": "file:retry-policy.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

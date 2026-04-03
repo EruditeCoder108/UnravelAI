@@ -23,10 +23,15 @@ function initDiagnostics() {
  * @returns {number|null} 0-indexed line number, or null if not found
  */
 function extractLineNumber(codeLocation) {
+    // Fast path: plain object with a numeric `line` property (e.g. { file: 'foo.js', line: 42 })
+    if (codeLocation && typeof codeLocation === 'object' && typeof codeLocation.line === 'number') {
+        return Math.max(0, codeLocation.line - 1); // 0-indexed
+    }
     const str = typeof codeLocation === 'object'
         ? JSON.stringify(codeLocation)
         : String(codeLocation || '');
-    const match = str.match(/line\s*(\d+)/i) || str.match(/L(\d+)/);
+    // Match "line 42", "line:42", "line=42", "L42"
+    const match = str.match(/line[\s:=]*(\d+)/i) || str.match(/\bL(\d+)\b/);
     return match ? parseInt(match[1]) - 1 : null; // 0-indexed
 }
 

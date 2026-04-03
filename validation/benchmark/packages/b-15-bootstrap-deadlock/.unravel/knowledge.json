@@ -1,0 +1,258 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-15-bootstrap-deadlock",
+    "analyzedAt": "2026-03-26T02:10:40.999Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/auth/AuthService.ts",
+      "type": "file",
+      "name": "AuthService.ts",
+      "filePath": "src/auth/AuthService.ts",
+      "summary": "",
+      "tags": [
+        "src-auth-AuthService"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/auth/AuthService.ts:AuthService",
+      "type": "class",
+      "name": "AuthService",
+      "filePath": "src/auth/AuthService.ts",
+      "lineRange": [
+        14,
+        14
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/bootstrap.ts",
+      "type": "file",
+      "name": "bootstrap.ts",
+      "filePath": "src/bootstrap.ts",
+      "summary": "Functions: createApp",
+      "tags": [
+        "src-bootstrap"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/bootstrap.ts:createApp",
+      "type": "function",
+      "name": "createApp",
+      "filePath": "src/bootstrap.ts",
+      "lineRange": [
+        5,
+        5
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/gateway/Gateway.ts",
+      "type": "file",
+      "name": "Gateway.ts",
+      "filePath": "src/gateway/Gateway.ts",
+      "summary": "Functions: buildGateway",
+      "tags": [
+        "src-gateway-Gateway"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/gateway/Gateway.ts:buildGateway",
+      "type": "function",
+      "name": "buildGateway",
+      "filePath": "src/gateway/Gateway.ts",
+      "lineRange": [
+        36,
+        36
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/gateway/Gateway.ts:Gateway",
+      "type": "class",
+      "name": "Gateway",
+      "filePath": "src/gateway/Gateway.ts",
+      "lineRange": [
+        15,
+        15
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/users/UserService.ts",
+      "type": "file",
+      "name": "UserService.ts",
+      "filePath": "src/users/UserService.ts",
+      "summary": "",
+      "tags": [
+        "src-users-UserService"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/users/UserService.ts:UserService",
+      "type": "class",
+      "name": "UserService",
+      "filePath": "src/users/UserService.ts",
+      "lineRange": [
+        15,
+        15
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/auth/AuthService.ts",
+      "target": "class:src/auth/AuthService.ts:AuthService",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/bootstrap.ts",
+      "target": "func:src/bootstrap.ts:createApp",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/gateway/Gateway.ts",
+      "target": "func:src/gateway/Gateway.ts:buildGateway",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/gateway/Gateway.ts",
+      "target": "class:src/gateway/Gateway.ts:Gateway",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/users/UserService.ts",
+      "target": "class:src/users/UserService.ts:UserService",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/auth/AuthService.ts",
+      "target": "file:src/users/UserService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/bootstrap.ts",
+      "target": "file:src/auth/AuthService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/bootstrap.ts",
+      "target": "file:src/users/UserService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/bootstrap.ts",
+      "target": "file:src/gateway/Gateway.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/gateway/Gateway.ts",
+      "target": "file:src/auth/AuthService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/gateway/Gateway.ts",
+      "target": "file:src/users/UserService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/users/UserService.ts",
+      "target": "file:src/auth/AuthService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

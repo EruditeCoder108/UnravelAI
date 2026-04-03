@@ -1,7 +1,0 @@
-{
-    "root_cause": "var i is function-scoped. All setTimeout callbacks close over the same i variable. By the time any callback fires, the loop has completed and i equals reportIds.length — making reportIds[i] undefined for every call. Additionally results is returned synchronously before any timeout fires.",
-    "root_cause_file": "fetchReports.js",
-    "root_cause_line": 4,
-    "fix": "Replace var with let so each iteration gets its own i binding. Restructure to await fetches directly instead of using setTimeout.",
-    "root_cause_keywords": ["var i", "function-scoped", "closure same i", "loop finished before callback", "empty results"]
-}

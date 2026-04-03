@@ -1,0 +1,5 @@
+# Lock JS to LF line endings always to prevent CRLF mess and encoding corruption
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf

@@ -1,0 +1,218 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-12-invisible-inventory",
+    "analyzedAt": "2026-03-26T02:08:29.150Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/app.ts",
+      "type": "file",
+      "name": "app.ts",
+      "filePath": "src/app.ts",
+      "summary": "",
+      "tags": [
+        "src-app"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/models/Product.ts",
+      "type": "file",
+      "name": "Product.ts",
+      "filePath": "src/models/Product.ts",
+      "summary": "",
+      "tags": [
+        "src-models-Product"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/repositories/ProductRepository.ts",
+      "type": "file",
+      "name": "ProductRepository.ts",
+      "filePath": "src/repositories/ProductRepository.ts",
+      "summary": "",
+      "tags": [
+        "src-repositories-ProductRepository"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/repositories/ProductRepository.ts:ProductRepository",
+      "type": "class",
+      "name": "ProductRepository",
+      "filePath": "src/repositories/ProductRepository.ts",
+      "lineRange": [
+        24,
+        24
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/serializers/ProductSerializer.ts",
+      "type": "file",
+      "name": "ProductSerializer.ts",
+      "filePath": "src/serializers/ProductSerializer.ts",
+      "summary": "",
+      "tags": [
+        "src-serializers-ProductSerializer"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/serializers/ProductSerializer.ts:ProductSerializer",
+      "type": "class",
+      "name": "ProductSerializer",
+      "filePath": "src/serializers/ProductSerializer.ts",
+      "lineRange": [
+        5,
+        5
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/services/CheckoutService.ts",
+      "type": "file",
+      "name": "CheckoutService.ts",
+      "filePath": "src/services/CheckoutService.ts",
+      "summary": "",
+      "tags": [
+        "src-services-CheckoutService"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/services/CheckoutService.ts:CheckoutService",
+      "type": "class",
+      "name": "CheckoutService",
+      "filePath": "src/services/CheckoutService.ts",
+      "lineRange": [
+        10,
+        10
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/repositories/ProductRepository.ts",
+      "target": "class:src/repositories/ProductRepository.ts:ProductRepository",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/serializers/ProductSerializer.ts",
+      "target": "class:src/serializers/ProductSerializer.ts:ProductSerializer",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/CheckoutService.ts",
+      "target": "class:src/services/CheckoutService.ts:CheckoutService",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app.ts",
+      "target": "file:src/repositories/ProductRepository.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app.ts",
+      "target": "file:src/serializers/ProductSerializer.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app.ts",
+      "target": "file:src/services/CheckoutService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/repositories/ProductRepository.ts",
+      "target": "file:src/models/Product.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/serializers/ProductSerializer.ts",
+      "target": "file:src/models/Product.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/CheckoutService.ts",
+      "target": "file:src/models/Product.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

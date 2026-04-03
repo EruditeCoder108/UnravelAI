@@ -1,6 +1,0 @@
-{
-    "id": "autosave_race_silent_drop",
-    "category": "async",
-    "difficulty": "hard",
-    "symptom": "Settings changes made while a save is in progress are silently lost. If the user updates two settings quickly — theme then language — only the first change is persisted. On next page load the second setting reverts to its previous value. The bug is intermittent and depends on network speed."
-}

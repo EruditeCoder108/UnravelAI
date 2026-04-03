@@ -1,0 +1,120 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-19-phantom-gate",
+    "analyzedAt": "2026-03-26T02:13:04.632Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/auth/AuthMiddleware.ts",
+      "type": "file",
+      "name": "AuthMiddleware.ts",
+      "filePath": "src/auth/AuthMiddleware.ts",
+      "summary": "",
+      "tags": [
+        "src-auth-AuthMiddleware"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/auth/AuthMiddleware.ts:AuthMiddleware",
+      "type": "class",
+      "name": "AuthMiddleware",
+      "filePath": "src/auth/AuthMiddleware.ts",
+      "lineRange": [
+        17,
+        17
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/routes/AdminRouter.ts",
+      "type": "file",
+      "name": "AdminRouter.ts",
+      "filePath": "src/routes/AdminRouter.ts",
+      "summary": "",
+      "tags": [
+        "src-routes-AdminRouter"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/routes/AdminRouter.ts:AdminRouter",
+      "type": "class",
+      "name": "AdminRouter",
+      "filePath": "src/routes/AdminRouter.ts",
+      "lineRange": [
+        14,
+        14
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/auth/AuthMiddleware.ts",
+      "target": "class:src/auth/AuthMiddleware.ts:AuthMiddleware",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/routes/AdminRouter.ts",
+      "target": "class:src/routes/AdminRouter.ts:AdminRouter",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/routes/AdminRouter.ts",
+      "target": "file:src/auth/AuthMiddleware.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

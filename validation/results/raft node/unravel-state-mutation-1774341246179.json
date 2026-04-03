@@ -1,0 +1,676 @@
+{
+  "adversarialCheck": "Phase 5.5 actively attempted to disprove Hypothesis H1 by seeking scenarios where `Set.forEach` might *not* re-visit a deleted-then-re-added element. However, the VERIFIED GROUND TRUTH `🔴 CRITICAL` annotation at `raft-node.js L532` explicitly cites ECMAScript §24.2.3.7, which deterministically states that re-added elements ARE visited again. This is a direct specification adherence issue, not a speculative runtime behavior. Therefore, H1 cannot be disproven by code evidence; it is confirmed by the language specification.\n\nPhase 5.5 actively attempted to disprove Hypothesis H2 by seeking an interpretation of the Raft specification where a strict greater-than (`>`) comparison for log indices (when terms are equal) would be correct. However, the Raft protocol's Election Restriction (Section 5.4.1) defines ",
+  "bugType": "STATE_MUTATION",
+  "causalChain": [
+    {
+      "evidence": "raft-node.js L1107: this._votes.promotePreVotesToGrants([...this._election.preVotes], this._term)",
+      "propagatesTo": "VoteManager.promotePreVotesToGrants()",
+      "step": "Candidate promotes pre-votes from term N-1 to granted votes."
+    },
+    {
+      "evidence": "raft-node.js L513: this._grantedVotes.add(voterId)",
+      "propagatesTo": "VoteManager._grantedVotes",
+      "step": "Pre-voters' IDs (with term N-1 records) are added to _grantedVotes Set."
+    },
+    {
+      "evidence": "raft-node.js L1176: this._votes.checkQuorum(this._config.majority(), this._term)",
+      "propagatesTo": "VoteManager.checkQuorum()",
+      "step": "Candidate calls checkQuorum to determine if it has a majority."
+    },
+    {
+      "evidence": "raft-node.js L532: this._grantedVotes.forEach(voterId => { ... })",
+      "propagatesTo": "VoteManager._refreshVoterRecord()",
+      "step": "checkQuorum iterates over _grantedVotes. For term N-1 records, it calls _refreshVoterRecord()."
+    },
+    {
+      "evidence": "raft-node.js L525-L526: this._grantedVotes.delete(voterId); this._grantedVotes.add(voterId);",
+      "propagatesTo": "Set.forEach iteration",
+      "step": "Inside _refreshVoterRecord(), the voterId is deleted and re-added to _grantedVotes, mutating the Set during its own iteration."
+    },
+    {
+      "evidence": "raft-node.js L532: (AST annotation) deleted-then-re-added elements ARE visited again — count fires TWICE per re-added element.",
+      "propagatesTo": "count variable in checkQuorum()",
+      "step": "Due to Set mutation during iteration, re-added voters are visited a second time, causing 'count' to be incremented twice for each such voter."
+    },
+    {
+      "evidence": "raft-node.js L542: hasQuorum: count >= majority",
+      "propagatesTo": "RaftNode._becomeLeader() call",
+      "step": "The 'count' variable is artificially inflated, causing checkQuorum to return 'hasQuorum: true' even if the true unique vote count is below majority."
+    },
+    {
+      "evidence": "raft-node.js L1177: await this._becomeLeader()",
+      "propagatesTo": "RaftNode._confirmLeadership()",
+      "step": "The node incorrectly transitions to LEADER state and starts sending heartbeats and confirming leadership."
+    },
+    {
+      "evidence": "raft-node.js L1915: await this._confirmLeadership()",
+      "propagatesTo": "SafetyMonitor.recordLeader()",
+      "step": "_confirmLeadership() fails because actual peers do not acknowledge a true majority leader."
+    },
+    {
+      "evidence": "raft-node.js L755: this._recordViolation('SPLIT_BRAIN', ...)",
+      "propagatesTo": "User's Symptom (Mode A)",
+      "step": "SafetyMonitor records a SPLIT_BRAIN violation as the node steps down, fulfilling Mode A symptom."
+    }
+  ],
+  "causalCompleteness": true,
+  "codeLocation": "raft-node.js L532",
+  "conceptExtraction": {
+    "bugCategory": "STATE_MUTATION",
+    "concept": "Modifying a collection while iterating over it can lead to unexpected behavior.",
+    "patternToAvoid": "Never mutate a Set (or Map or Array) that you are currently iterating over directly. If mutation is necessary, iterate over a copy or collect items to mutate after the loop.",
+    "realWorldAnalogy": "Imagine you are counting people in a room for a fire safety check. If, while you are counting, some people briefly step out and then immediately re-enter, and your counting method doesn't account for this, you might accidentally count them again. This leads to an inflated total, making you believe the room is fuller than it actually is, which could have serious safety implications.",
+    "whyItMatters": "This leads to logical errors like incorrect quorum calculations. In distributed systems, making decisions based on false information (e.g., believing a majority has been achieved when it hasn't) can cause severe safety violations like split-brain, where multiple nodes believe they are the sole leader, leading to data inconsistency."
+  },
+  "confidence": 0.85,
+  "diffBlock": "--- src/raft-node.js L532\n+++ src/raft-node.js L532\n@@ -529,7 +529,7 @@\n     checkQuorum(majority, currentTerm) {\n         let count = 1;\n \n-        this._grantedVotes.forEach(voterId => {\n+        for (const voterId of [...this._grantedVotes]) { // Iterate over a copy to avoid mutation issues\n             const record = this._voteRegistry.get(voterId);\n             if (!record) return;\n \n--- src/raft-node.js L1906\n+++ src/raft-node.js L1906\n@@ -1903,6 +1903,6 @@\n         if (candidateTerm !== this._log.lastTerm) {\n             return candidateTerm > this._log.lastTerm;\n         }\n-        return candidateIndex > this._log.lastIndex;\n+        return candidateIndex >= this._log.lastIndex; // Logs are up-to-date if same term and same or greater index\n     }\n",
+  "evidence": [
+    "raft-node.js L532: AST-verified CRITICAL warning regarding Set mutation during iteration.",
+    "raft-node.js L525-L526: _refreshVoterRecord() explicitly deletes and re-adds to _grantedVotes.",
+    "raft-node.js L1906: _isLogUpToDate() uses strict '>' comparison for log indices.",
+    "User's symptom Mode A: 'votes.registry' shows 'term: N-1' voters marked 'refreshed: true' yet in 'granted' set, leading to 'inflated quorum count above 3'.",
+    "User's symptom Mode B: 'peers ARE rejecting votes even when the candidate's log is equal in length (lastIndex and lastTerm identical)'."
+  ],
+  "evidenceMap": [
+    {
+      "contradicting": [],
+      "hypothesisId": "H1",
+      "missing": [],
+      "supporting": [
+        "raft-node.js L532: AST annotation 🔴 CRITICAL states 'Collection Mutated During Iteration ⚠ JS SPEC VIOLATION: ... deleted-then-re-added elements ARE visited again — count fires TWICE per re-added element.'",
+        "raft-node.js L525-L526: `_refreshVoterRecord` explicitly calls `this._grantedVotes.delete(voterId);` and `this._grantedVotes.add(voterId);` during `forEach` iteration (via L535).",
+        "User symptom Mode A: `votes.registry` shows `term: N-1` voters marked `refreshed: true` yet in `granted` set, leading to 'inflated quorum count above 3'."
+      ],
+      "verdict": "SUPPORTED"
+    },
+    {
+      "contradicting": [],
+      "hypothesisId": "H2",
+      "missing": [],
+      "supporting": [
+        "raft-node.js L1906: `return candidateIndex > this._log.lastIndex;` (strict greater than).",
+        "User symptom Mode B: 'Peers ARE rejecting votes even when the candidate's log is equal in length (`lastIndex` and `lastTerm` identical).'"
+      ],
+      "verdict": "SUPPORTED"
+    },
+    {
+      "contradicting": [
+        "User's statement: 'duplicate drop rate is near zero. Not the cause.'",
+        "raft-node.js L1133: `_handleVoteRequest` has `alreadyVoted` guard, which checks `_votedFor !== null && _votedFor !== msg.from`. This prevents a node from voting for multiple candidates in the same term, even if messages are not deduped."
+      ],
+      "hypothesisId": "H3",
+      "missing": [],
+      "supporting": [],
+      "verdict": "CONTESTED"
+    }
+  ],
+  "fixInvariantViolations": [],
+  "hypotheses": [
+    "Duplicate counting of votes due to Set mutation during iteration (Mode A).",
+    "Strict log comparison in _isLogUpToDate rejecting equally up-to-date logs (Mode B).",
+    "MessageDeduplicator TTL too short, allowing duplicate vote processing."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "The `forEach` loop is replaced with an iteration that copies the Set first.",
+        "`_refreshVoterRecord` does not modify `_grantedVotes`.",
+        "`Set.prototype.forEach` behavior is different from ECMAScript spec 24.2.3.7 for mutating during iteration."
+      ],
+      "id": "H1",
+      "reason": "AST-verified critical warning at `raft-node.js L532` states `_grantedVotes.forEach()` is mutating the Set it iterates over, causing elements to be visited twice, leading to double-counting. This directly explains the 'inflated quorum count' in the user's Mode A diagnostics.",
+      "status": "survived",
+      "text": "Duplicate Counting in VoteManager._grantedVotes.forEach"
+    },
+    {
+      "eliminatedBy": "",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "The Raft specification for log comparison requires strict greater-than for indices when terms are equal."
+      ],
+      "id": "H2",
+      "reason": "The `_isLogUpToDate` function at `raft-node.js L1906` uses a strict greater-than (`>`) comparison (`candidateIndex > this._log.lastIndex`) when candidate and local terms are identical. According to Raft consensus rules, logs with equal terms and equal last indices are considered equally up-to-date, and votes should be granted. This matches the user's Mode B symptom.",
+      "status": "survived",
+      "text": "Strict Log Comparison in _isLogUpToDate"
+    },
+    {
+      "eliminatedBy": "raft-node.js L1133: alreadyVoted check",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "`MessageDeduplicator.isDuplicate` accurately identifies and rejects all duplicate vote messages.",
+        "User's investigation into `_msgDedup.stats()` is exhaustive and conclusive and shows no duplicate processing."
+      ],
+      "id": "H3",
+      "reason": "The `_handleVoteRequest` function at `raft-node.js L1133` explicitly checks `alreadyVoted = this._votedFor !== null && this._votedFor !== msg.from`. This guard prevents a node from granting a vote to a second candidate in the same term, regardless of the message deduplicator's behavior. The `msgId` in `VOTE_REQUEST` (L1114) is unique per (candidate, term, peer) pair, so the deduplicator prevents processing the *same physical message* twice, but the `alreadyVoted` flag prevents a node from *logically* voting twice in the same term. User's statement about `duplicate drop rate near zero` further implies the deduplicator isn't actively dropping many messages, but the core issue of multiple votes is addressed by `alreadyVoted`.",
+      "status": "eliminated",
+      "text": "MessageDeduplicator TTL too short"
+    }
+  ],
+  "invariants": [
+    "Vote Quorum Integrity: A node should only transition to `LEADER` state if it has received votes from a strict majority of nodes in the cluster for the *current election term*, where each voter grants only one vote per term.",
+    "Log Consistency for Voting: A voter will only grant its vote to a candidate if the candidate's log is at least as up-to-date as its own. This means if terms are different, the candidate's term must be higher. If terms are the same, the candidate's log index must be greater than or equal to the voter's.",
+    "Collection Immutability During Iteration: When iterating over a collection (like a `Set` or `Map`) to perform calculations (like counting elements), the collection should not be mutated in a way that causes elements to be visited multiple times or skipped, leading to incorrect counts."
+  ],
+  "minimalFix": "To fix the duplicate counting in `VoteManager.checkQuorum`, iterate over a copy of the `_grantedVotes` Set. This ensures that the mutations performed by `_refreshVoterRecord` (deleting and re-adding elements) do not interfere with the iteration process, preventing elements from being visited multiple times and thus incorrectly inflating the vote count.\n\nTo fix the log comparison in `_isLogUpToDate`, change the strict greater-than `>` operator to a greater-than-or-equal-to `>=` operator. The Raft protocol dictates that a log is considered at least as up-to-date if its term is greater, or if terms are equal and its index is greater or equal. The strict comparison currently causes legitimate votes from peers with equally up-to-date logs to be rejected, prolonging elections.\n",
+  "multipleHypothesesSurvived": true,
+  "proximate_crash_site": "_confirmLeadership() L1915 — failed to receive quorum of acknowledgements (Mode A). `_becomeLeader` never called (Mode B).",
+  "relatedRisks": [
+    {
+      "description": "Potential risk if callbacks provided to `subscribe` mutate the `_listeners` Set in a way that causes iteration issues.",
+      "file": "src/raft-node.js",
+      "line": 431,
+      "patternMatch": "Set.forEach iteration with potential callback-driven mutation of the iterated collection."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 231,
+      "patternMatch": "Strict comparison (`<`) in a predicate function `isConsistent`."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 390,
+      "patternMatch": "Strict comparison (`>`) in a predicate function `isExpired`."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 463,
+      "patternMatch": "Strict comparison (`<`) in a predicate function `isHealthy`."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 464,
+      "patternMatch": "Strict comparison (`<`) in a predicate function `isHealthy`."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 788,
+      "patternMatch": "Strict comparison (`>`) in a predicate function `hasViolations`."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 1786,
+      "patternMatch": "Strict comparison (`<`) in a predicate function `hasValidLease`."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 1843,
+      "patternMatch": "Strict comparison (`>`) in a predicate function `canAttempt`."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 1851,
+      "patternMatch": "Strict comparison (`<`) in a predicate function `canAttempt`."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 2574,
+      "patternMatch": "Strict comparison (`<`) in a predicate function `shouldDrop`."
+    },
+    {
+      "description": "The heuristic flagged these as potentially problematic comparisons. While not confirmed bugs without spec, they represent the same class of 'off-by-one' or boundary condition logic as H2.",
+      "file": "src/raft-node.js",
+      "line": 2858,
+      "patternMatch": "Strict comparison (`>`) in a predicate function `hasSplitBrain`."
+    }
+  ],
+  "reproduction": [
+    "1. Initialize a 5-node Raft cluster. (Mode A & B)",
+    "2. Introduce network partitions and heal them intermittently. (Mode B trigger)",
+    "3. Allow the cluster to run elections under moderate load. (Mode A & B)",
+    "4. Observe election cycles: (Mode A) A node wins leadership, but `_confirmLeadership()` fails, and `SafetyMonitor` records `SPLIT_BRAIN`.",
+    "5. (Mode B) An election takes longer than expected, a new election fires, and diagnostic logs show peers rejecting votes due to 'log_behind' even with identical `lastIndex` and `lastTerm`."
+  ],
+  "rootCause": "The bug has two independent root causes: 1. `VoteManager.checkQuorum` (raft-node.js L532) incorrectly counts votes due to mutating `this._grantedVotes` (a Set) during iteration, leading to double-counting of 'refreshed' votes. 2. `RaftNode._isLogUpToDate` (raft-node.js L1906) uses a strict greater-than comparison (`>`) for log indices when terms are equal, rejecting candidates with equally up-to-date logs, which violates the Raft specification.",
+  "symptom": "Intermittent split brain in a 5-node Raft cluster, manifesting as (Mode A) a newly elected leader immediately stepping down due to `_confirmLeadership()` failure, and (Mode B) elections taking unusually long or failing due to peers rejecting votes with equally up-to-date logs. Both modes result in `SPLIT_BRAIN` violations.",
+  "timeline": [],
+  "timelineEdges": [
+    {
+      "from": "RaftNode._startElection",
+      "isBugPoint": false,
+      "label": "promotes pre-votes to grants",
+      "to": "VoteManager.promotePreVotesToGrants"
+    },
+    {
+      "from": "VoteManager.promotePreVotesToGrants",
+      "isBugPoint": false,
+      "label": "adds term N-1 voter IDs to _grantedVotes",
+      "to": "VoteManager._grantedVotes"
+    },
+    {
+      "from": "RaftNode._handleVoteResponse",
+      "isBugPoint": false,
+      "label": "calls checkQuorum",
+      "to": "VoteManager.checkQuorum"
+    },
+    {
+      "from": "VoteManager.checkQuorum",
+      "isBugPoint": true,
+      "label": "iterates _grantedVotes & calls _refreshVoterRecord",
+      "to": "VoteManager._refreshVoterRecord"
+    },
+    {
+      "from": "VoteManager._refreshVoterRecord",
+      "isBugPoint": true,
+      "label": "mutates _grantedVotes (delete/add)",
+      "to": "VoteManager._grantedVotes"
+    },
+    {
+      "from": "VoteManager.checkQuorum",
+      "isBugPoint": true,
+      "label": "double-counts votes (JS spec violation)",
+      "to": "voteCount variable"
+    },
+    {
+      "from": "voteCount variable",
+      "isBugPoint": false,
+      "label": "inflates hasQuorum result",
+      "to": "RaftNode._becomeLeader"
+    },
+    {
+      "from": "RaftNode._becomeLeader",
+      "isBugPoint": false,
+      "label": "transitions to LEADER state",
+      "to": "RaftNode._confirmLeadership"
+    },
+    {
+      "from": "RaftNode._confirmLeadership",
+      "isBugPoint": false,
+      "label": "fails to get real quorum",
+      "to": "SafetyMonitor.recordLeader"
+    },
+    {
+      "from": "SafetyMonitor.recordLeader",
+      "isBugPoint": false,
+      "label": "records SPLIT_BRAIN (Mode A symptom)",
+      "to": "User's symptom"
+    },
+    {
+      "from": "RaftNode._handleVoteRequest",
+      "isBugPoint": true,
+      "label": "calls _isLogUpToDate with equal terms/indices",
+      "to": "RaftNode._isLogUpToDate"
+    },
+    {
+      "from": "RaftNode._isLogUpToDate",
+      "isBugPoint": true,
+      "label": "returns false due to strict > comparison",
+      "to": "grant variable in _handleVoteRequest"
+    },
+    {
+      "from": "grant variable in _handleVoteRequest",
+      "isBugPoint": false,
+      "label": "causes vote rejection ('log_behind')",
+      "to": "Candidate"
+    },
+    {
+      "from": "Candidate",
+      "isBugPoint": false,
+      "label": "fails to collect true quorum (Mode B symptom)",
+      "to": "User's symptom"
+    }
+  ],
+  "uncertainties": [
+    "Multiple independent root causes identified — each survivor explains a distinct symptom with no overlapping evidence."
+  ],
+  "uncoveredSymptoms": [],
+  "variableState": [
+    {
+      "meaning": "The Set of voter IDs that have granted a vote to the current candidate.",
+      "variable": "this._grantedVotes",
+      "whereChanged": "raft-node.js L493, L513, L525, L526"
+    },
+    {
+      "meaning": "The persistent log of Raft entries.",
+      "variable": "this._log",
+      "whereChanged": "raft-node.js L961, L1209, L1298, L1301, L1452, L1453, L1528"
+    }
+  ],
+  "variableStateEdges": [
+    {
+      "edges": [
+        {
+          "from": "VoteManager constructor",
+          "label": "declared L472",
+          "to": "VoteManager._grantedVotes",
+          "type": "write"
+        },
+        {
+          "from": "VoteManager.recordGrant",
+          "label": "mutated L493",
+          "to": "VoteManager._grantedVotes",
+          "type": "mutate"
+        },
+        {
+          "from": "VoteManager.promotePreVotesToGrants",
+          "label": "mutated L513",
+          "to": "VoteManager._grantedVotes",
+          "type": "mutate"
+        },
+        {
+          "from": "VoteManager._refreshVoterRecord",
+          "label": "mutated L525",
+          "to": "VoteManager._grantedVotes",
+          "type": "mutate"
+        },
+        {
+          "from": "VoteManager._refreshVoterRecord",
+          "label": "mutated L526",
+          "to": "VoteManager._grantedVotes",
+          "type": "mutate"
+        },
+        {
+          "from": "VoteManager.checkQuorum",
+          "label": "read L532",
+          "to": "VoteManager._grantedVotes",
+          "type": "read"
+        },
+        {
+          "from": "VoteManager.checkQuorum",
+          "label": "read L542",
+          "to": "VoteManager._grantedVotes",
+          "type": "read"
+        },
+        {
+          "from": "VoteManager.promotePreVotesToGrants",
+          "label": "read L509",
+          "to": "VoteManager._grantedVotes",
+          "type": "read"
+        },
+        {
+          "from": "VoteManager.recordGrant",
+          "label": "read L489",
+          "to": "VoteManager._grantedVotes",
+          "type": "read"
+        }
+      ],
+      "variable": "this._grantedVotes"
+    },
+    {
+      "edges": [
+        {
+          "from": "RaftNode constructor",
+          "label": "declared L859",
+          "to": "RaftNode._log",
+          "type": "write"
+        },
+        {
+          "from": "RaftNode.propose",
+          "label": "mutated L961",
+          "to": "RaftNode._log",
+          "type": "mutate"
+        },
+        {
+          "from": "RaftNode._becomeLeader",
+          "label": "mutated L1209",
+          "to": "RaftNode._log",
+          "type": "mutate"
+        },
+        {
+          "from": "RaftNode._handleAppendEntries",
+          "label": "mutated L1298",
+          "to": "RaftNode._log",
+          "type": "mutate"
+        },
+        {
+          "from": "RaftNode._handleAppendEntries",
+          "label": "mutated L1301",
+          "to": "RaftNode._log",
+          "type": "mutate"
+        },
+        {
+          "from": "RaftNode._handleInstallSnapshot",
+          "label": "mutated L1452",
+          "to": "RaftNode._log",
+          "type": "mutate"
+        },
+        {
+          "from": "RaftNode._handleInstallSnapshot",
+          "label": "mutated L1453",
+          "to": "RaftNode._log",
+          "type": "mutate"
+        },
+        {
+          "from": "RaftNode._handleMembershipChange",
+          "label": "mutated L1528",
+          "to": "RaftNode._log",
+          "type": "mutate"
+        },
+        {
+          "from": "RaftNode.term",
+          "label": "read L928",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._startPreVote",
+          "label": "read L1043",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._startPreVote",
+          "label": "read L1044",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handlePreVoteRequest",
+          "label": "read L1053",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._startElection",
+          "label": "read L1111",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handleVoteRequest",
+          "label": "read L1134",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handleVoteResponse",
+          "label": "read L1173",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._becomeLeader",
+          "label": "read L1204",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._sendHeartbeats",
+          "label": "read L1228",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handleHeartbeat",
+          "label": "read L1249",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._replicateToPeer",
+          "label": "read L1270",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._replicateToPeer",
+          "label": "read L1272",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._replicateToPeer",
+          "label": "read L1275",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._replicateToPeer",
+          "label": "read L1278",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handleAppendEntries",
+          "label": "read L1294",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handleAppendEntries",
+          "label": "read L1298",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handleAppendEntries",
+          "label": "read L1301",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handleAppendResponse",
+          "label": "read L1335",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._findConflict",
+          "label": "read L1361",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._findConflict",
+          "label": "read L1362",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._sendSnapshot",
+          "label": "read L1372",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handleInstallSnapshot",
+          "label": "read L1448",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._handleMembershipChange",
+          "label": "read L1525",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._runApplyLoop",
+          "label": "read L1585",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._applyCommitted",
+          "label": "read L1594",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._applyCommitted",
+          "label": "read L1595",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._applyCommitted",
+          "label": "read L1596",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._applyCommitted",
+          "label": "read L1600",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._notifyPendingClients",
+          "label": "read L1611",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._isLogUpToDate",
+          "label": "read L1903",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._isLogUpToDate",
+          "label": "read L1905",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._isLogUpToDate",
+          "label": "read L1906",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._confirmLeadership",
+          "label": "read L1918",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._maybeCompact",
+          "label": "read L1937",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._maybeCompact",
+          "label": "read L1938",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._maybeCompact",
+          "label": "read L1940",
+          "to": "RaftNode._log",
+          "type": "read"
+        },
+        {
+          "from": "RaftNode._maybeCompact",
+          "label": "read L1945",
+          "to": "RaftNode._log",
+          "type": "read"
+        }
+      ],
+      "variable": "this._log"
+    }
+  ],
+  "whyFixWorks": "The fix for `VoteManager.checkQuorum` changes the iteration from `this._grantedVotes.forEach` to `for (const voterId of [...this._grantedVotes])`. By creating a shallow copy of the `_grantedVotes` Set as an array (`[...this._grantedVotes]`) before iteration, the loop now operates on a static snapshot of the Set's contents. This prevents the `delete` and `add` operations within `_refreshVoterRecord` (called at L535) from modifying the collection *during its active iteration*. Consequently, each voter will be counted exactly once, preventing the artificial inflation of `voteCount` and ensuring that `hasQuorum` accurately reflects a true majority.\n\nThe fix for `RaftNode._isLogUpToDate` changes the comparison `candidateIndex > this._log.lastIndex` to `candidateIndex >= this._log.lastIndex` at `raft-node.js L1906`. This modification correctly implements the Raft log-matching property: if two logs have the same term, the one with the greater *or equal* length is considered at least as up-to-date. This ensures that peers will now grant votes to candidates whose logs are equally as up-to-date as their own, resolving the issue where valid votes were being rejected and leading to prolonged elections."
+}

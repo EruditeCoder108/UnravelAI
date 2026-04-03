@@ -1,0 +1,16 @@
+{
+  "builtAt": "2026-04-03T13:48:13.664Z",
+  "nodeCount": 181,
+  "edgeCount": 188,
+  "filesIndexed": 15,
+  "mode": "structural",
+  "builtBy": "consult-auto",
+  "include": [
+    "src/core"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "wasm"
+  ]
+}

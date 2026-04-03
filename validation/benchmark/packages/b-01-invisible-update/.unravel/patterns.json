@@ -1,0 +1,294 @@
+{
+  "version": "1.0",
+  "savedAt": "2026-03-27T15:11:31.624Z",
+  "patterns": [
+    {
+      "id": "race_condition_write_await_read",
+      "signature": [
+        "write_shared",
+        "await_boundary",
+        "read_shared"
+      ],
+      "bugType": "race_condition",
+      "description": "Shared variable written before an await, then read after — classic TOCTOU race.",
+      "severity": "critical",
+      "cwe": "CWE-362",
+      "weight": 0.95,
+      "hitCount": 0,
+      "hash": "1bd896c493fc447c"
+    },
+    {
+      "id": "global_write_race",
+      "signature": [
+        "global_write",
+        "await_expression"
+      ],
+      "bugType": "race_condition",
+      "description": "Module-level variable mutated in an async function before an await — concurrent callers can interleave.",
+      "severity": "critical",
+      "cwe": "CWE-362",
+      "weight": 0.9,
+      "hitCount": 0,
+      "hash": "e4952bc807b60ef3"
+    },
+    {
+      "id": "foreach_collection_mutation",
+      "signature": [
+        "forEach_loop",
+        "collection_mutate"
+      ],
+      "bugType": "foreach_mutation",
+      "description": "Collection mutated (splice/delete/push) while being iterated — spec violation, undefined behavior.",
+      "severity": "high",
+      "cwe": "CWE-362",
+      "weight": 0.9,
+      "hitCount": 0,
+      "hash": "194edbe071a69188"
+    },
+    {
+      "id": "stale_closure_async_delay",
+      "signature": [
+        "closure_capture",
+        "async_delay",
+        "stale_var_access"
+      ],
+      "bugType": "stale_closure",
+      "description": "Variable captured in a closure, read after a timer/async delay — may have been reassigned by then.",
+      "severity": "high",
+      "cwe": "CWE-416",
+      "weight": 0.85,
+      "hitCount": 0,
+      "hash": "98801a06289050d4"
+    },
+    {
+      "id": "orphan_listener",
+      "signature": [
+        "addEventListener",
+        "no_removeEventListener"
+      ],
+      "bugType": "orphan_listener",
+      "description": "Event listener added but never cleaned up — memory leak and potential ghost callbacks.",
+      "severity": "high",
+      "cwe": "CWE-401",
+      "weight": 0.88,
+      "hitCount": 0,
+      "hash": "3aa2d14b931b9b59"
+    },
+    {
+      "id": "ghost_reference_constructor",
+      "signature": [
+        "constructor_capture",
+        "module_reassign"
+      ],
+      "bugType": "ghost_reference",
+      "description": "Object captured in constructor, then the variable is reassigned at module level — stale reference.",
+      "severity": "medium",
+      "cwe": "CWE-476",
+      "weight": 0.8,
+      "hitCount": 0,
+      "hash": "4aabb489a6c212b8"
+    },
+    {
+      "id": "react_direct_state_mutation",
+      "signature": [
+        "state_property_write",
+        "no_setState"
+      ],
+      "bugType": "direct_state_mutation",
+      "description": "React state mutated directly (this.state.x = N) without setState — re-render won't fire.",
+      "severity": "high",
+      "cwe": "CWE-362",
+      "weight": 0.88,
+      "hitCount": 0,
+      "hash": "aaf79f9f550835a9"
+    },
+    {
+      "id": "zustand_array_mutation",
+      "signature": [
+        "state_array_push",
+        "zustand_store"
+      ],
+      "bugType": "direct_state_mutation",
+      "description": "Array in Zustand store mutated in-place (.push/.splice) — reference equality check fails, UI won't update.",
+      "severity": "high",
+      "cwe": "CWE-362",
+      "weight": 0.9,
+      "hitCount": 0,
+      "hash": "1cbf497ab7a3b1cd"
+    },
+    {
+      "id": "floating_promise",
+      "signature": [
+        "async_call",
+        "no_await",
+        "expression_statement"
+      ],
+      "bugType": "floating_promise",
+      "description": "Async function called in expression position without await — errors are silently swallowed.",
+      "severity": "medium",
+      "cwe": "CWE-362",
+      "weight": 0.9500000000000002,
+      "hitCount": 4,
+      "hash": "c6de485d78e10b5e"
+    },
+    {
+      "id": "cross_file_mutation",
+      "signature": [
+        "exported_var",
+        "mutation_in_importer"
+      ],
+      "bugType": "cross_file_mutation",
+      "description": "Exported module-level variable mutated by an importer — breaks encapsulation, hard-to-trace update.",
+      "severity": "high",
+      "cwe": "CWE-362",
+      "weight": 0.85,
+      "hitCount": 0,
+      "hash": "471198b314aa9a48"
+    },
+    {
+      "id": "interval_without_clear",
+      "signature": [
+        "setInterval",
+        "no_clearInterval"
+      ],
+      "bugType": "orphan_listener",
+      "description": "setInterval called but clearInterval never called — interval keeps firing after component unmount.",
+      "severity": "high",
+      "cwe": "CWE-401",
+      "weight": 0.85,
+      "hitCount": 0,
+      "hash": "9991507fe8e60b86"
+    },
+    {
+      "id": "numeric_string_strict_compare",
+      "signature": [
+        "string_input",
+        "strict_numeric_comparison"
+      ],
+      "bugType": "type_confusion",
+      "description": "String-typed input (e.g., req.query) used in strict numeric comparison — NaN coercion or === fails.",
+      "severity": "high",
+      "cwe": "CWE-704",
+      "weight": 0.87,
+      "hitCount": 0,
+      "hash": "a7460453a8194841"
+    },
+    {
+      "id": "unvalidated_user_input",
+      "signature": [
+        "req_query_access",
+        "no_type_check",
+        "downstream_numeric"
+      ],
+      "bugType": "trusted_input",
+      "description": "req.query / req.params value used in numeric context without parseInt/parseFloat/Number validation.",
+      "severity": "high",
+      "cwe": "CWE-20",
+      "weight": 0.88,
+      "hitCount": 0,
+      "hash": "bd87b8102a8cd26b"
+    },
+    {
+      "id": "use_effect_no_cleanup",
+      "signature": [
+        "useEffect_call",
+        "addEventListener_inside",
+        "no_return_cleanup"
+      ],
+      "bugType": "orphan_listener",
+      "description": "useEffect sets up a listener/interval but returns no cleanup function — leak on re-render.",
+      "severity": "high",
+      "cwe": "CWE-401",
+      "weight": 0.82,
+      "hitCount": 0,
+      "hash": "1e473d881a6f091c"
+    },
+    {
+      "id": "conditional_state_mutation",
+      "signature": [
+        "conditional_write",
+        "shared_state"
+      ],
+      "bugType": "race_condition",
+      "description": "Shared variable written conditionally (inside if/else) — the other path leaves stale state.",
+      "severity": "medium",
+      "cwe": "CWE-362",
+      "weight": 0.7,
+      "hitCount": 0,
+      "hash": "70752e0e020e8a43"
+    },
+    {
+      "id": "non_reactive_read_after_write",
+      "signature": [
+        "state_write",
+        "immediate_state_read",
+        "async_context"
+      ],
+      "bugType": "race_condition",
+      "description": "State written via setState/dispatch, then immediately read as if synchronously updated — React batches updates.",
+      "severity": "medium",
+      "cwe": "CWE-362",
+      "weight": 0.72,
+      "hitCount": 0,
+      "hash": "9a6c5d1122695692"
+    },
+    {
+      "id": "promise_all_no_catch",
+      "signature": [
+        "promise_all_call",
+        "no_catch_handler"
+      ],
+      "bugType": "floating_promise",
+      "description": "Promise.all() called without .catch() or try/catch — one rejection kills all, error silently dropped.",
+      "severity": "medium",
+      "cwe": "CWE-390",
+      "weight": 0.72,
+      "hitCount": 0,
+      "hash": "0249cbe56ffe5ef2"
+    },
+    {
+      "id": "dynamic_require_in_loop",
+      "signature": [
+        "loop_body",
+        "require_call"
+      ],
+      "bugType": "performance",
+      "description": "require() / dynamic import called inside a loop — repeated module loading, blocking in hot path.",
+      "severity": "low",
+      "cwe": "CWE-400",
+      "weight": 0.6,
+      "hitCount": 0,
+      "hash": "7936670af12c298d"
+    },
+    {
+      "id": "missing_async_return",
+      "signature": [
+        "async_function",
+        "conditional_branch",
+        "missing_return"
+      ],
+      "bugType": "floating_promise",
+      "description": "Async function has a branch that returns nothing — caller gets undefined instead of expected value.",
+      "severity": "medium",
+      "cwe": "CWE-252",
+      "weight": 0.68,
+      "hitCount": 0,
+      "hash": "c4de423dab3077c9"
+    },
+    {
+      "id": "mutable_default_argument",
+      "signature": [
+        "function_param_default",
+        "mutable_object_literal",
+        "param_mutation"
+      ],
+      "bugType": "stale_closure",
+      "description": "Object or array used as function default parameter — mutated default persists across calls.",
+      "severity": "medium",
+      "cwe": "CWE-375",
+      "weight": 0.65,
+      "hitCount": 0,
+      "hash": "65777e7fc054bbb2"
+    }
+  ]
+}

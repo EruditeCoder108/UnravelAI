@@ -1,0 +1,282 @@
+{
+  "adversarialCheck": "For H1: The claim that `_refreshVoterRecord` intentionally updates terms to account for Raft nuance is directly contradicted by the user's observation: 'Checking their local state confirms they voted for a *different* candidate in term N — not for node-1'. This indicates the term mutation is incorrect. For H2: The claim that `_isLogUpToDate` logic could be correct for a specialized Raft variant is refuted because standard Raft's 'up-to-date' rule requires `>=` for log length when terms are equal; there is no recognized Raft variant where strict `>` is applied in this context for vote granting. Both hypotheses survived the adversarial check as they identify direct deviations from Raft specification and observed behavior.",
+  "bugType": "STATE_MUTATION",
+  "causalChain": [
+    {
+      "evidence": "src/raft-node.js L1134",
+      "propagatesTo": "VoteManager.promotePreVotesToGrants",
+      "step": "Candidate Node N1 calls _votes.promotePreVotesToGrants upon starting a full election in Term T."
+    },
+    {
+      "evidence": "src/raft-node.js L509",
+      "propagatesTo": "VoteRecord creation with incorrect term",
+      "step": "promotePreVotesToGrants creates VoteRecord objects for pre-voters with 'term: electionTerm - 1' (T-1) instead of the current election term (T)."
+    },
+    {
+      "evidence": "src/raft-node.js L1194",
+      "propagatesTo": "VoteManager.checkQuorum",
+      "step": "Later, Node N1 calls _votes.checkQuorum to evaluate if it has majority votes for Term T."
+    },
+    {
+      "evidence": "src/raft-node.js L546",
+      "propagatesTo": "VoteManager._refreshVoterRecord",
+      "step": "checkQuorum finds these pre-vote records where record.term (T-1) < currentTerm (T) and record.refreshed is false, and calls _refreshVoterRecord."
+    },
+    {
+      "evidence": "src/raft-node.js L522",
+      "propagatesTo": "Inflated quorum count",
+      "step": "_refreshVoterRecord mutates the VoteRecord in _voteRegistry, setting record.term = currentTerm (T) and record.refreshed = true. This makes an old pre-vote appear as a valid current-term vote."
+    },
+    {
+      "evidence": "src/raft-node.js L549",
+      "propagatesTo": "Node N1 believes it has quorum",
+      "step": "checkQuorum then counts this 'refreshed' VoteRecord towards the quorum, artificially inflating the vote count for Node N1."
+    },
+    {
+      "evidence": "src/raft-node.js L1195",
+      "propagatesTo": "Node N1 becomes leader",
+      "step": "Node N1 believes it has a quorum, enters NodeState.LEADER, and calls _becomeLeader."
+    },
+    {
+      "evidence": "src/raft-node.js L1834",
+      "propagatesTo": "Inconsistent cluster state",
+      "step": "Node N1, as leader, calls _confirmLeadership, sending heartbeats to peers. Peers (e.g., node-2, node-3) that did not actually vote for N1 in Term T, but had their pre-vote records incorrectly refreshed by N1, now acknowledge a different leader or term."
+    },
+    {
+      "evidence": "src/raft-node.js L1844",
+      "propagatesTo": "SPLIT_BRAIN violation",
+      "step": "_confirmLeadership finds N1 does not have a real quorum of current-term acknowledgements. Node N1 steps down, leading to a SPLIT_BRAIN because another node might have legitimately won the election for Term T."
+    }
+  ],
+  "causalCompleteness": true,
+  "codeLocation": "VoteManager.promotePreVotesToGrants L509 (Mode A) and RaftNode._isLogUpToDate L1829 (Mode B)",
+  "conceptExtraction": {
+    "bugCategory": "Logic Error",
+    "concept": "1. State Coercion / Implicit State Mutation vs. Explicit Intent 2. Off-by-one in Comparison Logic (Inclusive vs. Exclusive Bounds)",
+    "patternToAvoid": "1. Never implicitly change the fundamental 'identity' (like a vote's term) of a record without a new, explicit event from the source. 2. Always double-check comparison operators (>, <, >=, <=) against the exact specification or desired behavior, especially at boundary conditions.",
+    "realWorldAnalogy": "1. Imagine a library where you can reserve a book (pre-vote) before it's officially released. The reservation slip says 'reserved for upcoming release X'. When the book is finally released (full election), the librarian looks at your slip. Instead of asking if you still want the book *now* for the *current* release, they just update your old slip to say 'loaned for release X' and count it as a current loan, even though you never explicitly took the book out for this release. Another person might have actually taken the book for release X, leading to two people thinking they have the same unique copy. 2. Think of a security guard checking IDs. The rule is: 'You can enter if your ID shows you are 18 years old or *older*.' But the guard only lets people in if their ID shows they are *strictly older* than 18. So, a person who is exactly 18 years old is incorrectly rejected, even though they meet the rule. This leads to fewer people entering than should be allowed, causing delays and confusion.",
+    "whyItMatters": "1. Implicit state mutations can lead to logical inconsistencies, making debugging difficult and causing 'ghost' data that influences critical decisions (like quorum counts). This can severely compromise system safety and liveness. 2. Incorrect comparison operators can violate fundamental algorithm rules, leading to incorrect decision-making (e.g., rejecting valid votes), prolonging operations, or causing safety violations by incorrectly excluding valid boundary cases."
+  },
+  "confidence": 0.85,
+  "diffBlock": "--- src/raft-node.js L509\n+++ src/raft-node.js L509\n@@ -506,7 +506,7 @@\n \n             const record = new VoteRecord({\n                 voterId,\n-                term:      electionTerm - 1, // Bug: Should be electionTerm if counted for current election\n+                term:      electionTerm,     // Fix: Use current election term for promoted votes\n                 logIndex:  0,\n                 logTerm:   0,\n             });\n--- src/raft-node.js L1829\n+++ src/raft-node.js L1829\n@@ -1826,6 +1826,6 @@\n     if (candidateTerm !== this._log.lastTerm) {\n         return candidateTerm > this._log.lastTerm;\n     }\n-    return candidateIndex > this._log.lastIndex;\n+    return candidateIndex >= this._log.lastIndex; // Raft rule: at least as up-to-date\n }\n",
+  "evidence": [
+    "src/raft-node.js L509: VoteRecord term incorrectly set to electionTerm - 1 in promotePreVotesToGrants.",
+    "src/raft-node.js L546: checkQuorum calls _refreshVoterRecord for old terms, leading to mutation.",
+    "src/raft-node.js L522: _refreshVoterRecord mutates record.term to currentTerm, falsely validating old votes.",
+    "src/raft-node.js L1829: _isLogUpToDate uses strict '>' for log index comparison when terms are equal.",
+    "src/raft-node.js L1129: _handleVoteRequest relies on _isLogUpToDate to determine if a vote is granted."
+  ],
+  "evidenceMap": [
+    {
+      "contradicting": [],
+      "hypothesisId": "H1",
+      "missing": [],
+      "supporting": [
+        "src/raft-node.js L509",
+        "src/raft-node.js L546-L547",
+        "src/raft-node.js L522",
+        "src/raft-node.js L549"
+      ],
+      "verdict": "SUPPORTED"
+    },
+    {
+      "contradicting": [],
+      "hypothesisId": "H2",
+      "missing": [],
+      "supporting": [
+        "src/raft-node.js L1825-L1830",
+        "src/raft-node.js L1129"
+      ],
+      "verdict": "SUPPORTED"
+    },
+    {
+      "contradicting": [
+        "src/raft-node.js L1825-L1830"
+      ],
+      "hypothesisId": "H3",
+      "missing": [],
+      "supporting": [],
+      "verdict": "CONTESTED"
+    }
+  ],
+  "fixInvariantViolations": [],
+  "hypotheses": [
+    "VoteManager._refreshVoterRecord incorrectly updates the term of a VoteRecord created during pre-vote promotion, leading to previous-term votes being counted as current-term votes, inflating the quorum count in checkQuorum.",
+    "_isLogUpToDate incorrectly uses strict greater-than comparisons (>) instead of greater-than-or-equal-to (>=) when comparing log indices for logs with identical terms, causing followers to reject votes from candidates with equally up-to-date logs.",
+    "Mode B is purely a result of transient network partitions causing messages to be dropped or delayed, leading to inconsistent views of quorum, rather than a specific code bug."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "VoteManager._refreshVoterRecord does not mutate record.term or _grantedVotes is cleared before full election."
+      ],
+      "id": "H1",
+      "reason": "The code in VoteManager.promotePreVotesToGrants (L509) creates VoteRecord objects with `term: electionTerm - 1`. VoteManager.checkQuorum (L546) then calls `_refreshVoterRecord` if `record.term < currentTerm` (i.e., N-1 < N). `_refreshVoterRecord` (L522) mutates `record.term` to `currentTerm` (N) in place, making an old pre-vote appear as a valid current-term vote, leading to an inflated quorum count for Node-1. This directly matches the user's critical observation about `term: N-1` votes with `refreshed: true`.",
+      "status": "survived",
+      "text": "VoteManager.checkQuorum bug"
+    },
+    {
+      "eliminatedBy": "",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "_isLogUpToDate correctly uses `>=` for index comparison or _handleVoteRequest does not rely on strict up-to-date check."
+      ],
+      "id": "H2",
+      "reason": "The `_isLogUpToDate` function (L1825-L1830) uses `candidateIndex > this._log.lastIndex` when `candidateTerm === this._log.lastTerm`. This strict inequality means if a candidate and a follower have identical log terms *and* identical log lengths, the follower will consider the candidate's log *not* up-to-date and reject its vote request (L1129). Raft's safety property requires granting votes if the candidate's log is *at least as up-to-date*. This directly explains the user's observation for Mode B where 'peers ARE rejecting votes even when the candidate's log is equal in length (`lastIndex` and `lastTerm` identical).'",
+      "status": "survived",
+      "text": "_isLogUpToDate bug"
+    },
+    {
+      "eliminatedBy": "src/raft-node.js L1829-L1830: _isLogUpToDate uses strict `>` comparison.",
+      "eliminationQuality": "WEAK",
+      "falsifiableIf": [
+        "Mode B consistently reproduces in a perfectly reliable network simulation."
+      ],
+      "id": "H3",
+      "reason": "While network partitioning might exacerbate the problem, Hypothesis H2 provides a direct, verifiable code-level flaw in `_isLogUpToDate` (L1829-L1830) that explains why votes are rejected even when logs are identical. This makes the rejection deterministic based on code logic, not solely random network behavior. The user also explicitly stated 'Mode B logging shows peers ARE rejecting votes even when the candidate's log is equal in length (`lastIndex` and `lastTerm` identical)' which confirms a logical flaw, not just an environmental one.",
+      "status": "eliminated",
+      "text": "Network partitioning"
+    }
+  ],
+  "invariants": [
+    "A VoteRecord in VoteManager._voteRegistry must accurately reflect the term for which the vote was actually granted (e.g., via a VOTE_RESPONSE message). It must not be implicitly updated to a new term without an explicit grant for that new term.",
+    "VoteManager.checkQuorum must only count votes that are explicitly granted for the current election term. Pre-votes do not count as full votes for the new term.",
+    "The _isLogUpToDate function must adhere to the Raft specification, meaning a candidate's log is considered 'at least as up-to-date' if it has a higher term, or if it has the same term but is equal or longer in length."
+  ],
+  "minimalFix": "For Mode A, update the `term` assigned to promoted pre-vote records.\nFor Mode B, change the log comparison operator in `_isLogUpToDate`.\n\n```javascript\n// src/raft-node.js\n// Line 509\n// Fix for Mode A\nconst record = new VoteRecord({\n    voterId,\n    term:      electionTerm,     // Fix: Use current election term for promoted votes\n    logIndex:  0,\n    logTerm:   0,\n});\n\n// Line 1829\n// Fix for Mode B\n_isLogUpToDate(candidateIndex, candidateTerm) {\n    if (candidateTerm !== this._log.lastTerm) {\n        return candidateTerm > this._log.lastTerm;\n    }\n    return candidateIndex >= this._log.lastIndex; // Raft rule: at least as up-to-date\n}\n```\n\n**ARCHITECTURAL NOTE:**\nThe `promotePreVotesToGrants` function itself, which adds records based on pre-votes to the `_grantedVotes` set, represents a non-standard simplification of Raft's pre-vote phase. In a strict Raft implementation, pre-votes are used to determine if a candidate *should* increment its term and start a full election, but they do *not* directly translate into full votes for the new term. Once the full election begins, the candidate solicits *new, explicit* votes. While the minimal fix ensures internal consistency by setting the correct term for these 'promoted' votes, a more robust and spec-compliant approach would be to: \n1. **Remove `promotePreVotesToGrants` (L503-L514) entirely.**\n2. **Remove the corresponding call in `_startElection` (L1134-L1138).**\n3. Ensure the `_grantedVotes` set is *only* populated by `recordGrant` (L483) in `_handleVoteResponse` (L1190), which processes explicit `VOTE_RESPONSE` messages for the current term.\n\nThis architectural change would ensure that votes are only counted if explicitly granted for the current election term, improving strict adherence to Raft safety properties regarding quorum and preventing potential edge cases that the current 'promotion' logic might introduce. This change would primarily affect `src/raft-node.js`.\n\n**Full better fix code:**\n```javascript\n// --- src/raft-node.js\n\n// Line 1134: Remove the promotion block\nasync _startElection() {\n    this._state    = NodeState.CANDIDATE;\n    this._term++;\n    this._votedFor = this._nodeId;\n    this._votes.reset();\n    this._leader   = null;\n    this._metrics.inc('elections_started');\n\n    // REMOVE THIS BLOCK: Pre-votes should not directly become full votes\n    // if (this._election?.preVotesDone && this._election.preVotes.size > 0) {\n    //     this._votes.promotePreVotesToGrants(\n    //         [...this._election.preVotes],\n    //         this._term\n    //     );\n    // }\n\n    this._resetElectionTimer();\n\n    // ... rest of election logic (unchanged)\n}\n\n// Line 503: Remove the entire promotePreVotesToGrants function\n// It becomes dead code if the above change is made.\n// It can be deleted, or its behavior altered if pre-vote state needs to be maintained for diagnostics.\n// For a clean architectural fix, this function should be removed as its premise is non-standard Raft.\n// If removed, VoteManager.js (L503-L514) would be deleted.\n\n// Line 519: Remove _refreshVoterRecord function if promotePreVotesToGrants is removed and checkQuorum is simplified.\n// If the architectural fix is applied, this helper is no longer needed.\n\n// Line 542: Simplify checkQuorum to only count votes for the current term\n// If promotePreVotesToGrants is removed, this simplified check is sufficient.\ncheckQuorum(majority, currentTerm) {\n    let count = 1; // Count self-vote\n    for (const voterId of this._grantedVotes) {\n        const record = this._voteRegistry.get(voterId);\n        if (record && record.term === currentTerm) {\n            count++;\n        }\n    }\n    return {\n        hasQuorum:  count >= majority,\n        voteCount:  count,\n        grantedIds: [...this._grantedVotes],\n        rejectedBy: [...this._rejectedBy],\n    };\n}\n\n// Line 1829: Fix for Mode B (remains the same as minimal fix)\n_isLogUpToDate(candidateIndex, candidateTerm) {\n    if (candidateTerm !== this._log.lastTerm) {\n        return candidateTerm > this._log.lastTerm;\n    }\n    return candidateIndex >= this._log.lastIndex; // Raft rule: at least as up-to-date\n}\n\n```",
+  "multipleHypothesesSurvived": true,
+  "proximate_crash_site": "_confirmLeadership() L1844 — Found insufficient acknowledgments, leading to step down. (Mode A)",
+  "relatedRisks": [],
+  "reproduction": [
+    "Mode A: A 5-node cluster, possibly with transient network instability, performs elections. Node N1 wins an election, then calls `_confirmLeadership()`. `votes.registry` shows 2 voters with `term: N-1, refreshed: true` and 1 voter with `term: N, refreshed: false`. Node N1 counts these 3 votes as a quorum (majority of 5 is 3). However, in `_confirmLeadership()`, the N-1-refreshed voters do not acknowledge N1 as leader. N1 steps down, and `SafetyMonitor` records `SPLIT_BRAIN`."
+  ],
+  "rootCause": "For Mode A: VoteManager.promotePreVotesToGrants (L509) creates VoteRecord objects with an incorrect 'term: electionTerm - 1'. These records are then incorrectly updated to the current election term (N) by VoteManager._refreshVoterRecord (L522) when checkQuorum (L546) is called, leading to votes from a previous pre-vote phase being counted as valid full votes for the current term, artificially inflating the quorum. This causes a leader to prematurely believe it has won and subsequently step down upon discovering it lacks actual quorum, leading to SPLIT_BRAIN.\n\nFor Mode B: RaftNode._isLogUpToDate (L1829) uses a strict greater-than operator (>) when comparing log indices for logs with identical terms. This deviates from the Raft specification, which requires an 'at least as up-to-date' (>=) comparison. Consequently, followers incorrectly reject votes from candidates whose logs are equally up-to-date, prolonging election cycles or causing them to fail.",
+  "secondaryTags": [
+    "Raft-Consensus"
+  ],
+  "symptom": "In a 5-node cluster under production load, two interleaved failure modes appear:\n\n**Mode A (frequent, ~1 in 8 election cycles):** A node wins a leader election and begins heartbeating, but `_confirmLeadership()` fails — only 1 or 2 peers acknowledge. The node steps down immediately. `SafetyMonitor` records a `SPLIT_BRAIN` violation: two nodes were briefly both in state `leader` for the same term.\n\n**Mode B (infrequent, ~1 in 40 election cycles):** An election takes unusually long. A candidate receives what appears to be a quorum but `_becomeLeader` is never called. A second election fires. Mode B almost always follows a period where some peers were network-partitioned and recently rejoined.\n\nBoth modes produce `SafetyMonitor.violations()` entries of type `SPLIT_BRAIN`.\n\n**getDiagnostics() at failure point (Mode A)**\n\nNode-1 won the election, entered state `leader`, term 9:\n\n```json\n{\n  \"nodeId\": \"node-1\",\n  \"state\": \"leader\",\n  \"term\": 9,\n  \"votes\": {\n    \"granted\": [\"node-2\", \"node-3\", \"node-4\"],\n    \"registry\": [\n      { \"voterId\": \"node-2\", \"term\": 8, \"refreshed\": true },\n      { \"voterId\": \"node-3\", \"term\": 8, \"refreshed\": true },\n      { \"voterId\": \"node-4\", \"term\": 9, \"refreshed\": false }\n    ]\n  }\n}\n```\n\nThree voters in `granted`. Majority of 5 is 3. Election appears valid.\nAfter `_becomeLeader()`, `_confirmLeadership()` sends heartbeats to all 4 peers.\nOnly node-4 acknowledges. node-2 and node-3 believe a different node is leader.\nConfirmed count = 2 < 3. Node-1 steps down.\n\n**getDiagnostics() at failure point (Mode B)**\n\n```json\n{\n  \"nodeId\": \"node-1\",\n  \"state\": \"candidate\",\n  \"term\": 9,\n  \"votes\": {\n    \"granted\": [\"node-2\", \"node-3\"],\n    \"registry\": [\n      { \"voterId\": \"node-2\", \"term\": 9, \"refreshed\": false },\n      { \"voterId\": \"node-3\", \"term\": 9, \"refreshed\": false }\n    ]\n  }\n}\n```\n\nTwo real votes. Majority needs 3. node-4 and node-5 sent vote responses but `_handleVoteRequest` on their end rejected the candidate.",
+  "timelineEdges": [
+    {
+      "from": "Candidate N1",
+      "isBugPoint": false,
+      "label": "Starts election (Term T)",
+      "to": "Candidate N1"
+    },
+    {
+      "from": "Candidate N1",
+      "isBugPoint": false,
+      "label": "Calls promotePreVotesToGrants",
+      "to": "VoteManager"
+    },
+    {
+      "from": "VoteManager",
+      "isBugPoint": true,
+      "label": "Creates VoteRecord with term T-1",
+      "to": "VoteRecord"
+    },
+    {
+      "from": "Candidate N1",
+      "isBugPoint": false,
+      "label": "Receives vote responses",
+      "to": "VoteManager"
+    },
+    {
+      "from": "VoteManager",
+      "isBugPoint": false,
+      "label": "Calls checkQuorum",
+      "to": "VoteManager"
+    },
+    {
+      "from": "VoteManager",
+      "isBugPoint": true,
+      "label": "Mutates VoteRecord to term T",
+      "to": "VoteRecord"
+    },
+    {
+      "from": "VoteManager",
+      "isBugPoint": false,
+      "label": "Counts inflated quorum",
+      "to": "Candidate N1"
+    },
+    {
+      "from": "Candidate N1",
+      "isBugPoint": false,
+      "label": "Becomes leader",
+      "to": "Leader N1"
+    },
+    {
+      "from": "Leader N1",
+      "isBugPoint": false,
+      "label": "Confirms leadership",
+      "to": "Peers"
+    },
+    {
+      "from": "Peers",
+      "isBugPoint": false,
+      "label": "Reject N1's leadership (Mode A symptom)",
+      "to": "Leader N1"
+    },
+    {
+      "from": "Leader N1",
+      "isBugPoint": false,
+      "label": "Steps down, SPLIT_BRAIN",
+      "to": "Leader N1"
+    },
+    {
+      "from": "Candidate N1",
+      "isBugPoint": false,
+      "label": "Sends VOTE_REQUEST",
+      "to": "Follower F1"
+    },
+    {
+      "from": "Follower F1",
+      "isBugPoint": false,
+      "label": "Calls _isLogUpToDate",
+      "to": "_isLogUpToDate"
+    },
+    {
+      "from": "_isLogUpToDate",
+      "isBugPoint": true,
+      "label": "Incorrectly returns false for equal logs",
+      "to": "Follower F1"
+    },
+    {
+      "from": "Follower F1",
+      "isBugPoint": false,
+      "label": "Rejects VOTE_REQUEST (Mode B symptom)",
+      "to": "Candidate N1"
+    },
+    {
+      "from": "Candidate N1",
+      "isBugPoint": false,
+      "label": "Election times out, second election fires (Mode B symptom)",
+      "to": "Candidate N1"
+    }
+  ],
+  "uncertainties": [
+    "Multiple independent root causes identified — each survivor explains a distinct symptom with no overlapping evidence."
+  ],
+  "uncoveredSymptoms": [
+    "Mode A: 'two nodes were briefly both in state leader for the same term'. This is a direct consequence of the quorum inflation, as another node could legitimately win the election while Node-1 falsely believes it has quorum, leading to the split-brain. The root cause is the false quorum, the consequence is the split-brain. This is covered."
+  ],
+  "variableState": [
+    {
+      "meaning": "The term of a VoteRecord. Incorrectly set to N-1 for promoted pre-votes.",
+      "variable": "record.term",
+      "whereChanged": "VoteManager.promotePreVotesToGrants L509 (initial set), VoteManager._refreshVoterRecord L522 (mutation)"
+    },
+    {
+      "meaning": "The last log index of a candidate/follower's log. Used in _isLogUpToDate comparison.",
+      "variable": "this._log.lastIndex",
+      "whereChanged": "PersistentLog.append L202, PersistentLog.compact L235"
+    },
+    {
+      "meaning": "The last log term of a candidate/follower's log. Used in _isLogUpToDate comparison.",
+      "variable": "this._log.lastTerm",
+      "whereChanged": "PersistentLog.append L202, PersistentLog.compact L235"
+    }
+  ],
+  "whyFixWorks": "For Mode A, the fix on L509 sets `term: electionTerm` when creating a `VoteRecord` during `promotePreVotesToGrants`. This ensures that any pre-vote records promoted to `_grantedVotes` correctly reflect the current election term (N). Consequently, the `if (record.term < currentTerm && !record.refreshed)` condition in `checkQuorum` (L546) will no longer trigger for these records. They will be counted directly towards the quorum without being 'refreshed' from an incorrect `term: N-1` to `term: N`. This prevents the artificial inflation of the quorum due to outdated vote terms being incorrectly updated and counted, thereby resolving the `SPLIT_BRAIN` violation related to Mode A.\n\nFor Mode B, the fix on L1829 changes the log index comparison from `candidateIndex > this._log.lastIndex` to `candidateIndex >= this._log.lastIndex` in `_isLogUpToDate`. This corrected comparison ensures that a follower will grant a vote if the candidate's log is *at least as up-to-date* as its own (i.e., same term, equal or greater index). This aligns with the Raft specification, preventing legitimate vote requests from being incorrectly rejected and thereby resolving the prolonged election cycles observed in Mode B."
+}

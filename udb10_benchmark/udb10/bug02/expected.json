@@ -1,7 +1,0 @@
-{
-    "root_cause": "apiClient.js assigns defaultConfig directly to config (const config = defaultConfig) — no copy is made. Then config.headers is reassigned with spread, which mutates the shared exported defaultConfig object in defaultConfig.js. Every subsequent call now uses the permanently mutated headers object including any Authorization headers added by prior calls.",
-    "root_cause_file": "apiClient.js",
-    "root_cause_line": 6,
-    "fix": "Deep clone the config instead of referencing it: const config = { ...defaultConfig, headers: { ...defaultConfig.headers, ...options.headers } }",
-    "root_cause_keywords": ["const config = defaultConfig", "reference not copy", "mutates shared object", "headers persists across calls"]
-}

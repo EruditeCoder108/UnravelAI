@@ -1,0 +1,8 @@
+{
+  "include": ["how_unravel_works (1).md", "README.md", "ARCHITECTURE.md"],
+  "trust": { 
+    "how_unravel_works (1).md": "high",
+    "README.md": "medium"
+  },
+  "maxCharsPerFile": 30000
+}

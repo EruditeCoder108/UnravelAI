@@ -1,7 +1,0 @@
-{
-    "root_cause": "httpClient.js calls incrementRequest() at the start but only calls decrementRequest() on the success path. When res.ok is false, the function throws without decrementing. The catch block also increments _errorCount a second time for the re-thrown error but never decrements _requestCount. Every failed request leaks +1 into _requestCount permanently.",
-    "root_cause_file": "httpClient.js",
-    "root_cause_line": 12,
-    "fix": "Move decrementRequest() into a finally block so it always runs regardless of success or failure. Remove the duplicate incrementError() from the catch block.",
-    "root_cause_keywords": ["decrementRequest missing on error", "finally block", "_requestCount grows", "increment without decrement"]
-}

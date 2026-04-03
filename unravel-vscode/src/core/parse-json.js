@@ -73,6 +73,47 @@ export function parseAIJson(text, isStreaming = false) {
     return null;
 }
 
+// ── Schema Migration ──────────────────────────────────────────────────────────
+// Called on any parsed result before it's consumed downstream.
+// If _provenance.schemaVersion is absent (v1.x) or older, backfill safe
+// defaults for fields added in v2.0 so consumers don't crash on missing keys.
+
+const CURRENT_SCHEMA_VERSION = '2.0';
+
+export function migrateSchema(result) {
+    if (!result || typeof result !== 'object') return result;
+
+    const provenance = result._provenance || result.report?._provenance;
+    const version = provenance?.schemaVersion;
+
+    // Already current — nothing to do
+    if (version === CURRENT_SCHEMA_VERSION) return result;
+
+    const report = result.report || result;
+
+    // v1.x → v2.0: backfill the 8 new pipeline gap fields
+    if (!version || version < '2.0') {
+        report.causalChain            ??= [];
+        report.causalCompleteness     ??= null;  // null = unknown, not false
+        report.adversarialCheck       ??= '';
+        report.wasReentered           ??= false;
+        report.multipleHypothesesSurvived ??= false;
+        report.evidenceMap            ??= [];
+        report.fixInvariantViolations ??= [];
+        report.relatedRisks           ??= [];
+        // hypothesisTree items: backfill falsifiableIf + eliminationQuality
+        if (Array.isArray(report.hypothesisTree)) {
+            for (const h of report.hypothesisTree) {
+                h.falsifiableIf       ??= [];
+                h.eliminationQuality  ??= 'DEFAULT';
+            }
+        }
+        console.log(`[migrateSchema] v1.x → v2.0 migration applied`);
+    }
+
+    return result;
+}
+
 /**
  * Find potential JSON object substrings by tracking brace depth.
  * Returns candidates ordered by length (largest first), which

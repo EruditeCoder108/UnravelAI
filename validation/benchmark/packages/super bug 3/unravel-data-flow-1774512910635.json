@@ -1,0 +1,134 @@
+{
+  "bugType": "DATA_FLOW",
+  "codeLocation": "src/scheduler.js L3",
+  "conceptExtraction": {
+    "bugCategory": "State Management / Concurrency",
+    "concept": "Stale Cache / Race Conditions in Shared State",
+    "patternToAvoid": "Avoid creating local, static caches of shared mutable state. Instead, always query the canonical source of truth for the latest state. When performing read-then-mutate operations on shared resources, ensure atomicity to prevent race conditions.",
+    "realWorldAnalogy": "Imagine a shared 'urgent errands' whiteboard for a team. If each team member takes a photo of the whiteboard in the morning and works only from their photo, they'll miss new errands added during the day and might try to do errands already crossed off by others. A better system is a single, clear 'claim' action: you go to the whiteboard, physically put your name next to the most urgent errand, then cross it off before stepping away. Only one person can do this at a time.",
+    "whyItMatters": "This class of bug leads to data inconsistency, duplicate processing, and wasted resources, which can be difficult to debug due to its intermittent and race-dependent nature. It violates the 'single source of truth' principle."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/scheduler.js L3\n+++ src/scheduler.js L10\n@@ -1,17 +1,21 @@\n import { getEntries, removeById, rebalance, getDiagnostics } from './priority-queue.js';\n \n-const _cachedEntries = getEntries();\n-\n let _assignmentCount = 0;\n let _rebalanceInterval = null;\n \n export async function pickNextTask() {\n-    if (_cachedEntries.length === 0) return null;\n+    const entries = getEntries(); // Always work on the current state of the queue\n+    if (entries.length === 0) return null;\n \n         let bestIdx = 0;\n-    for (let i = 1; i < _cachedEntries.length; i++) {\n-        if (_cachedEntries[i].priority > _cachedEntries[bestIdx].priority) {\n+    for (let i = 1; i < entries.length; i++) {\n+        if (entries[i].priority > entries[bestIdx].priority) {\n             bestIdx = i;\n         }\n     }\n \n-    const task = _cachedEntries[bestIdx];\n+    const task = entries[bestIdx];\n \n         await verifyTaskNotCancelled(task.id);\n \n-    removeById(task.id);\n-    _assignmentCount++;\n+    // Attempt to remove the task from the main queue and only proceed if successful\n+    if (removeById(task.id)) {\n+        _assignmentCount++;\n+        return task;\n+    } else {\n+        // Task was already removed by another worker or a rebalance cycle, effectively a no-op\n+        // This prevents duplicate assignments when another worker was faster\n+        console.log(`[Scheduler] Task ${task.id} already removed from queue, skipping assignment.`);\n+        return null;\n+    }\n \n-    return task;\n     }\n",
+  "evidence": [
+    "scheduler.js L3: `_cachedEntries` is initialized once with `getEntries()`.",
+    "priority-queue.js L36: `_entries = aged.sort(...)` reassigns the canonical queue array, making any previously cached `_cachedEntries` stale.",
+    "scheduler.js L21: `_cachedEntries.splice(bestIdx, 1);` removes a task only from the local, stale cache.",
+    "scheduler.js L22: `removeById(task.id);` is called, but its boolean return value is ignored, allowing tasks to be returned even if they were not successfully removed from the main queue."
+  ],
+  "hypotheses": [
+    "Stale Cache: `_cachedEntries` in `scheduler.js` is initialized once and never updated, leading to `pickNextTask` operating on an out-of-date list of tasks.",
+    "Race on `removeById`: Two workers concurrently call `pickNextTask`, both identify the same task, but only one successfully removes it from the global `priority-queue.js:_entries`. The other proceeds with a task that's no longer in the queue.",
+    "Race on `_processedIds`: Multiple workers pick the same task and start processing it *before* any of them successfully add the task ID to `_processedIds` upon completion, leading to concurrent processing."
+  ],
+  "hypothesisTree": [
+    {
+      "id": "H1",
+      "reason": "`scheduler.js L3: const _cachedEntries = getEntries();` initializes a static copy. `priority-queue.js L36` reassigns the original `_entries` array, making the cached version permanently out of sync. `scheduler.js L21` mutates the stale copy locally.",
+      "status": "survived",
+      "text": "Stale Cache: `_cachedEntries` in `scheduler.js` is stale."
+    },
+    {
+      "id": "H2",
+      "reason": "`scheduler.js L22: removeById(task.id);` ignores the return value. This means `pickNextTask` can return a task to a worker even if that task was not successfully removed from the main priority queue (e.g., if another worker was faster), directly leading to duplicate assignments.",
+      "status": "survived",
+      "text": "Race on `removeById`."
+    },
+    {
+      "id": "H3",
+      "reason": "`worker.js L51: if (_processedIds.has(task.id))` checks before the asynchronous `executeTask` call, and `worker.js L61: _processedIds.add(task.id);` occurs only *after* successful execution. This creates a race window where two workers can pass the initial check, process the same task concurrently, and then both add (or attempt to add) the task ID, leading to undetected duplicate completions.",
+      "status": "survived",
+      "text": "Race on `_processedIds`."
+    }
+  ],
+  "invariants": [
+    "Priority Queue Consistency: The `scheduler` module's view of pending tasks must always reflect the current, canonical state of the `priority-queue.js:_entries` array. Tasks returned by `pickNextTask` must be considered 'claimed' and no longer available in the queue by any other concurrent picker.",
+    "Asynchronous Operation Completion: Any critical asynchronous operation, especially during shutdown sequences, must be `await`ed by its caller to ensure its completion before dependent operations or program termination.",
+    "Dynamic Resource Monitoring: Components monitoring dynamically changing resources (like worker pools) must always acquire a *fresh* reference to the current resource state, rather than relying on a captured, potentially stale reference from an earlier point in time.",
+    "Atomic State Transitions for Shared Resources: Operations that involve reading and then modifying a shared resource (like picking and removing a task from a queue) should be performed atomically to prevent race conditions from interleaved concurrent access."
+  ],
+  "minimalFix": "Modify `scheduler.js:pickNextTask` to always retrieve the current tasks from `priority-queue.js:getEntries()` instead of relying on a stale `_cachedEntries` variable. Additionally, ensure `pickNextTask` checks the return value of `removeById(task.id)` and only returns the task if it was successfully removed from the main queue. If `removeById` returns false, it means another worker already claimed the task, and `pickNextTask` should return null to signal no task was acquired.",
+  "reproduction": [
+    "1. Bootstrap the service and enqueue a batch of tasks.",
+    "2. Initiate high concurrent load by rapidly calling `runProcessingCycle()` in quick succession from multiple clients or threads.",
+    "3. Observe `console.warn` logs for 'DUPLICATE detected' and, more critically, check downstream data for silent data corruption where tasks were processed multiple times without warning."
+  ],
+  "rootCause": "`scheduler.js` relies on a stale, locally mutable `_cachedEntries` variable (initialized once) which does not reflect real-time changes to the canonical `priority-queue.js:_entries` (e.g., tasks being added, removed, or rebalanced). This allows `pickNextTask` to select tasks that are no longer available in the main queue. Furthermore, `pickNextTask` ignores the return value of `removeById()`, meaning it can return a task even if its removal from the central queue failed (implying another worker claimed it first), directly causing duplicate assignments.",
+  "symptom": "Under concurrent load, certain tasks get processed twice by different workers, causing duplicate results and data corruption downstream. We added a dedup check but it only catches some of the duplicates, not all. The issue is intermittent — it happens more under high throughput.",
+  "timelineEdges": [
+    {
+      "from": "scheduler.js",
+      "isBugPoint": false,
+      "label": "Reads initial task list (getEntries)",
+      "to": "priority-queue.js"
+    },
+    {
+      "from": "scheduler.js",
+      "isBugPoint": false,
+      "label": "Local _cachedEntries initialized",
+      "to": "scheduler.js"
+    },
+    {
+      "from": "priority-queue.js",
+      "isBugPoint": false,
+      "label": "Queue modified (enqueue, rebalance, removeById)",
+      "to": "priority-queue.js"
+    },
+    {
+      "from": "worker.js:processNext()",
+      "isBugPoint": false,
+      "label": "Calls pickNextTask()",
+      "to": "scheduler.js:pickNextTask()"
+    },
+    {
+      "from": "scheduler.js:pickNextTask()",
+      "isBugPoint": true,
+      "label": "Selects task from STALE _cachedEntries",
+      "to": "scheduler.js:pickNextTask()"
+    },
+    {
+      "from": "scheduler.js:pickNextTask()",
+      "isBugPoint": true,
+      "label": "Removes from local cache, ignores removeById() result",
+      "to": "priority-queue.js:removeById()"
+    },
+    {
+      "from": "worker.js:processNext()",
+      "isBugPoint": true,
+      "label": "Checks _processedIds (before async task)",
+      "to": "worker.js:_processedIds"
+    },
+    {
+      "from": "worker.js:processNext()",
+      "isBugPoint": false,
+      "label": "Executes task (async)",
+      "to": "executeTask()"
+    },
+    {
+      "from": "worker.js:processNext()",
+      "isBugPoint": false,
+      "label": "Adds to _processedIds (after async task)",
+      "to": "worker.js:_processedIds"
+    }
+  ],
+  "uncertainties": [],
+  "uncoveredSymptoms": [],
+  "variableState": [
+    {
+      "meaning": "Local cache of tasks in the scheduler",
+      "variable": "_cachedEntries",
+      "whereChanged": "scheduler.js L3 (initialized), scheduler.js L21 (mutated locally)"
+    },
+    {
+      "meaning": "The canonical list of tasks in the priority queue",
+      "variable": "_entries",
+      "whereChanged": "priority-queue.js L4 (enqueued), priority-queue.js L27 (removed), priority-queue.js L36 (reassigned after rebalance)"
+    },
+    {
+      "meaning": "Set of task IDs that have been processed to prevent duplicates",
+      "variable": "_processedIds",
+      "whereChanged": "worker.js L51 (checked), worker.js L61 (added)"
+    }
+  ],
+  "whyFixWorks": "The fix ensures that `pickNextTask` always fetches the most current state of the priority queue by calling `getEntries()` directly at the start of each invocation, eliminating the stale cache problem. Furthermore, it explicitly checks the return value of `removeById(task.id)`. By only returning a task if `removeById` confirms its successful removal from the canonical queue, it prevents the scheduler from assigning tasks that have already been claimed by other workers. This significantly reduces the likelihood of multiple workers picking the same task and thus reduces duplicate processing. While the `_processedIds` race remains, the primary source of picking duplicates is resolved."
+}

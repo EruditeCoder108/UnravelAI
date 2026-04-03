@@ -1,6 +1,0 @@
-{
-    "id": "event_listener_loop_accumulation",
-    "category": "lifecycle",
-    "difficulty": "hard",
-    "symptom": "After the dashboard has been running for a while, clicking any button triggers onSelect multiple times — once for each time the dashboard has refreshed. After 10 refreshes, a single click fires onSelect 10 times. Memory usage also grows steadily over time."
-}

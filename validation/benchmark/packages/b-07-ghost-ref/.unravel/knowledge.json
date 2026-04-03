@@ -1,0 +1,198 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-07-ghost-ref",
+    "analyzedAt": "2026-03-26T02:00:47.286Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/app/AppBootstrapper.ts",
+      "type": "file",
+      "name": "AppBootstrapper.ts",
+      "filePath": "src/app/AppBootstrapper.ts",
+      "summary": "",
+      "tags": [
+        "src-app-AppBootstrapper"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/app/AppBootstrapper.ts:AppBootstrapper",
+      "type": "class",
+      "name": "AppBootstrapper",
+      "filePath": "src/app/AppBootstrapper.ts",
+      "lineRange": [
+        16,
+        16
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/EventDispatcher.ts",
+      "type": "file",
+      "name": "EventDispatcher.ts",
+      "filePath": "src/core/EventDispatcher.ts",
+      "summary": "",
+      "tags": [
+        "src-core-EventDispatcher"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/core/EventDispatcher.ts:EventDispatcher",
+      "type": "class",
+      "name": "EventDispatcher",
+      "filePath": "src/core/EventDispatcher.ts",
+      "lineRange": [
+        22,
+        22
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/core/PluginManager.ts",
+      "type": "file",
+      "name": "PluginManager.ts",
+      "filePath": "src/core/PluginManager.ts",
+      "summary": "",
+      "tags": [
+        "src-core-PluginManager"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/core/PluginManager.ts:PluginManager",
+      "type": "class",
+      "name": "PluginManager",
+      "filePath": "src/core/PluginManager.ts",
+      "lineRange": [
+        11,
+        11
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/plugins/AuditPlugin.ts",
+      "type": "file",
+      "name": "AuditPlugin.ts",
+      "filePath": "src/plugins/AuditPlugin.ts",
+      "summary": "",
+      "tags": [
+        "src-plugins-AuditPlugin"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/app/AppBootstrapper.ts",
+      "target": "class:src/app/AppBootstrapper.ts:AppBootstrapper",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/EventDispatcher.ts",
+      "target": "class:src/core/EventDispatcher.ts:EventDispatcher",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/PluginManager.ts",
+      "target": "class:src/core/PluginManager.ts:PluginManager",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app/AppBootstrapper.ts",
+      "target": "file:src/core/PluginManager.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app/AppBootstrapper.ts",
+      "target": "file:src/core/EventDispatcher.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app/AppBootstrapper.ts",
+      "target": "file:src/plugins/AuditPlugin.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/core/EventDispatcher.ts",
+      "target": "file:src/core/PluginManager.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/plugins/AuditPlugin.ts",
+      "target": "file:src/core/PluginManager.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

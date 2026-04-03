@@ -1,0 +1,204 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-13-millisecond-session",
+    "analyzedAt": "2026-03-26T02:09:02.108Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/auth/TokenIssuer.ts",
+      "type": "file",
+      "name": "TokenIssuer.ts",
+      "filePath": "src/auth/TokenIssuer.ts",
+      "summary": "",
+      "tags": [
+        "src-auth-TokenIssuer"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/auth/TokenIssuer.ts:TokenIssuer",
+      "type": "class",
+      "name": "TokenIssuer",
+      "filePath": "src/auth/TokenIssuer.ts",
+      "lineRange": [
+        13,
+        13
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/auth/TokenValidator.ts",
+      "type": "file",
+      "name": "TokenValidator.ts",
+      "filePath": "src/auth/TokenValidator.ts",
+      "summary": "",
+      "tags": [
+        "src-auth-TokenValidator"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/auth/TokenValidator.ts:TokenValidator",
+      "type": "class",
+      "name": "TokenValidator",
+      "filePath": "src/auth/TokenValidator.ts",
+      "lineRange": [
+        3,
+        3
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/middleware/AuthMiddleware.ts",
+      "type": "file",
+      "name": "AuthMiddleware.ts",
+      "filePath": "src/middleware/AuthMiddleware.ts",
+      "summary": "",
+      "tags": [
+        "src-middleware-AuthMiddleware"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/middleware/AuthMiddleware.ts:AuthMiddleware",
+      "type": "class",
+      "name": "AuthMiddleware",
+      "filePath": "src/middleware/AuthMiddleware.ts",
+      "lineRange": [
+        14,
+        14
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/routes/ProtectedRouter.ts",
+      "type": "file",
+      "name": "ProtectedRouter.ts",
+      "filePath": "src/routes/ProtectedRouter.ts",
+      "summary": "",
+      "tags": [
+        "src-routes-ProtectedRouter"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/routes/ProtectedRouter.ts:ProtectedRouter",
+      "type": "class",
+      "name": "ProtectedRouter",
+      "filePath": "src/routes/ProtectedRouter.ts",
+      "lineRange": [
+        8,
+        8
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/auth/TokenIssuer.ts",
+      "target": "class:src/auth/TokenIssuer.ts:TokenIssuer",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/auth/TokenValidator.ts",
+      "target": "class:src/auth/TokenValidator.ts:TokenValidator",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/middleware/AuthMiddleware.ts",
+      "target": "class:src/middleware/AuthMiddleware.ts:AuthMiddleware",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/routes/ProtectedRouter.ts",
+      "target": "class:src/routes/ProtectedRouter.ts:ProtectedRouter",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/auth/TokenValidator.ts",
+      "target": "file:src/auth/TokenIssuer.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/middleware/AuthMiddleware.ts",
+      "target": "file:src/auth/TokenValidator.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/routes/ProtectedRouter.ts",
+      "target": "file:src/middleware/AuthMiddleware.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

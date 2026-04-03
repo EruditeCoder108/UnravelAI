@@ -1,0 +1,170 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-20-locked-key",
+    "analyzedAt": "2026-03-26T02:13:38.573Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/shortcuts/KeyboardManager.ts",
+      "type": "file",
+      "name": "KeyboardManager.ts",
+      "filePath": "src/shortcuts/KeyboardManager.ts",
+      "summary": "",
+      "tags": [
+        "src-shortcuts-KeyboardManager"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/shortcuts/KeyboardManager.ts:KeyboardManager",
+      "type": "class",
+      "name": "KeyboardManager",
+      "filePath": "src/shortcuts/KeyboardManager.ts",
+      "lineRange": [
+        11,
+        11
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/shortcuts/ShortcutHandler.ts",
+      "type": "file",
+      "name": "ShortcutHandler.ts",
+      "filePath": "src/shortcuts/ShortcutHandler.ts",
+      "summary": "",
+      "tags": [
+        "src-shortcuts-ShortcutHandler"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/shortcuts/ShortcutHandler.ts:ShortcutHandler",
+      "type": "class",
+      "name": "ShortcutHandler",
+      "filePath": "src/shortcuts/ShortcutHandler.ts",
+      "lineRange": [
+        19,
+        19
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/shortcuts/ShortcutRegistry.ts",
+      "type": "file",
+      "name": "ShortcutRegistry.ts",
+      "filePath": "src/shortcuts/ShortcutRegistry.ts",
+      "summary": "",
+      "tags": [
+        "src-shortcuts-ShortcutRegistry"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/shortcuts/ShortcutRegistry.ts:ShortcutRegistry",
+      "type": "class",
+      "name": "ShortcutRegistry",
+      "filePath": "src/shortcuts/ShortcutRegistry.ts",
+      "lineRange": [
+        9,
+        9
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/shortcuts/KeyboardManager.ts",
+      "target": "class:src/shortcuts/KeyboardManager.ts:KeyboardManager",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/shortcuts/ShortcutHandler.ts",
+      "target": "class:src/shortcuts/ShortcutHandler.ts:ShortcutHandler",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/shortcuts/ShortcutRegistry.ts",
+      "target": "class:src/shortcuts/ShortcutRegistry.ts:ShortcutRegistry",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/shortcuts/KeyboardManager.ts",
+      "target": "file:src/shortcuts/ShortcutRegistry.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/shortcuts/KeyboardManager.ts",
+      "target": "file:src/shortcuts/ShortcutHandler.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/shortcuts/ShortcutHandler.ts",
+      "target": "file:src/shortcuts/ShortcutRegistry.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

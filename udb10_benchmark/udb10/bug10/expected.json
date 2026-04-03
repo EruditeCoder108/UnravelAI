@@ -1,7 +1,0 @@
-{
-    "root_cause": "autoSave() returns immediately when _saveInProgress is true. Any updateSetting call that arrives while a save is in flight silently drops the save trigger. The in-progress save took a snapshot of _settings at start, so it does not include the new change. When the save completes it sets _saveInProgress = false but does not re-check for pending dirty state.",
-    "root_cause_file": "settingsStore.js",
-    "root_cause_line": 19,
-    "fix": "Track a _pendingSave dirty flag. When autoSave is already in progress, set _pendingSave = true instead of returning. After the save completes in the finally block, check if _pendingSave is true and trigger another save if so.",
-    "root_cause_keywords": ["_saveInProgress early return", "changes dropped", "no dirty flag", "snapshot does not include new changes", "silent loss"]
-}

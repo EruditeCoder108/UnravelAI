@@ -1,6 +1,0 @@
-{
-    "id": "usecallback_stale_count_closure",
-    "category": "react",
-    "difficulty": "medium",
-    "symptom": "The onSuccess callback always receives 0 as the attempt number, regardless of how many times the form has been submitted. The count displayed in the UI increments correctly, but the value passed to onSuccess never updates."
-}

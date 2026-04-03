@@ -1,6 +1,0 @@
-{
-    "id": "shared_config_mutation_cross_file",
-    "category": "cross_file",
-    "difficulty": "hard",
-    "symptom": "After any authenticated request, all subsequent public requests also send the Authorization header. Unauthenticated endpoints start receiving tokens they should never see. Bug only appears after the first fetchWithAuth call — initial public requests work correctly."
-}

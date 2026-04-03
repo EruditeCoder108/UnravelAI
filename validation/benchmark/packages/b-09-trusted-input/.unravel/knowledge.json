@@ -1,0 +1,146 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-09-trusted-input",
+    "analyzedAt": "2026-03-26T02:06:08.063Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/app.ts",
+      "type": "file",
+      "name": "app.ts",
+      "filePath": "src/app.ts",
+      "summary": "",
+      "tags": [
+        "src-app"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/models/CartSummary.ts",
+      "type": "file",
+      "name": "CartSummary.ts",
+      "filePath": "src/models/CartSummary.ts",
+      "summary": "",
+      "tags": [
+        "src-models-CartSummary"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/routes/CartRouter.ts",
+      "type": "file",
+      "name": "CartRouter.ts",
+      "filePath": "src/routes/CartRouter.ts",
+      "summary": "",
+      "tags": [
+        "src-routes-CartRouter"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/services/DiscountService.ts",
+      "type": "file",
+      "name": "DiscountService.ts",
+      "filePath": "src/services/DiscountService.ts",
+      "summary": "",
+      "tags": [
+        "src-services-DiscountService"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/services/DiscountService.ts:DiscountService",
+      "type": "class",
+      "name": "DiscountService",
+      "filePath": "src/services/DiscountService.ts",
+      "lineRange": [
+        41,
+        41
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/services/DiscountService.ts",
+      "target": "class:src/services/DiscountService.ts:DiscountService",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app.ts",
+      "target": "file:src/routes/CartRouter.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/routes/CartRouter.ts",
+      "target": "file:src/services/DiscountService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/routes/CartRouter.ts",
+      "target": "file:src/models/CartSummary.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/DiscountService.ts",
+      "target": "file:src/models/CartSummary.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

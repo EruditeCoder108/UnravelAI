@@ -1,0 +1,242 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-16-esm-shadow",
+    "analyzedAt": "2026-03-26T02:11:36.510Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/app.ts",
+      "type": "file",
+      "name": "app.ts",
+      "filePath": "src/app.ts",
+      "summary": "Functions: getStaticRoot, getAppRoot, getUploadDir",
+      "tags": [
+        "src-app"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/app.ts:getStaticRoot",
+      "type": "function",
+      "name": "getStaticRoot",
+      "filePath": "src/app.ts",
+      "lineRange": [
+        7,
+        7
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/app.ts:getAppRoot",
+      "type": "function",
+      "name": "getAppRoot",
+      "filePath": "src/app.ts",
+      "lineRange": [
+        11,
+        11
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/app.ts:getUploadDir",
+      "type": "function",
+      "name": "getUploadDir",
+      "filePath": "src/app.ts",
+      "lineRange": [
+        15,
+        15
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/config/ServerConfig.ts",
+      "type": "file",
+      "name": "ServerConfig.ts",
+      "filePath": "src/config/ServerConfig.ts",
+      "summary": "Functions: loadConfig",
+      "tags": [
+        "src-config-ServerConfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/config/ServerConfig.ts:loadConfig",
+      "type": "function",
+      "name": "loadConfig",
+      "filePath": "src/config/ServerConfig.ts",
+      "lineRange": [
+        7,
+        7
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/utils/pathUtils.ts",
+      "type": "file",
+      "name": "pathUtils.ts",
+      "filePath": "src/utils/pathUtils.ts",
+      "summary": "Functions: buildAssetPath, buildUploadPath, buildTemplatePath",
+      "tags": [
+        "src-utils-pathUtils"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/utils/pathUtils.ts:buildAssetPath",
+      "type": "function",
+      "name": "buildAssetPath",
+      "filePath": "src/utils/pathUtils.ts",
+      "lineRange": [
+        3,
+        3
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/utils/pathUtils.ts:buildUploadPath",
+      "type": "function",
+      "name": "buildUploadPath",
+      "filePath": "src/utils/pathUtils.ts",
+      "lineRange": [
+        7,
+        7
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/utils/pathUtils.ts:buildTemplatePath",
+      "type": "function",
+      "name": "buildTemplatePath",
+      "filePath": "src/utils/pathUtils.ts",
+      "lineRange": [
+        11,
+        11
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/app.ts",
+      "target": "func:src/app.ts:getStaticRoot",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app.ts",
+      "target": "func:src/app.ts:getAppRoot",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app.ts",
+      "target": "func:src/app.ts:getUploadDir",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/config/ServerConfig.ts",
+      "target": "func:src/config/ServerConfig.ts:loadConfig",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/utils/pathUtils.ts",
+      "target": "func:src/utils/pathUtils.ts:buildAssetPath",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/utils/pathUtils.ts",
+      "target": "func:src/utils/pathUtils.ts:buildUploadPath",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/utils/pathUtils.ts",
+      "target": "func:src/utils/pathUtils.ts:buildTemplatePath",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/app.ts",
+      "target": "file:src/utils/pathUtils.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

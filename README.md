@@ -11,31 +11,31 @@ https://github.com/user-attachments/assets/897ba07f-eaa5-4d95-b5a9-88a4fedfbf6a
 <h1>Unravel</h1>
 
 <p>
-A static AST analysis engine that extracts verified structural facts from code<br/>
-and injects them as ground truth before an LLM reasons about a bug.
+A deterministic AST evidence engine that extracts verified structural facts from code<br/>
+and enforces hallucination-free debugging — for Claude Code, Gemini CLI, Cursor, and any MCP-compatible agent.
 </p>
 
 <table>
 <tr>
-<td width="33%" align="center"><b>In one sentence</b><br/><br/>Unravel forces LLMs to debug using verified execution facts instead of pattern-matching symptoms.</td>
+<td width="33%" align="center"><b>In one sentence</b><br/><br/>Unravel forces AI agents to debug using verified execution facts instead of pattern-matching symptoms.</td>
 <td width="33%" align="center"><b>Why it matters</b><br/><br/>Most LLM debugging failures come from missing state mutation history — the model sees the crash, not where the data went wrong first.</td>
-<td width="33%" align="center"><b>What's new</b><br/><br/>AST-extracted ground truth (mutation chains, async boundaries, spec violations) injected as non-negotiable constraints into a structured reasoning pipeline.</td>
+<td width="33%" align="center"><b>What's different</b><br/><br/>Every verified diagnosis is embedded and stored. The next similar bug gets a semantic archive hit before the agent reads a single file. The engine learns from its own track record.</td>
 </tr>
 </table>
 
-[![Version](https://img.shields.io/badge/engine-v3.3-58a6ff?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI)
+[![Version](https://img.shields.io/badge/engine-v3.4-58a6ff?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI)
 [![Benchmark](https://img.shields.io/badge/benchmark-22_bugs-3fb950?style=flat-square&labelColor=0d1117)](#benchmark)
+[![MCP](https://img.shields.io/badge/MCP-native-58a6ff?style=flat-square&labelColor=0d1117)](https://modelcontextprotocol.io)
 [![React](https://img.shields.io/badge/react-18.3-61dafb?style=flat-square&labelColor=0d1117&logo=react&logoColor=61dafb)](https://reactjs.org)
 [![Node.js](https://img.shields.io/badge/node.js-%3E%3D18-339933?style=flat-square&labelColor=0d1117&logo=node.js&logoColor=339933)](https://nodejs.org)
-[![Tree-Sitter](https://img.shields.io/badge/tree--sitter-wasm-89e051?style=flat-square&labelColor=0d1117)](https://tree-sitter.github.io)
+[![Tree-Sitter](https://img.shields.io/badge/tree--sitter-native%20%7C%20wasm-89e051?style=flat-square&labelColor=0d1117)](https://tree-sitter.github.io)
 [![Languages](https://img.shields.io/badge/AST-JS%20%7C%20TS%20%7C%20JSX%20%7C%20TSX-3fb950?style=flat-square&labelColor=0d1117)](#language-support)
 [![License](https://img.shields.io/badge/license-BSL1.1-7d8590?style=flat-square&labelColor=0d1117)](LICENSE)
 [![Web App](https://img.shields.io/badge/web_app-live-58a6ff?style=flat-square&labelColor=0d1117&logo=netlify&logoColor=00C7B7)](https://vibeunravel.netlify.app)
-[![Read the Paper](https://img.shields.io/badge/Research_Paper-PDF-b31b1b?style=flat-square&logo=arxiv&logoColor=white)](arXiv-paper.pdf)
 
 <br/>
 
-**[Try it →](https://vibeunravel.netlify.app)** &nbsp;·&nbsp; **[Architecture →](ARCHITECTURE.md)** &nbsp;·&nbsp; **[Benchmark →](#benchmark)** &nbsp;·&nbsp; **[Paper →](arXiv-paper.pdf)**
+**[MCP Quickstart →](#mcp-quickstart)** &nbsp;·&nbsp; **[Web App →](https://vibeunravel.netlify.app)** &nbsp;·&nbsp; **[Architecture →](#architecture)** &nbsp;·&nbsp; **[Benchmark →](#benchmark)**
 
 </div>
 
@@ -45,45 +45,15 @@ and injects them as ground truth before an LLM reasons about a bug.
 
 LLMs debugging code have a consistent failure mode: they see the crash and reason backwards from the symptom. They never ask where the data was *first* corrupted, because they don't know. They see a `TypeError` and suggest type fixes. They see "timer wrong after pause" and guess stale closures. They're pattern-matching your description, not analyzing your code.
 
-Unravel runs a deterministic tree-sitter AST pass before any LLM call. It extracts:
+This is not a Cursor plugin or a smarter prompt wrapper. Unravel runs a deterministic tree-sitter AST pass on your code and extracts verified structural facts — mutation chains, async boundaries, closure captures, spec violations — then hands those facts to the AI as ground truth it cannot contradict. After the AI reasons, a second deterministic pass checks every claim it made against the real code. Hallucinated line numbers are rejected. Fabricated variable names are rejected.
 
-- **Every variable mutation** — by function, by line, conditional vs. unconditional path
-- **Every async boundary** — `setTimeout`, `setInterval`, `addEventListener`, floating promises
-- **Every closure capture** — inner functions reading outer scope bindings that may be stale
-- **Cross-file import chains** — what depends on what, exactly
-- **forEach iteration mutations** — where a Set/Map/Array is mutated during its own `.forEach()` callback (including via helper functions one level deep) — a JavaScript spec fact, not a suspicion
-- **Strict comparisons in predicate gates** — `>` instead of `>=` inside functions named `is*`, `can*`, `has*`, `meets*` — the pattern that causes off-by-one permission bugs
-
-These are injected as verified ground truth before the LLM reasons. The model is explicitly instructed to treat them as non-negotiable constraints, and contradictions are penalized by the verifier. It must trace state backwards from the failure through the actual mutation chain to where it was first corrupted.
-
-The result is a structured JSON report: root cause, evidence, unified diff fix, hypothesis tree with per-hypothesis elimination citations, confidence score.
-
----
-
-## Table of Contents
-
-- [Real-World Proof](#real-world-proof)
-- [Quickstart](#quickstart)
-- [The Core Problem](#the-core-problem)
-- [Architecture](#architecture)
-- [Pipeline](#the-8-phase-pipeline)
-- [New Detectors](#new-detectors-v33)
-- [Anti-Sycophancy Guardrails](#anti-sycophancy-guardrails)
-- [Benchmark](#benchmark)
-- [Supported Models](#supported-models)
-- [Language Support](#language-support)
-- [Output Presets](#output-presets)
-- [Bug Taxonomy](#bug-taxonomy)
-- [Design Principles](#design-principles)
-- [Project Status](#project-status)
-- [Contributing](#contributing)
-- [License](#license)
+This is the **Sandwich Architecture**: deterministic evidence at the bottom, AI reasoning in the middle, deterministic verification at the top. The AI fills the sandwich. Unravel ensures the bread is real.
 
 ---
 
 ## Real-World Proof
 
-Tested on real bugs in major open-source repositories before any formal benchmark. The diagnoses — exact file, exact line, exact mutation chain — were applied directly:
+Tested on real bugs in major open-source repositories before any formal benchmark:
 
 | Repository | Bug | Scope |
 |------------|-----|-------|
@@ -102,7 +72,100 @@ Tested on real bugs in major open-source repositories before any formal benchmar
 
 ---
 
-## Quickstart
+## Table of Contents
+
+- [MCP Quickstart](#mcp-quickstart)
+- [Web App & VS Code](#web-app--vs-code)
+- [The Core Problem](#the-core-problem)
+- [Architecture — The Sandwich](#architecture)
+- [The 5 MCP Tools](#the-5-mcp-tools)
+- [The 11-Phase Pipeline](#the-11-phase-pipeline)
+- [AST Detectors](#ast-detectors)
+- [Anti-Sycophancy Guardrails](#anti-sycophancy-guardrails)
+- [Semantic Intelligence Layer](#semantic-intelligence-layer)
+- [Benchmark](#benchmark)
+- [Supported Models](#supported-models)
+- [Language Support](#language-support)
+- [Design Principles](#design-principles)
+- [Project Status](#project-status)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## MCP Quickstart
+
+Unravel's primary interface is an MCP server. Any agent that speaks MCP — Claude Code, Gemini CLI, Cursor, Windsurf — can call it without modification.
+
+```bash
+# 1. Install
+cd unravel-mcp && npm install
+
+# 2. Add to Claude Code (or any MCP-compatible agent)
+# In your agent's MCP config:
+{
+  "mcpServers": {
+    "unravel": {
+      "command": "node",
+      "args": ["/path/to/unravel-mcp/index.js"]
+    }
+  }
+}
+
+# 3. Optional: enable semantic search (Gemini Embedding 2)
+export GEMINI_API_KEY=your_key
+
+# 4. Run
+node unravel-mcp/index.js
+```
+
+Once connected, the agent gains five tools. For a large repo:
+
+```
+build_map("/repo")                                     → builds Knowledge Graph (~5s)
+query_graph("payments silently failing")               → returns 12 relevant files
+analyze(files, "payments silently failing")            → returns AST evidence packet
+  → agent reasons through 11-phase pipeline
+verify(rootCause, evidence, hypotheses, fix)           → PASSED or REJECTED
+```
+
+For a small repo or known files, skip straight to `analyze`. For a screenshot of a broken UI:
+
+```
+query_visual(screenshot, "button grayed out after click")  → finds responsible source files
+```
+
+**Zero LLM calls inside Unravel's MCP mode.** The engine runs entirely deterministic — AST parsing, graph traversal, pattern matching, claim verification. No API key required for core analysis. Embeddings and semantic search are optional (enabled by `GEMINI_API_KEY`).
+
+```mermaid
+flowchart TD
+    A([Bug reported]) --> B{Repo size?}
+    B -- ">30 files" --> C[build_map]
+    B -- "Known files" --> E[analyze]
+    C --> D{Screenshot?}
+    D -- Yes --> QV[query_visual]
+    D -- No --> QG[query_graph]
+    QV --> E
+    QG --> E
+    E --> F["`**critical_signal**
+    AST evidence
+    ⚡ archive hit · pattern hint`"]
+    F --> G[Agent reasons\n11-phase pipeline]
+    G --> H[verify]
+    H -- PASSED --> I([Fix confirmed\npatterns + archive updated])
+    H -- REJECTED --> G
+    H -- PROTOCOL_VIOLATION --> G
+
+    style A fill:#1D9E75,stroke:#0F6E56,color:#E1F5EE
+    style I fill:#1D9E75,stroke:#0F6E56,color:#E1F5EE
+    style F fill:#185FA5,stroke:#0C447C,color:#E6F1FB
+    style G fill:#534AB7,stroke:#3C3489,color:#EEEDFE
+    style H fill:#BA7517,stroke:#854F0B,color:#FAEEDA
+```
+
+---
+
+## Web App & VS Code
 
 **Web App — no install:**
 
@@ -123,13 +186,7 @@ Or: **Extensions → Install from VSIX** → select the [downloaded `.vsix`](unr
 
 Right-click any JS/TS file → **Unravel: Debug This File**.
 
-**Run locally:**
-
-```bash
-git clone https://github.com/EruditeCoder108/UnravelAI.git
-cd UnravelAI/unravel-v3
-npm install && npm run dev
-```
+**Note on surfaces:** All three surfaces — MCP server, web app, VS Code extension — run the same core engine. The MCP server uses native tree-sitter (no WASM) with cross-file analysis and zero generative LLM calls; it hands verified AST evidence to the agent's own model. The web app runs the full 11-phase LLM reasoning pipeline internally and adds the memory systems (Pattern Store, Diagnosis Archive, Task Codex) with IndexedDB persistence. Different tradeoffs, not a hierarchy.
 
 ---
 
@@ -188,185 +245,327 @@ Confidence: 0.94
 </tbody>
 </table>
 
-The second output is not the result of better prompting. It's the result of the model being told, as a verified fact, that `duration` was mutated at L69 on a conditional path — and that `reset()` reads it. The model doesn't need to guess what might cause the bug. It has the cause.
+The second output is not the result of better prompting. It's the result of the model being told, as a verified fact, that `duration` was mutated at L69 on a conditional path — and that `reset()` reads it. The model doesn't need to guess. It has the cause.
 
 ---
 
 ## Architecture
 
+### The Sandwich
+
 ```mermaid
-flowchart TD
-    A(["<b>User Input</b><br/>Code + Bug Description"])
-
-    subgraph L0 ["Layer 0 — AST Analyzer (Deterministic)"]
-        direction TB
-        B["<b>tree-sitter (WASM)</b><br/>──────────────────────────────<br/>• Variable mutation chains (conditional/unconditional)<br/>• Closure captures + React hook patterns<br/>• Async boundaries + floating promises<br/>• Cross-file import resolution<br/>• forEach mutation during iteration (depth-1 callee)<br/>• Strict comparison in predicate gate functions<br/>• Constructor-captured stale references (cross-file)"]
+flowchart TB
+    subgraph L1["Layer 1 — Deterministic evidence"]
+        A1["`**analyze()**
+        Native tree-sitter · WASM tree-sitter
+        Mutation chains · Async boundaries
+        Cross-file call graph · Spec violations
+        *Zero LLM calls*`"]
+    end
+    subgraph L2["Layer 2 — AI reasoning"]
+        A2["`**Agent's own LLM**
+        11-phase pipeline
+        Hypothesis generation → elimination
+        Causal chain → minimal fix`"]
+    end
+    subgraph L3["Layer 3 — Deterministic verification"]
+        A3["`**verify()**
+        Every evidence citation checked
+        Hallucinated line numbers: REJECTED
+        Skipped hypotheses: PROTOCOL_VIOLATION`"]
     end
 
-    subgraph L1 ["Layer 1 — Graph Router (Mode-Aware)"]
-        direction TB
-        C["<b>BFS on import/call graph</b><br/>──────────────────────────────<br/>• Error type classification (zero LLM cost)<br/>• Debug: 5–8 files near symptom<br/>• Explain: 15–25 files for breadth<br/>• Security: 8–12 files on attack surface"]
-    end
-
-    subgraph L2 ["Layer 2 — Core Engine (Single LLM Call)"]
-        direction TB
-        D["<b>8-Phase Reasoning Pipeline</b><br/>──────────────────────────────<br/>• Symptom coverage enforcement (multi-bug detection)<br/>• Symptom contradiction checks (pre-reasoning)<br/>• Anti-sycophancy guardrails (7 rules)<br/>• Multi-root-cause output schema<br/>• Evidence-backed confidence score<br/>• Fix completeness verifier (cross-file)<br/>• Claim verifier with cross-repo detection"]
-    end
-
-    E(["<b>Structured JSON Report</b><br/>Web App · VS Code Sidebar"])
-
-    A --> L0
-    L0 -->|Verified Ground Truth| L1
-    L1 -->|Code Slices + AST Facts| L2
-    L2 --> E
-
-    style A fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#fff
-    style E fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#fff
-    style B fill:#0d1117,stroke:#30363d,color:#c9d1d9
-    style C fill:#0d1117,stroke:#30363d,color:#c9d1d9
-    style D fill:#0d1117,stroke:#30363d,color:#c9d1d9
-    style L0 fill:#161b22,stroke:#30363d,color:#8b949e
-    style L1 fill:#161b22,stroke:#30363d,color:#8b949e
-    style L2 fill:#161b22,stroke:#30363d,color:#8b949e
+    L1 -- "Verified structural facts" --> L2
+    L2 -- "Claims + hypotheses" --> L3
+    L3 -- "REJECTED → revise" --> L2
 ```
 
+**Why this is better than a single LLM call:**
+
+| | Vanilla AI Debugging | Unravel Sandwich |
+|---|---|---|
+| Ground truth | Model "thinks" it knows the code | Engine **proves** code behavior |
+| Line numbers | Hallucinated ~15% of the time | Verified — zero tolerance |
+| Stale closures | Extremely hard for LLMs to see | Explicitly flagged by AST detector |
+| Cross-file bugs | Frequently missed | Traced via native call graph |
+| Confidence | Uniformly high regardless of evidence | Calibrated — capped on incomplete evidence |
+| Cost | High (LLM for all analysis) | Low — deterministic local execution, no API for core analysis |
+
 <details>
-<summary><b>▸ &nbsp; Step-by-step: How Unravel processes a request</b></summary>
+<summary><b>▸ &nbsp; Full data flow — step by step</b></summary>
 
 <br/>
 
-**Step 1 — Input arrives.**
-User uploads files and describes the bug. Unravel checks every file for truncation signals (unbalanced braces, missing closing tags) and injects completeness warnings if anything looks cut off. A deterministic error-type classifier categorises the symptom as `PACKAGE_RESOLUTION`, `BUILD_CONFIG`, `RUNTIME_TYPE`, or `RUNTIME_LOGIC` — before any LLM call — so routing and the verifier stage apply the right heuristics.
+**Step 1 — build_map (optional, large repos)**
+BFS traversal of import/call graph. Nodes: files, functions, classes. Edges: imports, calls, mutations. SHA-256 content hashing for incremental rebuilds — only changed files re-analyzed on subsequent calls. If `GEMINI_API_KEY` is set, hub nodes are embedded via Gemini Embedding 2 (768-dim vectors) for semantic routing.
 
-**Step 2 — Graph Router trims the search space.**
-If more than 15 files are provided, a BFS traversal of the import/call graph selects only the files most likely to contain the root cause. Debug mode focuses on 5–8 files around the symptom. Explain mode reads 15–25 for architectural breadth. Security mode follows the attack surface.
+**Step 2 — query_graph / query_visual**
+For large repos: symptom is keyword-scored and (if embeddings available) cosine-compared against all KG node embeddings. Graph expansion boosts neighbors of top matches. Returns ranked file list. `query_visual` embeds a screenshot in the same 768-dim space as code nodes — finds responsible source files from a broken UI screenshot.
 
-**Step 3 — AST engine runs deterministically.**
-tree-sitter (WASM) walks every JS/TS file and extracts: all variable mutation chains (every write/read, by function, by line, conditional or unconditional), all closure captures, all async boundaries and floating promises, all React hook patterns. A second cross-file pass builds the import/call graph. Two new detectors run: `detectForEachCollectionMutation` (with depth-1 callee expansion — detects mutations via helper functions, not just inline) and `detectStrictComparisonInPredicateGate` (structural naming-convention signal, not domain vocabulary).
+The webapp KG router applies three signal layers before ranking — all merged via `Math.max`:
 
-**Step 4 — Symptom coverage is enforced.**
-If the symptom description contains a numbered list, bullet points, or explicit "N independent bugs/issues" language, a coverage requirement is injected into the prompt: the model must address every described behavior or explicitly mark it as unresolved in `uncoveredSymptoms[]`. This forces multi-bug reports to be treated as multi-bug reports.
+```mermaid
+flowchart TD
+    SYM([Symptom]) --> S1 & S3
+    IMG([Screenshot]) --> S2
 
-**Step 5 — Symptom contradictions are checked.**
-Before the model reasons, AST facts are compared against the user's symptom. If the user says "event not firing" but AST confirms `addEventListener` is wired, that contradiction is injected as an explicit alert.
+    S1["`**Semantic layer**
+    Symptom → embed
+    Cosine vs node embeddings
+    *(requires Gemini key)*`"]
 
-**Step 6 — Ground truth is injected.**
-The AST output is framed as verified facts the model is explicitly instructed to treat as non-negotiable constraints — contradictions trigger verifier penalties. Every mutation (with conditional context), every boundary, every closure — exact file and line. Verified findings (mutation chains, spec violations) are separated from heuristic signals (predicate gate comparisons) so the model knows what is certain and what requires confirmation.
+    S2["`**Visual layer §3.5**
+    Image → embed · fused 60/40
+    Same 768-dim space`"]
 
-**Step 7 — The 8-phase pipeline runs.**
-One LLM call. The model is forced through: Read → Understand Intent → Understand Reality (3 mutually exclusive hypotheses) → Build Context → Diagnose (eliminate hypotheses by quoting exact AST evidence) → Minimal Fix → Concept Extraction → Invariants. It cannot skip to a conclusion.
+    S3["`**Pattern layer §4.1**
+    Keywords vs bugType
+    60% confidence pre-AST
+    *No API key needed*`"]
 
-**Step 8 — The claim verifier cross-checks the output.**
-Every file reference and line number in the model's response is verified against the actual files. Fabricated references trigger confidence penalties. A fabricated root cause triggers a hard rejection and retry.
+    S1 & S2 & S3 -- score --> MX
 
-**Step 9 — Fix completeness check.**
-The cross-file call graph (already built in Step 3) is checked against the proposed fix. If the fix modifies a function in file A but ignores file B which calls it, a warning is injected and confidence is penalized.
+    MX["`**Math.max merge**
+    semanticScores Map`"]
+    MX --> OUT([Ranked file list])
+```
+
+**Step 3 — analyze**
+Input completeness check. KG router trims to relevant files if >15 JS/TS files provided. Native tree-sitter (MCP) or WASM tree-sitter (web app) runs all detectors. Cross-file analysis traces mutations across file boundaries. Pattern store checked for structural fingerprints — matched patterns surface as `[floating_promise] confidence=0.95` hints in `critical_signal`. Diagnosis archive searched by cosine similarity against all past verified diagnoses — a ≥75% match surfaces as a ⚡ semantic archive hit pointing to the past root cause before the agent reads a single file. Returns 5-key structured response: `critical_signal` (AST evidence + pattern hints + archive hits), `protocol` (verify field list), `cross_file_graph`, `raw_ast_data` (omitted in standard mode), `metadata`.
+
+**Step 4 — Agent reasons (11-phase pipeline)**
+Unravel provides no LLM reasoning here. The agent uses its own model — Claude Opus 4.6, Gemini 2.5 Pro, whatever. The `_instructions` block enforces the reasoning protocol: exactly 3 mutually exclusive hypotheses, hypothesis expansion after evidence mapping, adversarial confirmation before accepting a survivor, causal chain with code evidence at every link.
+
+**Step 5 — verify**
+Two protocol gates fire before any claim is checked: `HYPOTHESIS_GATE` (hypotheses[] present — proves Phase 3 ran) and `EVIDENCE_CITATION_GATE` (rootCause contains file:line — prevents uncited claims). Then `verifyClaims()` checks every literal in `evidence[]` as a substring of actual file content. On PASSED: pattern weights bumped, diagnosis embedded and archived for future sessions. On REJECTED: pattern weights decayed.
 
 </details>
 
 ---
 
-## New Detectors (v3.3)
+## The 6 MCP Tools
 
-### 1. forEach Collection Mutation — Verified Structural Fact
+| Tool | What It Does |
+|------|-------------|
+| `unravel.consult` | **The Project Oracle.** Given any question, finds the structural truth across the entire repo. Merges AST facts, JSDoc intent, Git history, and human docs. |
+| `unravel.analyze` | Runs AST engine on provided files. Returns mutation chains, race conditions, closure captures, floating promises, pattern matches, and semantic archive hits. The evidence layer. |
+| `unravel.verify` | Takes the agent's diagnosis and checks every claim against real code. Hard-rejects hallucinated citations. The verification layer. |
+| `unravel.build_map` | Builds a Knowledge Graph from a project directory. Maps imports, function calls, and mutations. Embeds nodes via Gemini Embedding 2 for semantic routing. Incremental on subsequent calls. |
+| `unravel.query_graph` | Given a symptom, returns the most relevant files from the KG using keyword + semantic scoring and graph expansion. Returns past debugging sessions as `pre_briefing` if a matching codex entry exists. |
+| `unravel.query_visual` | Embeds a screenshot, data-URL, or image path in Gemini Embedding 2's cross-modal vector space and finds the source files most likely responsible. The only debugging tool that accepts a broken UI screenshot as input. |
 
-Detects `Set`, `Map`, or `Array` being mutated (`.delete()`, `.add()`, `.set()`, `.push()`, etc.) inside its own `.forEach()` callback. Includes **depth-1 callee expansion**: if the callback delegates to a helper function (`forEach(v => helper(v))`), the detector follows into `helper`'s body and checks for mutations there.
+---
 
-This is not a heuristic. It cites the exact ECMAScript specification:
+### `unravel.consult` 
 
-> *ECMA-262 §24.2.3.7: If a Set entry is deleted during iteration and then re-added, it will be visited again. `.delete(x)` followed by `.add(x)` inside a `.forEach()` callback causes `x` to be processed **twice**.*
+A tool that can answer questions about the project structure and architecture perfectly.
 
-The annotation is injected as a verified structural fact, not a suspicion. The model cannot contradict it.
-
-**Why depth-1 expansion matters:** Real code abstracts iteration callbacks into helpers. Without it, a pattern like:
+Unlike `analyze` (which needs a bug symptom), `consult` takes any plain-language question and finds the structural truth. It is used for architecture deep-dives, data-flow analysis, and feasibility studies.
 
 ```js
-votes.forEach(voter => _refreshVoterRecord(voter));
-// _refreshVoterRecord: votes.delete(voter); votes.add(updated);
+consult({ query: "How does the auth middleware interact with the session store?" })
+
+// The Scalpel: Force analysis on a specific core subsystem
+consult({ query: "...", include: ["src/core"] })
+
+// The Search: Navigate deep cross-file dependencies
+consult({ query: "...", maxFiles: 20 })
 ```
 
-...is invisible to a surface-only detector. With depth-1 expansion, `_refreshVoterRecord` is looked up in the file's function body map and searched for `votes.*` mutations. The hit is tagged `delete() (via _refreshVoterRecord()) L526`.
-
-### 2. Strict Comparison in Predicate Gate — Heuristic Signal
-
-Detects `>` or `<` comparisons inside functions whose names follow universal predicate naming conventions: `is*`, `can*`, `has*`, `should*`, `meets*`, `passes*`, `eligible*`. Clearly labelled as a heuristic signal, not a verified bug.
-
-**The signal is structural (naming convention), not domain-specific (vocabulary).** It fires equally on:
-- `isAdult(age)` → `age > 18` — should this be `>=`?
-- `canBorrow(score)` → `score > limit`
-- `hasPermission(level)` → `level > required`
-- `isLogUpToDate(idx)` → `idx > lastIndex`
-- `meetsThreshold(val)` → `val > minimum`
-
-Output appears in a clearly separated `HEURISTIC ATTENTION SIGNALS` block with explicit labelling — never mixed into the verified facts section.
-
-### 3. Multi-Root-Cause Output Schema
-
-`additionalRootCauses[]` and `uncoveredSymptoms[]` added to the output schema. The model is instructed with a precise independence test: a second root cause must have a different trigger condition, a different fix location, AND a different observable symptom. Fixing the primary root cause must not also fix it. A crash and its missing null guard are not two root causes. Two bugs in separate functions with independent failure modes are.
-
-### 4. Symptom Coverage Enforcement
-
-Fires when the symptom description contains a numbered list (`1. ... 2. ...`), a bullet list (`- ... - ...`), or explicit "N independent/separate bugs" language. Injects a coverage requirement before LLM reasoning: every described behavior must be either (A) explained as a causal consequence of the root cause, (B) identified as a separate independent root cause in `additionalRootCauses[]`, or (C) listed in `uncoveredSymptoms[]` with a reason it can't be diagnosed.
+**Response — The Source-Verified Intelligence Report:**
+*   **§0 Project Overview**: High-context synthesis of Git history, JSDoc intent, and local documentation.
+*   **§1 Structural Scope**: Explicit list of which files were analyzed vs. skipped by the KG router.
+*   **§2 AST Facts**: Deterministic mutation chains, async timing signatures, and closure captures.
+*   **§3 Cross-File Graph**: Call edges and symbol origins from `ast-project.js`.
+*   **§4 Memory**: Past Task Codex entries and Diagnosis Archive hits (requires Gemini key).
+*   **§5 Reasoning Mandate**: Detailed step-by-step instructions the LLM must follow to synthesize the truth.
 
 ---
 
-## Anti-Sycophancy Guardrails
-
-Every AI debugger has the same failure mode: it agrees with you. You say "race condition," it finds a race condition — whether or not one exists. Seven hardcoded rules the model cannot override:
-
-> **Rule 1** — If the code is correct, say *"No bug found."* Do not invent problems.
-
-> **Rule 2** — If the user's description contradicts the code, point out the contradiction.
-
-> **Rule 3** — If uncertain, say *"Cannot confirm without runtime execution."*
-
-> **Rule 4** — Every bug claim must cite exact line number + code fragment as proof.
-
-> **Rule 5** — Never describe code behavior that cannot be verified from provided files.
-
-> **Rule 6** — The crash site is never the root cause. Trace state backwards through mutation chains from the failure point. The root cause is where state was *first* corrupted.
-
-> **Rule 7** — A variable named `isPaused` does not guarantee the code is paused. Verify behavior from the execution chain, not naming conventions.
+All tools fail gracefully. No API key: keyword-only routing. No KG: analyze still works on provided files. No embeddings: pattern matching and AST detection unaffected.
 
 ---
 
-## The 8-Phase Pipeline
+## The 11-Phase Pipeline
+
+Used by the web app (internal LLM calls) and enforced via `_instructions` in MCP mode (agent's own LLM).
 
 | Phase | Name | What Happens |
 |------:|------|--------------|
 | 1 | **Read** | Read every file completely. No opinions yet. |
 | 2 | **Understand Intent** | For each function and module: what is it *trying* to do? |
-| 3 | **Understand Reality** | What is the code actually doing? Generate exactly 3 mutually exclusive hypotheses for any divergence. |
-| 4 | **Build Context** | Map dependencies and boundaries. Use AST ground truth — do not contradict it. |
-| 5 | **Diagnose** | Test each hypothesis against AST evidence. Kill contradicted ones. Quote the exact AST line that eliminates each — no citation, no elimination. |
-| 6 | **Minimal Fix** | Smallest surgical change, with unified diff. Architectural note added only for structural root causes. |
+| 3 | **Understand Reality** | What is the code *actually* doing? Generate exactly 3 mutually exclusive hypotheses. State `falsifiableIf[]` for each. EXCEPTION: trivially obvious bug (missing await, typo) = 1 hypothesis — but must justify inline. |
+| 3.5 | **Hypothesis Expansion** | After Phase 4 reveals cross-file dependencies: add at most +2 new hypotheses if new mechanisms were invisible before. **Hypothesis space closes permanently here.** |
+| 4 | **Build Context** | Map evidence per hypothesis: `supporting[]`, `contradicting[]`, `missing[]`. Verdict: SUPPORTED / CONTESTED / UNVERIFIABLE / SPECULATIVE. |
+| 5 | **Diagnose** | Eliminate contradicted hypotheses. Every elimination requires exact file + line citation. No citation, no elimination. |
+| 5.5 | **Adversarial Confirmation** | Actively try to disprove the surviving hypothesis. If adversarial kills it → re-enter Phase 3.5 (max 2 rounds). If 2+ survive: `multipleHypothesesSurvived: true` — do not force a single winner. |
+| 6 | **Minimal Fix** | Smallest surgical change. Unified diff. Architectural note added only for structural root causes. |
 | 7 | **Concept Extraction** | What programming concept does this bug teach? |
-| 8 | **Invariants** | What conditions must hold for correctness? |
+| 7.5 | **Pattern Propagation** | Scan all provided files for the same structural pattern elsewhere. Label each POTENTIAL RISK — not a confirmed bug. |
+| 8 | **Invariants + Fix Check** | State invariants that must hold for correctness. Verify the fix satisfies all of them. Revise once if violated. |
+
+### Hard Gates (verify rejects immediately if violated)
+
+- **HYPOTHESIS_GATE** — `hypotheses[]` must be present and non-empty. Proves Phase 3 ran.
+- **EVIDENCE_CITATION_GATE** — `rootCause` must contain at least one `file:line` citation.
+
+Both gates fire before any claim verification. A skipped hypothesis phase returns `PROTOCOL_VIOLATION`, not `REJECTED`.
+
+---
+
+## AST Detectors
+
+All detectors run deterministically via tree-sitter. Results are verified structural facts, not suspicions. Heuristic signals are clearly labelled separately.
+
+### Verified Structural Detectors
+
+**Variable mutation chains** — every write and read, by function, by line, conditional vs. unconditional path. Cross-function sharing (write in fn A, read in fn B) surfaced explicitly.
+
+**Global write races** — module-scope variables written before an `await` in async functions. Concurrent callers interleave. This is the structural signature of TOCTOU races.
+
+**Stale module captures** — `const x = fn()` at module scope where `fn()` returns a reference to a variable that later gets reassigned. The capture is made once at load time; the underlying variable moves on.
+
+**Constructor-captured references** — `new Class(arg)` where `arg` is a module-level variable that gets reassigned after construction. The instance holds a stale reference.
+
+**Closure captures** — inner functions reading outer scope bindings. Combined with async delay, this is the structural signature of stale closure bugs.
+
+**Floating promises** — async functions called without `await`. Detected in two passes: (1) known async APIs (`fetch`, `axios`, `readFile`, `query`, etc.) checked via `isAwaited` field on every timing node; (2) cross-file intersection finds user-defined async functions called without await anywhere in the project.
+
+**forEach collection mutations** — `Set`, `Map`, or `Array` mutated (`.delete()`, `.add()`, `.push()`) inside its own `.forEach()` callback. Includes depth-1 callee expansion: if the callback delegates to a helper function, the detector follows into the helper and checks for mutations there.
+
+> *ECMA-262 §24.2.3.7: If a Set entry is deleted during iteration and re-added, it will be visited again. `.delete(x)` followed by `.add(x)` inside `.forEach()` causes `x` to be processed twice.*
+
+**Listener parity** — `addEventListener` without a corresponding `removeEventListener`. The structural signature of memory leaks and orphan listener accumulation.
+
+**Direct state mutations** — `useState` setter pattern violations: `.push()`, `.splice()`, direct property assignment on state objects. React's shallow equality check misses these.
+
+**React hook patterns** — unstable dependencies in `useEffect`, `useMemo`, `useCallback`. Inline objects and arrays as dependencies recreate on every render, causing infinite loops.
+
+**Unawaited promise risk** — timing nodes (`fetch`, `readFile`, etc.) where `isAwaited === false` in cross-file context. Cross-referenced against the full `globalAsyncFns` set built across all files.
+
+### Heuristic Signal (clearly labelled)
+
+**Strict comparison in predicate gate** — `>` or `<` inside functions named `is*`, `can*`, `has*`, `should*`, `meets*`. Structural naming-convention signal. Fires equally on `isAdult(age) → age > 18` and `isLogUpToDate(idx) → idx > lastIndex`. Appears in a separate `HEURISTIC ATTENTION SIGNALS` block — never mixed with verified facts.
+
+### Parser matrix
+
+Three parsers, same output shape — the right one is chosen automatically per surface:
+
+| Parser | Used when | Call edges |
+|---|---|---|
+| Native tree-sitter (`ast-engine-ts.js`) | MCP server (`analyze()`) | ✅ Real edges via `buildCallGraph()` |
+| WASM tree-sitter (`ast-bridge-browser.js`) | Browser / web app | ✅ Real edges via `extractCalls()` |
+| Pure regex (`ast-bridge.js`) | Node.js fallback (no native bindings) | ❌ `calls: []` always empty |
+
+The regex fallback is the only path with empty call edges. MCP and web app both get genuine cross-file call data.
+
+---
+
+## Anti-Sycophancy Guardrails
+
+Every AI debugger has the same failure mode: it agrees with you. You say "race condition," it finds a race condition — whether or not one exists.
+
+Unravel's `_instructions` protocol enforces non-negotiable constraints the agent cannot override:
+
+> **MUST:** Generate exactly 3 mutually exclusive hypotheses before committing to a root cause. Each must have a distinct root mechanism — not variations of the same idea.
+
+> **MUST:** Every eliminated hypothesis requires the exact code fragment (file + line) that kills it. No citation, no elimination.
+
+> **MUST:** Trace state backwards through mutation chains. The root cause is where state was first corrupted. The crash site is never automatically the root cause.
+
+> **MUST:** ⛔ annotations on AST-verified facts are off-limits for adversarial disproof. Do not argue against them using browser speculation or absence of tests.
+
+> **DO NOT:** Name-behavior fallacy. A variable named `isPaused` does not guarantee the code pauses. Verify behavior from the execution chain.
+
+> **DO NOT:** Lower confidence below 0.85 merely because runtime logs are unavailable. If the exact mutation chain is traced, the evidence is sufficient.
+
+> **DO NOT:** If zero structural bugs found — say so. `STATIC_BLIND` verdict is returned when zero detectors fire and zero pattern matches exist. Lists possible non-code causes (environment, runtime data, third-party APIs) and tells the agent to stop looping.
+
+---
+
+## Semantic Intelligence Layer
+
+Beyond static analysis, Unravel builds persistent memory that improves with use. Three distinct systems, each solving a different problem:
+
+| Layer | File | Written by | Covers | Retrieved by |
+|---|---|---|---|---|
+| **Pattern Store** | `patterns.json` | `verify(PASSED)` automatic | Structural bug signatures | `matchPatterns()` in `analyze()` — §C hints |
+| **Diagnosis Archive** | `diagnosis-archive.json` | `verify(PASSED)` automatic | Full past diagnoses, 768-dim vectors | `searchDiagnosisArchive()` in `analyze()` — ⚡ hits |
+| **Task Codex** | `.unravel/codex/*.md` | Agent during task | File-level discoveries, irrelevance boundaries | `searchCodex()` in `query_graph()` — `pre_briefing` |
+
+```mermaid
+flowchart LR
+    subgraph AUTO["Automatic — every verify PASSED"]
+        PS["`**Pattern Store**
+        patterns.json
+        Weight +0.05 confirm
+        Weight -0.03 reject`"]
+        DA["`**Diagnosis Archive**
+        diagnosis-archive.json
+        768-dim embeddings
+        Cosine search ≥75%`"]
+    end
+    subgraph HUMAN["Agent-authored — during task"]
+        TC["`**Task Codex**
+        .unravel/codex/
+        Discoveries · boundaries
+        Cross-file connections`"]
+    end
+
+    PS -- "§C pattern hint" --> AN[analyze]
+    DA -- "⚡ archive hit" --> AN
+    TC -- "pre_briefing" --> QG[query_graph]
+    QG --> AN
+    AN --> VF[verify PASSED]
+    VF --> PS & DA
+```
+
+### Pattern Store
+
+Twenty pre-loaded structural bug signatures (race conditions, stale closures, spec violations, type confusion, orphan listeners). After every `verify(PASSED)`, matched pattern weights are bumped (+0.05, ceiling 1.0). After every `REJECTED`, weights decay (−0.03, floor 0.3). The asymmetric rates mean ~1.7× as many rejections as confirmations are needed to suppress a well-established pattern. Patterns persist to `.unravel/patterns.json` — committable to git, shared across the team.
+
+### Diagnosis Archive
+
+Every verified diagnosis is embedded via Gemini Embedding 2 (768-dim vector) and stored in `.unravel/diagnosis-archive.json`. On subsequent `analyze()` calls, the new symptom is embedded and cosine-compared against all past diagnoses. A match at ≥75% similarity surfaces as a ⚡ semantic archive hit in `critical_signal` — pointing directly to the past root cause before the agent has read a single file. Zero keyword overlap required.
+
+**Live test:** Symptom `"async initialization seems to complete but the plugins aren't actually ready — operations silently fail after startup"` retrieved a past diagnosis at 78% cosine similarity with zero shared keywords, pointing to `PluginManager.ts:16`.
+
+### Knowledge Graph + Embeddings
+
+`build_map` builds a structural map of your codebase (nodes: files/functions/classes, edges: imports/calls/mutations). If `GEMINI_API_KEY` is set, node summaries are embedded and stored. `query_graph` uses cosine similarity + graph expansion to route symptom text to the right files even when no keyword matches exist. Incremental rebuild: subsequent `build_map` calls SHA-256 hash every file and re-analyze only changed files.
+
+### Task Codex
+
+`.unravel/codex/` is institutional memory for debugging sessions. The agent writes a codex file during a task — discoveries, edits, and cross-file connections scoped to that specific problem. `query_graph` automatically surfaces relevant past codexes in `pre_briefing` before returning the file list. The agent reads past discoveries before opening any source files. Codex entries are also embedded for semantic retrieval — "redux resetting" finds a codex tagged `zustand, state-reversion`.
+
+### Visual Bug Reports
+
+`query_visual` accepts a PNG/JPEG/WebP screenshot (base64, data-URL, or file path), embeds it in Gemini Embedding 2's cross-modal vector space (same 768-dim geometry as text embeddings), and returns the source files most likely responsible by cosine similarity. Text symptom can be fused at 60/40 image/text weighting. This is the only debugging tool in existence that accepts a broken UI screenshot as its input query.
 
 ---
 
 ## Benchmark
 
-> **This is a stress benchmark, not a coverage benchmark.** Each bug is designed to target a known LLM failure mode — proximate fixation, sycophancy, async reasoning failures, multi-file state corruption — not to represent real-world frequency. 22 carefully adversarial bugs reveal more about failure modes than 200 average ones.
+> **This is a stress benchmark, not a coverage benchmark.** Each bug is designed to target a known LLM failure mode — proximate fixation, sycophancy, async reasoning failures, multi-file state corruption. 22 adversarial bugs reveal more about failure modes than 200 average ones.
 
-The benchmark validates on bugs where the model's behavior without AST grounding is known to fail or be unreliable. Easy, isolated bugs are not the target — any modern LLM handles those.
-
-### B-01 to B-21: Internal validation suite
+### B-01 to B-22: Internal validation suite
 
 | Suite | Result | Model | Notes |
 |-------|--------|-------|-------|
 | B-01 to B-20 (20 bugs) | 119/120 (99.2%) | Gemini 2.5 Flash + AST | One partial on PFR axis |
-| B-21: Ghost Tenant (extreme — 8-file multi-tenant race) | 6/6 (100%) | Gemini 2.5 Flash + AST | Global state write before async yield |
-| **Total** | **125/126 (99.2%)** | | |
+| Super Bug 1: Ghost Tenant (8-file multi-tenant race) | 6/6 (100%) | Gemini 2.5 Flash + AST | Global state write before async yield |
+| Super Bug 2: Counter Cache (cross-module stale reference) | 6/6 (100%) | MCP native engine | Constructor-captured reference, cross-file tracing |
+| Super Bug 3: Scheduler (4 bugs, 7 files, 2 red herrings) | 4/4 (100%) | MCP native engine | All detectors firing simultaneously |
+| **Total** | **135/136 (99.3%)** | | |
 
 Baseline comparison on the same bugs (Claude Sonnet 4.6, structured prompt, no AST):
 
 | System | Score | Notes |
 |--------|-------|-------|
-| Unravel (AST + Gemini 2.5 Flash) | 98.3% | |
-| Claude Sonnet 4.6 (structured prompt, no AST) | 100% | Optimal prompting, frontier model |
+| Unravel (AST + Gemini 2.5 Flash) | 99.3% | Fast, cheap model ($0.15/MTok input) |
+| Claude Sonnet 4.6 (structured prompt, no AST) | 100% | Frontier model, optimal prompting |
 
-The AST engine closes the reasoning gap between a fast, cheap model (Gemini 2.5 Flash) and a frontier model. The systems are **comparable on this benchmark** at peak configuration — which means Unravel's value is running smaller/cheaper models at near-frontier accuracy on hard bugs, not outperforming frontier models outright.
+The point is not the score. It's that the AST engine closes the reasoning gap between a fast, cheap model (Gemini 2.5 Flash) and a frontier model — at near-frontier accuracy on hard, adversarial bugs. The same bugs that required Claude Sonnet 4.6 were solved by Gemini 2.5 Flash with structural grounding. On B-22 (Raft Consensus), Unravel produced a more complete fix than Claude Sonnet 4.6 — removing the dead code Claude left behind.
 
 ### B-22: Raft Consensus — 3 independent bugs in 2,800 lines
 
@@ -377,12 +576,6 @@ The most challenging benchmark to date: a single large file (`raft-node.js`) wit
 | **Mode A** | `promotePreVotesToGrants` injects pre-vote records with `term: N-1` into `_grantedVotes`. `checkQuorum` calls `_refreshVoterRecord` which does `.delete(voterId)` + `.add(voterId)` on the same `Set` during `.forEach()`. ECMA-262: deleted-then-re-added elements are visited again — votes are double-counted. False quorum → split-brain. |
 | **Mode B** | `_isLogUpToDate` uses `>` instead of `>=` for the index comparison when terms match. Peers with equal logs reject valid candidates. Violates Raft §5.4.1. |
 
-**What each engine component contributed:**
-
-- **`detectForEachCollectionMutation`** — injected the ECMA-262 spec citation for the `.delete()` + `.add()` pattern as a verified fact. The LLM, knowing the pattern is a spec violation, reasoned to eliminate it entirely rather than patch around it: removed `_refreshVoterRecord`, removed the refresh logic in `checkQuorum`, replaced the unconditional `count++` with `if (record.term === currentTerm) count++`.
-- **Symptom coverage enforcer** — the symptom described Mode A and Mode B as numbered behaviors. The enforcer forced both to be addressed. Mode B (`_isLogUpToDate`) was found by the LLM reading the code once directed to look at log comparisons — no domain vocabulary heuristic involved.
-- **Multi-root-cause schema** — `additionalRootCauses[]` gave separate structured fields for both independent fixes.
-
 | Axis | Unravel | Claude Sonnet 4.6 | Notes |
 |------|:-------:|:-----------------:|-------|
 | RCA — Mode A | ✅ | ✅ | Both: correct root cause, correct files and lines |
@@ -390,67 +583,24 @@ The most challenging benchmark to date: a single large file (`raft-node.js`) wit
 | Evidence + causal chain | ✅ | ✅ | Both: full chains on both modes |
 | Fix — Mode B | ✅ | ✅ | Both: `>` → `>=` |
 | Fix — Mode A correctness | ✅ | ✅ | Both remove `promotePreVotesToGrants` call |
-| Fix — Mode A completeness | **More complete** | Partial | Unravel removes `_refreshVoterRecord` + refresh mechanism. Claude left them as dead code. |
+| Fix — Mode A completeness | **More complete** | Partial | Unravel removes `_refreshVoterRecord` + refresh mechanism. Claude left dead code. |
 | **Total** | **6/6** | **6/6** | Tie on rubric, Unravel more complete on fix |
 
-Note on fix completeness: With only `promotePreVotesToGrants` removed, `_refreshVoterRecord` remains a latent hazard — it will activate again if any future code introduces stale records. Removing the entire pattern (function + caller + mechanism) is the structurally complete fix. The ECMA-262 annotation is why Unravel got there: the model was told the `.delete()` + `.add()` pattern is a spec violation, not just logically misguided, which caused it to reason "eliminate the pattern" rather than "remove the function that creates the triggering records."
+The ECMA-262 annotation is why Unravel got there: the model was told the `.delete()` + `.add()` pattern is a spec violation, which caused it to reason "eliminate the pattern" rather than "remove the function that creates the triggering records."
 
-The validation data is in [`validation/results/raft node/`](validation/results/raft%20node/).
-
----
-
-## Three Modes
-
-<table>
-<tr>
-<td width="33%" align="center">
-
-### Debug
-**Root cause diagnosis**
-
-Full 8-phase pipeline. Traces state backwards from the symptom through mutation chains to the exact corruption point.
-
-Returns: root cause · evidence · unified diff · confidence · Mermaid diagrams
-
-*Best for: production bugs, async races, cross-file state corruption, anything that resisted multiple AI attempts.*
-
-</td>
-<td width="33%" align="center">
-
-### Explain
-**Architecture walkthrough**
-
-Reads 15–25 files for breadth. Maps module responsibilities, data flow direction, entry points, and dependency graph.
-
-Returns: module map · data flow · dependency graph · onboarding guide
-
-*Best for: onboarding to a new codebase, pre-refactor mapping, understanding legacy code.*
-
-</td>
-<td width="33%" align="center">
-
-### Security
-**Vulnerability audit**
-
-Traces attack surface across 8–12 files. Requires a concrete exploit payload — no vague "could be vulnerable" claims.
-
-Returns: vulnerability type · attack vector · proof-of-exploit · severity · remediation
-
-*Best for: pre-deploy audits, user-input chains, third-party dependency reviews.*
-
-</td>
-</tr>
-</table>
+Validation data: [`validation/results/raft node/`](validation/results/raft%20node/).
 
 ---
 
 ## Supported Models
 
-Your key. Your model. No data sent to Unravel servers.
+**MCP mode:** The agent's own model. Unravel makes zero generative calls. Whatever model is running Claude Code, Gemini CLI, or Cursor is the reasoning model. Unravel provides the evidence.
+
+**Web App and VS Code:** Your key. Your model. No data sent to Unravel servers.
 
 | Provider | Models |
 |----------|--------|
-| **Anthropic** | Claude Opus 4.5 · Claude Sonnet 4.5 · Claude Haiku 3.5 |
+| **Anthropic** | Claude Opus 4.6 · Claude Sonnet 4.6 · Claude Haiku 3.5 |
 | **Google** | Gemini 2.5 Flash · Gemini 2.5 Pro |
 | **OpenAI** | GPT-4o · GPT-4o-mini · o3 |
 
@@ -458,57 +608,36 @@ Your key. Your model. No data sent to Unravel servers.
 
 ## Language Support
 
-AST analysis currently supports **JavaScript · TypeScript · JSX · TSX** via tree-sitter WASM. The 8-phase pipeline and all three modes work for any language via the LLM layer; AST ground truth extraction is JS/TS-only.
+AST analysis supports **JavaScript · TypeScript · JSX · TSX** via tree-sitter (native bindings in MCP mode, WASM in browser). The 11-phase pipeline works for any language via the LLM layer; AST ground truth extraction is JS/TS-only.
 
-Python, Go, and Rust are next on the roadmap.
-
----
-
-## Output Presets
-
-| Preset | What You Get |
-|--------|-------------|
-| **Quick Fix** | Root cause + fix only. Read in 30 seconds. |
-| **Developer** | Root cause + fix + evidence + confidence score. |
-| **Full Report** | All sections: hypothesis elimination, per-phase trace, all Mermaid diagrams. |
-| **Custom** | Per-section checkboxes. Build exactly the report you need. |
-
-Every Full Report includes auto-generated Mermaid diagrams: Timeline · Hypothesis Tree · Data Flow · Dependency Graph · Variable State · Attack Vector *(Security mode)*
+Python, Go, and Rust grammar support is planned. Adding a language requires porting the detector logic — the grammar swap via tree-sitter is trivial, the detectors are the work.
 
 ---
 
-## Diagnosis Verdicts
+## CI/CD Integration
 
-Every analysis concludes with one of three structured verdicts.
+Unravel ships a CLI wrapper (`unravel-mcp/cli.js`) that runs the same AST engine without an agent, an MCP host, or any LLM calls. Output: SARIF 2.1.0, JSON, or text.
 
-**Normal diagnosis** — The bug is in the provided codebase. Returns `rootCause`, `minimalFix`, unified `diffBlock`, `hypothesisTree` with per-hypothesis `eliminatedBy` citations, `evidence[]`, `confidence`, and Mermaid edge data. If the symptom described multiple independent failure modes, also returns `additionalRootCauses[]`.
-
-**`LAYER_BOUNDARY`** — The root cause is upstream of all provided code: in the OS, the browser's native event system, a runtime, or a third-party native layer. The engine refuses to generate a patch that would be wrong by construction. Returns `rootCauseLayer`, `reason`, and `suggestedFixLayer`.
-
-**`EXTERNAL_FIX_TARGET`** — The diagnosis is correct and the bug is real, but the fix must be applied in a different repository. Returns the full diagnosis alongside `targetRepository`, `targetFile`, and `suggestedAction`.
-
----
-
-## Bug Taxonomy
-
-Every diagnosis is classified across 12 formal categories:
-
-```javascript
-const BUG_TAXONOMY = {
-  STATE_MUTATION:  "Variable meant to be constant is modified unexpectedly",
-  STALE_CLOSURE:   "Function captures outdated variable value",
-  RACE_CONDITION:  "Multiple async operations conflict on shared state",
-  TEMPORAL_LOGIC:  "Timing assumptions break (drift, wrong timestamps)",
-  EVENT_LIFECYCLE: "Missing cleanup, double-binds, or wrong event order",
-  TYPE_COERCION:   "Implicit type conversion causes unexpected behavior",
-  ENV_DEPENDENCY:  "Code behaves differently across environments",
-  ASYNC_ORDERING:  "Operations execute in wrong sequence",
-  DATA_FLOW:       "Data passes incorrectly between components or files",
-  UI_LOGIC:        "Visual behavior does not match intent",
-  MEMORY_LEAK:     "Resources not released, accumulate over time",
-  INFINITE_LOOP:   "Recursive or cyclic behavior creates runaway effect",
-};
+```bash
+node unravel-mcp/cli.js \
+  --directory ./src \
+  --symptom "identify all race conditions and async issues" \
+  --format sarif --output findings.sarif
 ```
+
+Exit codes: `0` (clean), `1` (CRITICAL finding — race condition, floating promise, or pattern weight ≥ 0.9), `2` (error).
+
+```yaml
+# .github/workflows/unravel.yml
+- name: Unravel AST Scan
+  run: node unravel-mcp/cli.js --directory ./src --format sarif --output findings.sarif
+  continue-on-error: true
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: findings.sarif }
+```
+
+Each finding appears inline on the PR diff. Zero agent. Zero LLM. Pure AST.
 
 ---
 
@@ -518,56 +647,71 @@ const BUG_TAXONOMY = {
 > The AST pass runs first. The model receives verified ground truth, not a blank canvas.
 
 > **2. Evidence required for every claim.**
-> No bug report without exact line number and code fragment. No exceptions.
+> No bug report without exact line number and code fragment. The verifier enforces this mechanically — not via prompting.
 
 > **3. Eliminate wrong hypotheses — don't guess at right ones.**
 > Generate multiple explanations, then kill the ones the evidence contradicts. The survivor is the diagnosis.
 
 > **4. Never hide uncertainty.**
-> *Uncertain* is better than *confident-wrong.* If two of three hypotheses survive elimination, say so.
+> *Uncertain* is better than *confident-wrong.* If two hypotheses survive elimination, report both. If zero structural bugs found, say so — don't fabricate findings.
 
 > **5. Separate verified facts from heuristic signals.**
 > AST-verified structural facts and heuristic attention signals appear in different output sections with different epistemic labels. The model knows which is which. So does the developer.
 
-> **6. Optimize for developer understanding, not impressive output.**
-> The goal is insight. Not a longer report.
+> **6. Zero generative calls in the evidence layer.**
+> Embeddings are deterministic retrieval math — not generation. They cannot hallucinate. The evidence layer (AST, graph traversal, pattern matching, cosine similarity) contains no text generation.
+
+> **7. Optimize for developer understanding, not impressive output.**
+> The goal is insight. Not a longer report. Standard mode output: ~4KB. Full mode: available on request.
 
 ---
 
 ## Project Status
 
 ```
-Phase 1    [done]  Web app, 8-phase pipeline, multi-provider, anti-sycophancy (7 rules)
-Phase 2    [done]  AST pre-analysis, open source
-Phase 3    [done]  Core engine extracted, VS Code extension (v0.3.0) end-to-end
-Phase 3.5  [done]  Pre-publish hardening (MemberExpression detection, input completeness)
-Phase 3.6  [done]  File handling hardening (Router-first GitHub, empty symptom support)
-Phase 4A   [done]  Multi-mode analysis (Debug / Explain / Security) + output presets
-Phase 5    [done]  GitHub Issue URL parsing, Action Center (Web + VS Code)
-Phase 4B   [done]  Intelligence layer:
-               Cross-file AST import resolution (ast-project.js)
-               Graph-frontier deterministic router (BFS, wired as Phase 0.5)
-               Progressive streaming (SSE, all 3 providers)
-               Tree-sitter primary engine — Babel removed
-               Floating promise detection (isAwaited guard)
-               React-specific AST patterns (useState, useEffect, useMemo/useCallback)
-               Fix completeness verifier (cross-file call graph guard)
-               proximate_crash_site field + Variable Trace UI
-               Prompt hardening (Rule 6, Rule 7, buggy context warning, mutual exclusivity)
-               CFG branch annotation — conditional vs. unconditional per mutation
-               Hypothesis elimination scoring — eliminatedBy field, AST citation required
-               Symptom contradiction checks — listener gap, crash site != root cause
-               Visual diff output — unified diffBlock field in every fix
-Phase 5.5  [done]  Pipeline hardening — error type classifier, cross-repo verdict,
-               verifier whitelist, LAYER_BOUNDARY false-positive fix, discipline rules,
-               EXTERNAL_FIX_TARGET verdict, framework name stop-list
-Phase 5.6  [done]  forEach mutation detector (ECMA-262 §24.2.3.7, depth-1 callee expansion)
-               Predicate gate strict comparison heuristic (structural, naming-convention)
-               Multi-root-cause schema (additionalRootCauses[], uncoveredSymptoms[])
-               Symptom coverage enforcement (numbered/bullet list detection)
-Phase 8    [planned]  UDB-51 benchmark — 51 bugs, 8 categories, multi-model comparison
-Phase 9    [planned]  Real-world validation — 20 real GitHub issues
-Phase 10   [planned]  Unravel Heavy — multi-agent parallel analysis
+Foundation  [done]  Web app, 11-phase pipeline (from original 8), multi-provider
+                    Anti-sycophancy rules, multi-root-cause schema
+                    VS Code extension (v0.3.0)
+
+Engine v3.x [done]  Tree-sitter primary engine — Babel removed
+                    Cross-file AST import resolution (ast-project.js)
+                    Graph-frontier deterministic router (BFS, Phase 0.5)
+                    forEach mutation detector (ECMA-262 §24.2.3.7, depth-1)
+                    Predicate gate strict comparison heuristic
+                    Phase 3.5 (Hypothesis Expansion)
+                    Phase 5.5 (Adversarial Confirmation)
+                    Phase 7.5 (Pattern Propagation)
+                    Phase 8.5 (Fix-Invariant Consistency Check)
+                    4-dimensional confidence recalibration
+                    Symptom contradiction checks (listener gap, crash site ≠ root)
+                    Fix completeness verifier (cross-file call graph guard)
+                    Prompt injection hardening
+
+MCP v3.4    [done]  MCP server — 5 tools (analyze, verify, build_map, query_graph, query_visual)
+                    Native tree-sitter (no WASM in Node.js — compiler-grade, zero crashes)
+                    Engine unification — same core for MCP, web app, and VS Code
+                    Cross-file analysis restored (canRunCrossFile gate fixed)
+                    Tiered output — priority/standard/full (standard: ~4KB, down from ~55KB)
+                    5-key structured response (critical_signal first, raw_ast_data opt-in)
+                    STATIC_BLIND verdict — explicit signal when AST cannot help
+                    Protocol hard gates — HYPOTHESIS_GATE, EVIDENCE_CITATION_GATE
+                    Pattern store — 20 pre-loaded signatures, learns from verified diagnoses
+                    Pattern weight decay — asymmetric bump/decay, floor 0.3
+                    Diagnosis archive — 768-dim embeddings, cosine search, zero-keyword retrieval
+                    Archive end-to-end confirmed — write + recall verified (b-07-ghost-ref)
+                    Knowledge Graph — incremental SHA-256 rebuild, auto-load on restart
+                    Gemini Embedding 2 — semantic routing, hub/all/off modes
+                    Task Codex — institutional debugging memory, semantic retrieval
+                    query_visual — screenshot → source files via cross-modal embedding
+                    Image routing live in webapp (§3.5) — same 768-dim cross-modal space
+                    Pre-AST pattern boosts in webapp KG router (§4.1) — no API key needed
+                    SARIF 2.1.0 + GitHub Action (PR annotations, exit codes)
+                    22-bug benchmark — 99.3% (Gemini 2.5 Flash + AST) vs 100% (Claude Sonnet 4.6, no AST)
+
+Planned     [ ]     Real-world GitHub issue validation (in progress)
+                    Python / Go language support
+                    Multi-agent divergence (excludeFiles parameter)
+                    Cross-project pattern sharing (opt-in, hash-only)
 ```
 
 ---
@@ -575,6 +719,40 @@ Phase 10   [planned]  Unravel Heavy — multi-agent parallel analysis
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports, new benchmark bugs, and detector proposals are especially welcome. The benchmark suite is in [`validation/`](validation/) — every result has a grade sheet with honest scoring.
+
+---
+
+## 🏗️ Acknowledgements & Prior Art
+
+Unravel stands on the shoulders of the community’s collective effort in making code more understandable for machines. Special thanks to:
+
+*   **[circle-ir](https://github.com/cogniumhq/circle-ir)** (Cognium) — For the multi-pass reliability and performance analysis concepts that inspired our supplementary analysis layer.
+*   **[Understand-Anything](https://github.com/Lum1104/Understand-Anything)** — For early conceptual inspiration on how to map and navigate deep codebase structures semantically.
+
+---
+
+## 🤝 Built with AI Partnership
+
+Unravel is a testament to the power of human-AI collaboration. While the core deterministic engine and architectural vision were driven by its human creator, this project was developed, debugged, and documented through an intensive partnership with state-of-the-art AI coding agents.
+
+This collaborative process wasn't just about writing code—it was a meta-experiment in using AI to build a tool that makes AI better. By leveraging AI to help architect the "Sandwich Protocol," Unravel stands as a model for how high-trust, deterministic software can be built in the age of agentic coding.
+
+---
+
+## 🎓 A Personal Note & Open Call
+
+Unravel began as an ambitious experiment: **Could we build a debugging engine that doesn't just guess, but genuinely *knows*?**
+
+As a student developer working on this project, I’ve poured everything into creating this deterministic "Sandwich Protocol"—but the road ahead is even more exciting. With the right tools and more rigorous testing, I believe Unravel can evolve into the ultimate Project Oracle for every developer.
+
+Because I'm working with a limited budget and a huge vision, I would love to hear from anyone—developers, researchers, or companies—who is interested in the intersection of AST analysis and AI. Whether you've found a bug, have an architectural suggestion, or want to discuss the future of deterministic AI coding, my door is open.
+
+**Let's build the future of zero-hallucination coding together.**
+
+*   **Telegram:** [@TheEruditeSpartan108](https://t.me/TheEruditeSpartan108)
+*   **Email:** [eruditespartan@gmail.com](mailto:eruditespartan@gmail.com)
+
+---
 
 ## License
 
@@ -586,7 +764,7 @@ BSL 1.1 — see [LICENSE](LICENSE).
 
 **Built by [Sambhav Jain](https://github.com/EruditeCoder108)**
 
-[Web App](https://vibeunravel.netlify.app) &nbsp;·&nbsp; [VS Code Extension](unravel-vscode/unravel-vscode-0.3.0.vsix) &nbsp;·&nbsp; [Research Paper](arXiv-paper.pdf) &nbsp;·&nbsp; [Architecture](ARCHITECTURE.md)
+[MCP Quickstart](#mcp-quickstart) &nbsp;·&nbsp; [Web App](https://vibeunravel.netlify.app) &nbsp;·&nbsp; [VS Code Extension](unravel-vscode/unravel-vscode-0.3.0.vsix) &nbsp;·&nbsp; [Architecture](#architecture)
 
 *If Unravel found a bug your AI missed — a star helps.*
 

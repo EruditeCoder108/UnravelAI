@@ -1,0 +1,170 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-18-lost-increment",
+    "analyzedAt": "2026-03-26T02:12:33.923Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/routes/VoteRouter.ts",
+      "type": "file",
+      "name": "VoteRouter.ts",
+      "filePath": "src/routes/VoteRouter.ts",
+      "summary": "",
+      "tags": [
+        "src-routes-VoteRouter"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/routes/VoteRouter.ts:VoteRouter",
+      "type": "class",
+      "name": "VoteRouter",
+      "filePath": "src/routes/VoteRouter.ts",
+      "lineRange": [
+        15,
+        15
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/services/VoteService.ts",
+      "type": "file",
+      "name": "VoteService.ts",
+      "filePath": "src/services/VoteService.ts",
+      "summary": "",
+      "tags": [
+        "src-services-VoteService"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/services/VoteService.ts:VoteService",
+      "type": "class",
+      "name": "VoteService",
+      "filePath": "src/services/VoteService.ts",
+      "lineRange": [
+        8,
+        8
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/store/VoteStore.ts",
+      "type": "file",
+      "name": "VoteStore.ts",
+      "filePath": "src/store/VoteStore.ts",
+      "summary": "",
+      "tags": [
+        "src-store-VoteStore"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/store/VoteStore.ts:VoteStore",
+      "type": "class",
+      "name": "VoteStore",
+      "filePath": "src/store/VoteStore.ts",
+      "lineRange": [
+        7,
+        7
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/routes/VoteRouter.ts",
+      "target": "class:src/routes/VoteRouter.ts:VoteRouter",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/VoteService.ts",
+      "target": "class:src/services/VoteService.ts:VoteService",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/store/VoteStore.ts",
+      "target": "class:src/store/VoteStore.ts:VoteStore",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/routes/VoteRouter.ts",
+      "target": "file:src/services/VoteService.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/routes/VoteRouter.ts",
+      "target": "file:src/store/VoteStore.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/services/VoteService.ts",
+      "target": "file:src/store/VoteStore.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

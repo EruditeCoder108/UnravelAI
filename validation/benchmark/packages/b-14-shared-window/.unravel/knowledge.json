@@ -1,0 +1,132 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-14-shared-window",
+    "analyzedAt": "2026-03-26T02:09:33.949Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/config/RateLimitConfig.ts",
+      "type": "file",
+      "name": "RateLimitConfig.ts",
+      "filePath": "src/config/RateLimitConfig.ts",
+      "summary": "",
+      "tags": [
+        "src-config-RateLimitConfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/handlers/RequestHandler.ts",
+      "type": "file",
+      "name": "RequestHandler.ts",
+      "filePath": "src/handlers/RequestHandler.ts",
+      "summary": "",
+      "tags": [
+        "src-handlers-RequestHandler"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/handlers/RequestHandler.ts:RequestHandler",
+      "type": "class",
+      "name": "RequestHandler",
+      "filePath": "src/handlers/RequestHandler.ts",
+      "lineRange": [
+        16,
+        16
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/middleware/RateLimiter.ts",
+      "type": "file",
+      "name": "RateLimiter.ts",
+      "filePath": "src/middleware/RateLimiter.ts",
+      "summary": "",
+      "tags": [
+        "src-middleware-RateLimiter"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/middleware/RateLimiter.ts:RateLimiter",
+      "type": "class",
+      "name": "RateLimiter",
+      "filePath": "src/middleware/RateLimiter.ts",
+      "lineRange": [
+        4,
+        4
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/handlers/RequestHandler.ts",
+      "target": "class:src/handlers/RequestHandler.ts:RequestHandler",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/middleware/RateLimiter.ts",
+      "target": "class:src/middleware/RateLimiter.ts:RateLimiter",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/handlers/RequestHandler.ts",
+      "target": "file:src/middleware/RateLimiter.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

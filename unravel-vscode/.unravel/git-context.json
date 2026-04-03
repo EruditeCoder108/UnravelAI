@@ -1,0 +1,68 @@
+{
+  "headHash": "523ccf3c5ad80d594662ce4057d5fcc83c01c5ce",
+  "data": {
+    "recentFiles": [
+      "unravel-v3/src/core/config.js",
+      ".gitignore",
+      "Language guide.txt",
+      "README.md",
+      "arXiv-paper.pdf",
+      "arXiv-paper.tex",
+      "bug_catalog.txt",
+      "old bugs for initial testing/bugcode1 pomodoro/index.html",
+      "old bugs for initial testing/bugcode1 pomodoro/script.js",
+      "old bugs for initial testing/bugcode1 pomodoro/styles.css"
+    ],
+    "hotFiles": [
+      "README.md (32 commits)",
+      "unravel-v3/src/App.jsx (24 commits)",
+      "unravel-v3/src/core/orchestrate.js (21 commits)",
+      "unravel-vscode/src/core/orchestrate.js (15 commits)",
+      "unravel-v3/src/core/config.js (14 commits)",
+      "unravel-v3/src/core/ast-engine-ts.js (14 commits)",
+      ".gitignore (9 commits)",
+      "unravel-v3/src/core/index.js (9 commits)"
+    ],
+    "recentCommits": [
+      "523ccf3 real world analogy constraint",
+      "c9c865f extra files removed",
+      "abe71ff UI fixes",
+      "c7692b5 spalsh screen",
+      "1435261 final2",
+      "eddedc9 video",
+      "00cfb3a final1",
+      "da2a8df all 20 done archive paper also looks good"
+    ],
+    "unstagedFiles": [
+      ".gitignore",
+      "README.md",
+      "arXiv-paper.pdf",
+      "unravel-v3/package-lock.json",
+      "unravel-v3/package.json",
+      "unravel-v3/src/App.jsx",
+      "unravel-v3/src/core/ast-engine-ts.js",
+      "unravel-v3/src/core/ast-project.js",
+      "unravel-v3/src/core/config.js",
+      "unravel-v3/src/core/orchestrate.js",
+      "unravel-v3/src/core/parse-json.js",
+      "unravel-v3/vite.config.js",
+      "unravel-vscode/esbuild.js",
+      "unravel-vscode/package.json",
+      "unravel-vscode/src/core/ast-engine-ts.js",
+      "unravel-vscode/src/core/ast-project.js",
+      "unravel-vscode/src/core/config.js",
+      "unravel-vscode/src/core/index.js",
+      "unravel-vscode/src/core/orchestrate.js",
+      "unravel-vscode/src/core/parse-json.js",
+      "unravel-vscode/src/core/provider.js",
+      "unravel-vscode/src/diagnostics.js",
+      "unravel-vscode/src/extension.js",
+      "unravel-vscode/src/sidebar.js",
+      "unravel-vscode/wasm/tree-sitter-javascript.wasm",
+      "unravel-vscode/wasm/tree-sitter-tsx.wasm",
+      "unravel-vscode/wasm/tree-sitter-typescript.wasm",
+      "validation/results/raft node/grade.md"
+    ],
+    "stagedFiles": []
+  }
+}

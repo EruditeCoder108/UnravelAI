@@ -11,6 +11,12 @@
 
 ---
 
+## 🚀 Unravel MCP Achievement
+
+The Unravel-enhanced agent significantly outperformed the native model's reasoning on **B-22 (Extreme Difficulty)**. While both models identified the Raft protocol error, only Unravel correctly flagged the **ECMAScript §24.2.3.7** rule: `Set.prototype.forEach` visits re-added elements again. This spec-level structural grounding allowed the MCP to prove the double-visit mechanism ($2 \times stale\_voter\_count$) and generate a **structurally complete fix** that removed the latent hazard entirely.
+
+---
+
 ## Run 1 (pre-improvements) — Unravel with old engine
 
 - Found Mode A mechanism correctly

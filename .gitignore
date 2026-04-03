@@ -20,22 +20,6 @@ desktop.ini
 *.log
 npm-debug.log*
 
-# Internal Planning Docs
-IMPLEMENTATION_PLAN.md
-unravel_blueprint.md
-vision.md
-issues.md
-small-issues.md
-ROADMAP.md
-research-analysis.txt
-New Text Document.txt
-New Text Document (2).txt
-plan.txt
-SKILL.md
-future-thoughts.md
-bug_catalog.txt
-Language guide.txt
-unravel-landing.html
 
 # Agent Config/Skills
 .agent/

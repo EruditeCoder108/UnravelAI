@@ -1,6 +1,0 @@
-{
-    "id": "unawaited_promise_no_cleanup_useeffect",
-    "category": "async",
-    "difficulty": "easy",
-    "symptom": "React warning: 'Can't perform a React state update on an unmounted component'. When navigating away from the inventory page quickly, the component unmounts but the fetch completes and tries to call setInventory on the unmounted component. Occasionally causes state corruption when navigating back quickly."
-}

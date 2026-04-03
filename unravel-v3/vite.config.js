@@ -1,10 +1,21 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath, URL } from 'url';
 
 export default defineConfig({
     plugins: [react()],
     define: {
         'process.env.NODE_ENV': JSON.stringify('production'),
+    },
+    resolve: {
+        alias: {
+            // Node.js 'module' built-in is not available in browsers.
+            // Vite externalizes it but its browser shim lacks 'createRequire',
+            // causing a binding error in graph-storage.js and indexer.js.
+            // Our stub exports createRequire as a no-op that throws when called —
+            // caught by _isNodeAvailable() so all Node.js paths are skipped cleanly.
+            'module': fileURLToPath(new URL('./src/stubs/node-module-stub.js', import.meta.url)),
+        },
     },
     build: {
         // esnext target lets esbuild keep top-level await and dynamic imports.

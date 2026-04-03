@@ -8,12 +8,15 @@ const buildOptions = {
     entryPoints: [path.join(__dirname, 'src', 'extension.js')],
     bundle: true,
     outfile: path.join(__dirname, 'out', 'extension.js'),
-    external: ['vscode'],       // vscode is provided by the runtime
+    external: ['vscode'],       // vscode is provided by the VS Code runtime
     format: 'cjs',              // VS Code requires CommonJS
     platform: 'node',           // Node.js APIs available
     target: 'node18',
     sourcemap: true,
     minify: false,              // Keep readable for debugging
+    // Suppress import.meta warning: our core files guard it with typeof __filename,
+    // so the import.meta.url branch is never reached in the CJS bundle.
+    logOverride: { 'empty-import-meta': 'silent' },
 };
 
 async function main() {

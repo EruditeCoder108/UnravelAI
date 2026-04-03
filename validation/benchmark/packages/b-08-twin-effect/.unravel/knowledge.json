@@ -1,0 +1,260 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "json",
+      "typescript"
+    ],
+    "frameworks": [],
+    "description": "c:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\b-08-twin-effect",
+    "analyzedAt": "2026-03-26T02:01:15.741Z",
+    "gitCommitHash": ""
+  },
+  "files": {},
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/components/CommentFeed.tsx",
+      "type": "file",
+      "name": "CommentFeed.tsx",
+      "filePath": "src/components/CommentFeed.tsx",
+      "summary": "Functions: CommentFeed",
+      "tags": [
+        "src-components-CommentFeed"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/components/CommentFeed.tsx:CommentFeed",
+      "type": "function",
+      "name": "CommentFeed",
+      "filePath": "src/components/CommentFeed.tsx",
+      "lineRange": [
+        14,
+        14
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/components/CommentInput.tsx",
+      "type": "file",
+      "name": "CommentInput.tsx",
+      "filePath": "src/components/CommentInput.tsx",
+      "summary": "Functions: CommentInput, handleSubmit",
+      "tags": [
+        "src-components-CommentInput"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/components/CommentInput.tsx:CommentInput",
+      "type": "function",
+      "name": "CommentInput",
+      "filePath": "src/components/CommentInput.tsx",
+      "lineRange": [
+        9,
+        9
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/components/CommentInput.tsx:handleSubmit",
+      "type": "function",
+      "name": "handleSubmit",
+      "filePath": "src/components/CommentInput.tsx",
+      "lineRange": [
+        12,
+        12
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/hooks/useRealtimeComments.ts",
+      "type": "file",
+      "name": "useRealtimeComments.ts",
+      "filePath": "src/hooks/useRealtimeComments.ts",
+      "summary": "Functions: useRealtimeComments, handleMessage",
+      "tags": [
+        "src-hooks-useRealtimeComments"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/hooks/useRealtimeComments.ts:useRealtimeComments",
+      "type": "function",
+      "name": "useRealtimeComments",
+      "filePath": "src/hooks/useRealtimeComments.ts",
+      "lineRange": [
+        14,
+        14
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/hooks/useRealtimeComments.ts:handleMessage",
+      "type": "function",
+      "name": "handleMessage",
+      "filePath": "src/hooks/useRealtimeComments.ts",
+      "lineRange": [
+        19,
+        19
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/ws/WebSocketClient.ts",
+      "type": "file",
+      "name": "WebSocketClient.ts",
+      "filePath": "src/ws/WebSocketClient.ts",
+      "summary": "",
+      "tags": [
+        "src-ws-WebSocketClient"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "class:src/ws/WebSocketClient.ts:WebSocketClient",
+      "type": "class",
+      "name": "WebSocketClient",
+      "filePath": "src/ws/WebSocketClient.ts",
+      "lineRange": [
+        17,
+        17
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:vite.config.ts",
+      "type": "file",
+      "name": "vite.config.ts",
+      "filePath": "vite.config.ts",
+      "summary": "",
+      "tags": [
+        "vite.config"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/components/CommentFeed.tsx",
+      "target": "func:src/components/CommentFeed.tsx:CommentFeed",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/components/CommentInput.tsx",
+      "target": "func:src/components/CommentInput.tsx:CommentInput",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/components/CommentInput.tsx",
+      "target": "func:src/components/CommentInput.tsx:handleSubmit",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hooks/useRealtimeComments.ts",
+      "target": "func:src/hooks/useRealtimeComments.ts:useRealtimeComments",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hooks/useRealtimeComments.ts",
+      "target": "func:src/hooks/useRealtimeComments.ts:handleMessage",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/ws/WebSocketClient.ts",
+      "target": "class:src/ws/WebSocketClient.ts:WebSocketClient",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/components/CommentFeed.tsx",
+      "target": "file:src/hooks/useRealtimeComments.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/components/CommentInput.tsx",
+      "target": "file:src/ws/WebSocketClient.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hooks/useRealtimeComments.ts",
+      "target": "file:src/ws/WebSocketClient.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

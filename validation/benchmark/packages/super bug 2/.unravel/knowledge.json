@@ -1,0 +1,1409 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "languages": [
+      "javascript",
+      "json"
+    ],
+    "frameworks": [],
+    "description": "C:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\super bug 2",
+    "analyzedAt": "2026-03-26T07:32:05.240Z",
+    "gitCommitHash": ""
+  },
+  "files": {
+    "package.json": "sha256:826590309e95074c6564631a395d7fac7eb053d1869eabaa19e305a6a10eac63",
+    "src/counter-store.js": "sha256:10f40c1928020b16471efdb5ebf952db5588657a077620d045479e717d6ce7db",
+    "src/hot-path-cache.js": "sha256:883dcb07b389d26355758d8c4dd93cd08d5a5e5b1ca5939b20a3f54145412271",
+    "src/limiter.js": "sha256:b5e33c6ff327e55c88a1c2faf9314ba786e5c838dfec3f812fb6a614e14f4823",
+    "src/policy-engine.js": "sha256:8001fa49408262d1bddafb12f3a3ca196da1a9ec2fa54165d713c747c43e5cab",
+    "src/rate-checker.js": "sha256:5dd89336a0e4500e9ebdc1a25d434960fa032c915f1035bbf96b0bcb8f6126b1",
+    "src/request-recorder.js": "sha256:6d95ca2fb8a8375ea8eb562efa66347628ee7e04ea910345055c17ed1afc3859",
+    "src/sync-coordinator.js": "sha256:adf8fafc53d6a75f7ab34164db7b8eccf6012525311a388d152b92c670cb6561",
+    "src/window-manager.js": "sha256:b42864694ee71f44b9f4a03250d54cf5ada8ded9bd3a954ec6ab50b2a8e37d89",
+    "tsconfig.json": "sha256:3e7ceee36133331b56dceb1456415624dbd96d65a9af1a05f7875850d10d1116"
+  },
+  "nodes": [
+    {
+      "id": "file:package.json",
+      "type": "file",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "",
+      "tags": [
+        "package"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "file:src/counter-store.js",
+      "type": "file",
+      "name": "counter-store.js",
+      "filePath": "src/counter-store.js",
+      "summary": "Functions: getActiveWindowId, getRotationCount, getCount, incrementCount, resetWindow, mergeRemoteCounters, getStoreDiagnostics",
+      "tags": [
+        "src-counter-store"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/counter-store.js:getActiveWindowId",
+      "type": "function",
+      "name": "getActiveWindowId",
+      "filePath": "src/counter-store.js",
+      "lineRange": [
+        10,
+        10
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/counter-store.js:getRotationCount",
+      "type": "function",
+      "name": "getRotationCount",
+      "filePath": "src/counter-store.js",
+      "lineRange": [
+        11,
+        11
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/counter-store.js:getCount",
+      "type": "function",
+      "name": "getCount",
+      "filePath": "src/counter-store.js",
+      "lineRange": [
+        13,
+        13
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/counter-store.js:incrementCount",
+      "type": "function",
+      "name": "incrementCount",
+      "filePath": "src/counter-store.js",
+      "lineRange": [
+        18,
+        18
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/counter-store.js:resetWindow",
+      "type": "function",
+      "name": "resetWindow",
+      "filePath": "src/counter-store.js",
+      "lineRange": [
+        33,
+        33
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/counter-store.js:mergeRemoteCounters",
+      "type": "function",
+      "name": "mergeRemoteCounters",
+      "filePath": "src/counter-store.js",
+      "lineRange": [
+        40,
+        40
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/counter-store.js:getStoreDiagnostics",
+      "type": "function",
+      "name": "getStoreDiagnostics",
+      "filePath": "src/counter-store.js",
+      "lineRange": [
+        49,
+        49
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/hot-path-cache.js",
+      "type": "file",
+      "name": "hot-path-cache.js",
+      "filePath": "src/hot-path-cache.js",
+      "summary": "Functions: checkHotPath, recordHit, flushHitBuffer, invalidateClient, clearForRotation, getCacheDiagnostics",
+      "tags": [
+        "src-hot-path-cache"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/hot-path-cache.js:checkHotPath",
+      "type": "function",
+      "name": "checkHotPath",
+      "filePath": "src/hot-path-cache.js",
+      "lineRange": [
+        46,
+        46
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/hot-path-cache.js:recordHit",
+      "type": "function",
+      "name": "recordHit",
+      "filePath": "src/hot-path-cache.js",
+      "lineRange": [
+        60,
+        60
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/hot-path-cache.js:flushHitBuffer",
+      "type": "function",
+      "name": "flushHitBuffer",
+      "filePath": "src/hot-path-cache.js",
+      "lineRange": [
+        72,
+        72
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/hot-path-cache.js:invalidateClient",
+      "type": "function",
+      "name": "invalidateClient",
+      "filePath": "src/hot-path-cache.js",
+      "lineRange": [
+        80,
+        80
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/hot-path-cache.js:clearForRotation",
+      "type": "function",
+      "name": "clearForRotation",
+      "filePath": "src/hot-path-cache.js",
+      "lineRange": [
+        86,
+        86
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/hot-path-cache.js:getCacheDiagnostics",
+      "type": "function",
+      "name": "getCacheDiagnostics",
+      "filePath": "src/hot-path-cache.js",
+      "lineRange": [
+        91,
+        91
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "class:src/hot-path-cache.js:HotPathCache",
+      "type": "class",
+      "name": "HotPathCache",
+      "filePath": "src/hot-path-cache.js",
+      "lineRange": [
+        7,
+        7
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/limiter.js",
+      "type": "file",
+      "name": "limiter.js",
+      "filePath": "src/limiter.js",
+      "summary": "Functions: init, processRequest, peek, resetClientLimit, setClientOverride, triggerRotation, getDiagnostics, shutdown",
+      "tags": [
+        "src-limiter"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/limiter.js:init",
+      "type": "function",
+      "name": "init",
+      "filePath": "src/limiter.js",
+      "lineRange": [
+        10,
+        10
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/limiter.js:processRequest",
+      "type": "function",
+      "name": "processRequest",
+      "filePath": "src/limiter.js",
+      "lineRange": [
+        18,
+        18
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/limiter.js:peek",
+      "type": "function",
+      "name": "peek",
+      "filePath": "src/limiter.js",
+      "lineRange": [
+        24,
+        24
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/limiter.js:resetClientLimit",
+      "type": "function",
+      "name": "resetClientLimit",
+      "filePath": "src/limiter.js",
+      "lineRange": [
+        28,
+        28
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/limiter.js:setClientOverride",
+      "type": "function",
+      "name": "setClientOverride",
+      "filePath": "src/limiter.js",
+      "lineRange": [
+        29,
+        29
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/limiter.js:triggerRotation",
+      "type": "function",
+      "name": "triggerRotation",
+      "filePath": "src/limiter.js",
+      "lineRange": [
+        30,
+        30
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/limiter.js:getDiagnostics",
+      "type": "function",
+      "name": "getDiagnostics",
+      "filePath": "src/limiter.js",
+      "lineRange": [
+        32,
+        32
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/limiter.js:shutdown",
+      "type": "function",
+      "name": "shutdown",
+      "filePath": "src/limiter.js",
+      "lineRange": [
+        41,
+        41
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/policy-engine.js",
+      "type": "file",
+      "name": "policy-engine.js",
+      "filePath": "src/policy-engine.js",
+      "summary": "Functions: evaluatePolicy, computeUsageMultiplier, fetchClientTier, invalidatePolicyCache, getPolicyDiagnostics, delay",
+      "tags": [
+        "src-policy-engine"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/policy-engine.js:evaluatePolicy",
+      "type": "function",
+      "name": "evaluatePolicy",
+      "filePath": "src/policy-engine.js",
+      "lineRange": [
+        13,
+        13
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/policy-engine.js:computeUsageMultiplier",
+      "type": "function",
+      "name": "computeUsageMultiplier",
+      "filePath": "src/policy-engine.js",
+      "lineRange": [
+        35,
+        35
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/policy-engine.js:fetchClientTier",
+      "type": "function",
+      "name": "fetchClientTier",
+      "filePath": "src/policy-engine.js",
+      "lineRange": [
+        50,
+        50
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/policy-engine.js:invalidatePolicyCache",
+      "type": "function",
+      "name": "invalidatePolicyCache",
+      "filePath": "src/policy-engine.js",
+      "lineRange": [
+        64,
+        64
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/policy-engine.js:getPolicyDiagnostics",
+      "type": "function",
+      "name": "getPolicyDiagnostics",
+      "filePath": "src/policy-engine.js",
+      "lineRange": [
+        68,
+        68
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/policy-engine.js:delay",
+      "type": "function",
+      "name": "delay",
+      "filePath": "src/policy-engine.js",
+      "lineRange": [
+        76,
+        76
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/rate-checker.js",
+      "type": "file",
+      "name": "rate-checker.js",
+      "filePath": "src/rate-checker.js",
+      "summary": "Functions: checkLimit, recordRequest, resetClient, getClientStatus",
+      "tags": [
+        "src-rate-checker"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/rate-checker.js:checkLimit",
+      "type": "function",
+      "name": "checkLimit",
+      "filePath": "src/rate-checker.js",
+      "lineRange": [
+        8,
+        8
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/rate-checker.js:recordRequest",
+      "type": "function",
+      "name": "recordRequest",
+      "filePath": "src/rate-checker.js",
+      "lineRange": [
+        47,
+        47
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/rate-checker.js:resetClient",
+      "type": "function",
+      "name": "resetClient",
+      "filePath": "src/rate-checker.js",
+      "lineRange": [
+        53,
+        53
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/rate-checker.js:getClientStatus",
+      "type": "function",
+      "name": "getClientStatus",
+      "filePath": "src/rate-checker.js",
+      "lineRange": [
+        57,
+        57
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/request-recorder.js",
+      "type": "file",
+      "name": "request-recorder.js",
+      "filePath": "src/request-recorder.js",
+      "summary": "Functions: recordRequest, getRecentRequests, getAggregateStats",
+      "tags": [
+        "src-request-recorder"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/request-recorder.js:recordRequest",
+      "type": "function",
+      "name": "recordRequest",
+      "filePath": "src/request-recorder.js",
+      "lineRange": [
+        6,
+        6
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/request-recorder.js:getRecentRequests",
+      "type": "function",
+      "name": "getRecentRequests",
+      "filePath": "src/request-recorder.js",
+      "lineRange": [
+        21,
+        21
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/request-recorder.js:getAggregateStats",
+      "type": "function",
+      "name": "getAggregateStats",
+      "filePath": "src/request-recorder.js",
+      "lineRange": [
+        27,
+        27
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/sync-coordinator.js",
+      "type": "file",
+      "name": "sync-coordinator.js",
+      "filePath": "src/sync-coordinator.js",
+      "summary": "Functions: initSync, fetchWindowSync, reportRotation, syncWithPeers, getActiveOverrides, setOverride, gatherRemoteStats, broadcastToPeers, fetchPeerCounters, fetchPeerStats, sleep",
+      "tags": [
+        "src-sync-coordinator"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:initSync",
+      "type": "function",
+      "name": "initSync",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        11,
+        11
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:fetchWindowSync",
+      "type": "function",
+      "name": "fetchWindowSync",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        20,
+        20
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:reportRotation",
+      "type": "function",
+      "name": "reportRotation",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        28,
+        28
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:syncWithPeers",
+      "type": "function",
+      "name": "syncWithPeers",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        42,
+        42
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:getActiveOverrides",
+      "type": "function",
+      "name": "getActiveOverrides",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        58,
+        58
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:setOverride",
+      "type": "function",
+      "name": "setOverride",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        66,
+        66
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:gatherRemoteStats",
+      "type": "function",
+      "name": "gatherRemoteStats",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        75,
+        75
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:broadcastToPeers",
+      "type": "function",
+      "name": "broadcastToPeers",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        86,
+        86
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:fetchPeerCounters",
+      "type": "function",
+      "name": "fetchPeerCounters",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        93,
+        93
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:fetchPeerStats",
+      "type": "function",
+      "name": "fetchPeerStats",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        94,
+        94
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/sync-coordinator.js:sleep",
+      "type": "function",
+      "name": "sleep",
+      "filePath": "src/sync-coordinator.js",
+      "lineRange": [
+        96,
+        96
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:src/window-manager.js",
+      "type": "file",
+      "name": "window-manager.js",
+      "filePath": "src/window-manager.js",
+      "summary": "Functions: startRotationLoop, stopRotationLoop, rotateWindow, forceRotation, getManagerDiagnostics",
+      "tags": [
+        "src-window-manager"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    },
+    {
+      "id": "func:src/window-manager.js:startRotationLoop",
+      "type": "function",
+      "name": "startRotationLoop",
+      "filePath": "src/window-manager.js",
+      "lineRange": [
+        11,
+        11
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/window-manager.js:stopRotationLoop",
+      "type": "function",
+      "name": "stopRotationLoop",
+      "filePath": "src/window-manager.js",
+      "lineRange": [
+        19,
+        19
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/window-manager.js:rotateWindow",
+      "type": "function",
+      "name": "rotateWindow",
+      "filePath": "src/window-manager.js",
+      "lineRange": [
+        26,
+        26
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/window-manager.js:forceRotation",
+      "type": "function",
+      "name": "forceRotation",
+      "filePath": "src/window-manager.js",
+      "lineRange": [
+        64,
+        64
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "func:src/window-manager.js:getManagerDiagnostics",
+      "type": "function",
+      "name": "getManagerDiagnostics",
+      "filePath": "src/window-manager.js",
+      "lineRange": [
+        71,
+        71
+      ],
+      "summary": "",
+      "tags": [],
+      "complexity": "moderate",
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "id": "file:tsconfig.json",
+      "type": "file",
+      "name": "tsconfig.json",
+      "filePath": "tsconfig.json",
+      "summary": "",
+      "tags": [
+        "tsconfig"
+      ],
+      "complexity": "moderate",
+      "trustLevel": "LLM_INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:src/counter-store.js",
+      "target": "func:src/counter-store.js:getActiveWindowId",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/counter-store.js",
+      "target": "func:src/counter-store.js:getRotationCount",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/counter-store.js",
+      "target": "func:src/counter-store.js:getCount",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/counter-store.js",
+      "target": "func:src/counter-store.js:incrementCount",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/counter-store.js",
+      "target": "func:src/counter-store.js:resetWindow",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/counter-store.js",
+      "target": "func:src/counter-store.js:mergeRemoteCounters",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/counter-store.js",
+      "target": "func:src/counter-store.js:getStoreDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hot-path-cache.js",
+      "target": "func:src/hot-path-cache.js:checkHotPath",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hot-path-cache.js",
+      "target": "func:src/hot-path-cache.js:recordHit",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hot-path-cache.js",
+      "target": "func:src/hot-path-cache.js:flushHitBuffer",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hot-path-cache.js",
+      "target": "func:src/hot-path-cache.js:invalidateClient",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hot-path-cache.js",
+      "target": "func:src/hot-path-cache.js:clearForRotation",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hot-path-cache.js",
+      "target": "func:src/hot-path-cache.js:getCacheDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hot-path-cache.js",
+      "target": "class:src/hot-path-cache.js:HotPathCache",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "func:src/limiter.js:init",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "func:src/limiter.js:processRequest",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "func:src/limiter.js:peek",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "func:src/limiter.js:resetClientLimit",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "func:src/limiter.js:setClientOverride",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "func:src/limiter.js:triggerRotation",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "func:src/limiter.js:getDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "func:src/limiter.js:shutdown",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/policy-engine.js",
+      "target": "func:src/policy-engine.js:evaluatePolicy",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/policy-engine.js",
+      "target": "func:src/policy-engine.js:computeUsageMultiplier",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/policy-engine.js",
+      "target": "func:src/policy-engine.js:fetchClientTier",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/policy-engine.js",
+      "target": "func:src/policy-engine.js:invalidatePolicyCache",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/policy-engine.js",
+      "target": "func:src/policy-engine.js:getPolicyDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/policy-engine.js",
+      "target": "func:src/policy-engine.js:delay",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/rate-checker.js",
+      "target": "func:src/rate-checker.js:checkLimit",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/rate-checker.js",
+      "target": "func:src/rate-checker.js:recordRequest",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/rate-checker.js",
+      "target": "func:src/rate-checker.js:resetClient",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/rate-checker.js",
+      "target": "func:src/rate-checker.js:getClientStatus",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/request-recorder.js",
+      "target": "func:src/request-recorder.js:recordRequest",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/request-recorder.js",
+      "target": "func:src/request-recorder.js:getRecentRequests",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/request-recorder.js",
+      "target": "func:src/request-recorder.js:getAggregateStats",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:initSync",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:fetchWindowSync",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:reportRotation",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:syncWithPeers",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:getActiveOverrides",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:setOverride",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:gatherRemoteStats",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:broadcastToPeers",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:fetchPeerCounters",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:fetchPeerStats",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "func:src/sync-coordinator.js:sleep",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/window-manager.js",
+      "target": "func:src/window-manager.js:startRotationLoop",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/window-manager.js",
+      "target": "func:src/window-manager.js:stopRotationLoop",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/window-manager.js",
+      "target": "func:src/window-manager.js:rotateWindow",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/window-manager.js",
+      "target": "func:src/window-manager.js:forceRotation",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/window-manager.js",
+      "target": "func:src/window-manager.js:getManagerDiagnostics",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/hot-path-cache.js",
+      "target": "file:src/counter-store.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "file:src/rate-checker.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "file:src/request-recorder.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "file:src/window-manager.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "file:src/sync-coordinator.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "file:src/counter-store.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/limiter.js",
+      "target": "file:src/hot-path-cache.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/policy-engine.js",
+      "target": "file:src/counter-store.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/rate-checker.js",
+      "target": "file:src/hot-path-cache.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/rate-checker.js",
+      "target": "file:src/counter-store.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/rate-checker.js",
+      "target": "file:src/policy-engine.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/rate-checker.js",
+      "target": "file:src/sync-coordinator.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/request-recorder.js",
+      "target": "file:src/counter-store.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/sync-coordinator.js",
+      "target": "file:src/counter-store.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/window-manager.js",
+      "target": "file:src/counter-store.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/window-manager.js",
+      "target": "file:src/hot-path-cache.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    },
+    {
+      "source": "file:src/window-manager.js",
+      "target": "file:src/sync-coordinator.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "trustLevel": "AST_VERIFIED"
+    }
+  ],
+  "layers": [],
+  "tour": []
+}

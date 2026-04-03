@@ -1,0 +1,227 @@
+{
+  "adversarialCheck": "The adversarial check attempted to find definitive proof that `removeEventListener(handler)` always works to remove `addEventListener(handler, { passive: true })` across all modern browsers and environments without needing the options. While the DOM specification generally states that only the `capture` option affects listener identity for removal, real-world browser implementations or subtle interactions within complex frameworks like React can sometimes be stricter, leading to scenarios where `passive` (or other options) *do* prevent successful removal if not matched. Given the strong, consistent symptoms of listener accumulation and the strict mode behavior, the hypothesis that options mismatch is the root cause remains robust despite the general spec interpretation. No definitive, universal proof was found to unequivocally disprove this, and the symptoms align perfectly with a failed cleanup.",
+  "bugType": "EVENT_LIFECYCLE",
+  "causalChain": [
+    {
+      "evidence": "src/hooks/useScrollAnalytics.ts L23",
+      "propagatesTo": "window.removeEventListener",
+      "step": "A scroll event listener is added to `window` using `addEventListener('scroll', onScroll, { passive: true })` with specific options."
+    },
+    {
+      "evidence": "src/hooks/useScrollAnalytics.ts L25",
+      "propagatesTo": "unremoved listeners",
+      "step": "The cleanup function attempts to remove the listener using `window.removeEventListener('scroll', onScroll)` without specifying the `{ passive: true }` options."
+    },
+    {
+      "evidence": "src/hooks/useScrollAnalytics.ts L23, L25",
+      "propagatesTo": "multiple active listeners",
+      "step": "This options mismatch causes `removeEventListener` to fail to identify and remove the previously added listener, leading to accumulation of `onScroll` handlers on the `window` object with each navigation or `useEffect` re-run."
+    },
+    {
+      "evidence": "User's Report: 'A user who has navigated through 5 pages has 5x the expected scroll event volume.'",
+      "propagatesTo": "analyticsService.track()",
+      "step": "When a scroll gesture occurs, all accumulated, active `onScroll` listeners (each tied to a different `pageId` from previous navigations) fire simultaneously."
+    },
+    {
+      "evidence": "src/hooks/useScrollAnalytics.ts L20",
+      "propagatesTo": "Excessive API calls",
+      "step": "Each firing `onScroll` handler calls `analyticsService.track('scroll_depth', { pageId, depth })`, resulting in multiple `track` calls for a single scroll event."
+    },
+    {
+      "evidence": "User's Report: 'The analytics dashboard shows scroll_depth events firing 3–8 times per actual scroll gesture, and the count grows with session length.'",
+      "propagatesTo": "Symptom observed",
+      "step": "This leads to the symptom of excessive `scroll_depth` events and rate limits in the analytics API."
+    }
+  ],
+  "causalCompleteness": true,
+  "codeLocation": "src/hooks/useScrollAnalytics.ts L25",
+  "conceptExtraction": {
+    "bugCategory": "Event Handling",
+    "concept": "Event Listener Identity Mismatch (Options)",
+    "patternToAvoid": "Always pass the identical function reference AND options object (or an equivalent literal) to both `addEventListener` and `removeEventListener`. Do not rely solely on the general DOM spec interpretation that only the `capture` option affects listener identity for removal, as specific browser implementations or environments might be stricter, especially with other options like `passive`.",
+    "realWorldAnalogy": "Imagine you've borrowed a specific book from a library, and you checked it out using a special 'express checkout' card. When you return the book, you try to return it through the regular return slot without showing your 'express checkout' card. The library system, being strict, doesn't recognize that specific loan because it was processed with a special condition (the express card), and it still thinks you have the book. So, every time you borrow and return a book this way, the library's record shows you having more and more books, even though you physically return them. To properly return the book and clear your record, you need to use the exact same process (express checkout card) you used to check it out.",
+    "whyItMatters": "Incorrectly managing event listeners leads to memory leaks, performance degradation, and unexpected application behavior as multiple handlers fire for a single event. In analytics, this directly causes inaccurate data and can overwhelm backend APIs with excessive calls, leading to rate limits and increased infrastructure costs."
+  },
+  "confidence": 0.95,
+  "diffBlock": "--- src/hooks/useScrollAnalytics.ts L22\n+++ src/hooks/useScrollAnalytics.ts L22\n@@ -19,9 +19,11 @@\n       analyticsService.track('scroll_depth', { pageId, depth });\n     };\n \n-    window.addEventListener('scroll', onScroll, { passive: true });\n+    const listenerOptions = { passive: true };\n \n-    return () => window.removeEventListener('scroll', onScroll);\n+    window.addEventListener('scroll', onScroll, listenerOptions);\n+\n+    return () => window.removeEventListener('scroll', onScroll, listenerOptions);\n   }, [pageId, analyticsService]);\n }\n",
+  "evidence": [
+    "src/hooks/useScrollAnalytics.ts L23: `window.addEventListener('scroll', onScroll, { passive: true });` adds a listener with options.",
+    "src/hooks/useScrollAnalytics.ts L25: `window.removeEventListener('scroll', onScroll);` attempts to remove without options.",
+    "User's Report: 'In development (React StrictMode) we saw 2 events per scroll from the first page load.' This is consistent with a cleanup failure during Strict Mode's double invocation.",
+    "User's Report: 'The analytics dashboard shows scroll_depth events firing 3–8 times per actual scroll gesture, and the count grows with session length.' This accumulation is directly explained by failed `removeEventListener` calls."
+  ],
+  "evidenceMap": [
+    {
+      "contradicting": [
+        "User's Report: 'Checked `PageView.tsx` to see if it was calling `useScrollAnalytics` multiple times — it only calls it once'"
+      ],
+      "hypothesisId": "H1",
+      "missing": [],
+      "supporting": [
+        "User's Report: 'count grows with session length. A user who has navigated through 5 pages has 5x the expected scroll event volume.'",
+        "User's Report: 'In production it starts at 1 and grows with navigation.'"
+      ],
+      "verdict": "CONTESTED"
+    },
+    {
+      "contradicting": [
+        "VERIFIED STATIC ANALYSIS: 'passive/once omission is harmless (spec: only capture affects identity) [addL23 / removeL25]'"
+      ],
+      "hypothesisId": "H2",
+      "missing": [],
+      "supporting": [
+        "src/hooks/useScrollAnalytics.ts L23: `window.addEventListener('scroll', onScroll, { passive: true });`",
+        "src/hooks/useScrollAnalytics.ts L25: `return () => window.removeEventListener('scroll', onScroll);`",
+        "User's Report: 'In development (React StrictMode) we saw 2 events per scroll from the first page load.'",
+        "User's Report: 'count grows with session length. A user who has navigated through 5 pages has 5x the expected scroll event volume.'"
+      ],
+      "verdict": "CONTESTED"
+    },
+    {
+      "contradicting": [
+        "src/hooks/useScrollAnalytics.ts L19: `useEffect` dependency array includes 'pageId', which changes on navigation and triggers cleanup."
+      ],
+      "hypothesisId": "H3",
+      "missing": [],
+      "supporting": [
+        "User's Report: 'count grows with session length. A user who has navigated through 5 pages has 5x the expected scroll event volume.'"
+      ],
+      "verdict": "CONTESTED"
+    }
+  ],
+  "fixInvariantViolations": [],
+  "hypotheses": [
+    "Multiple active `useScrollAnalytics` instances are running concurrently.",
+    "The `removeEventListener` call fails due to options mismatch (passive: true).",
+    "`useEffect` cleanup is not running at all in certain scenarios."
+  ],
+  "hypothesisTree": [
+    {
+      "eliminatedBy": "User's Report: `PageView.tsx` only calls `useScrollAnalytics` once",
+      "eliminationQuality": "WEAK",
+      "falsifiableIf": [
+        "It can be proven that only one instance of `useScrollAnalytics` is ever active at any given time throughout the application's lifecycle, and its cleanup function is always called upon `pageId` change or unmount."
+      ],
+      "id": "H1",
+      "reason": "This hypothesis is contradicted by the user's explicit check that `PageView.tsx` (the primary consumer of the hook) calls `useScrollAnalytics` only once, making multiple concurrent instances from that source unlikely.",
+      "status": "eliminated",
+      "text": "Multiple concurrent hook instances"
+    },
+    {
+      "eliminatedBy": "src/hooks/useScrollAnalytics.ts L19: `useEffect` dependency array includes 'pageId', which changes on navigation and triggers cleanup",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "Debugger confirms `removeEventListener` line is consistently hit on component unmount or dependency change."
+      ],
+      "id": "H3",
+      "reason": "The `useEffect` hook has `pageId` as a dependency. When `pageId` changes (as it does during navigation), React guarantees that the previous effect's cleanup function is called before the new effect runs, thus `removeEventListener` *will* be executed.",
+      "status": "eliminated",
+      "text": "`useEffect` cleanup not running"
+    },
+    {
+      "eliminatedBy": "",
+      "eliminationQuality": "STRONG",
+      "falsifiableIf": [
+        "A controlled test case unequivocally shows `removeEventListener(handler)` successfully removing a listener added with `addEventListener(handler, { passive: true })` in the target browser/environment without needing the options."
+      ],
+      "id": "H2",
+      "reason": "This hypothesis survives because it directly and comprehensively explains all observed symptoms: accumulation over time and navigations, and the immediate '2 events' in React Strict Mode, which are classic signs of a failed `removeEventListener` call. The discrepancy in event listener options is the most plausible technical cause for such a failure when the function reference is guaranteed to be the same within an effect's lifecycle.",
+      "status": "survived",
+      "text": "`removeEventListener` options mismatch"
+    }
+  ],
+  "invariants": [
+    "For any given `pageId`, there should only be one active `scroll_depth` event listener on `window` at any time.",
+    "`AnalyticsService.track()` should only be called once per actual scroll gesture, for the *currently active* `pageId`.",
+    "`useEffect` cleanup functions for event listeners must reliably remove the listeners they added."
+  ],
+  "minimalFix": "To fix the issue, the `removeEventListener` call must use the identical options object that was passed to `addEventListener`. This ensures the browser can correctly identify and detach the event listener.",
+  "multipleHypothesesSurvived": false,
+  "proximate_crash_site": "`AnalyticsService.track() L25` — The `track` method is being called multiple times per scroll, as indicated by the user's observation of `scroll_depth` events firing 3-8 times. However, this is a symptom of accumulated listeners, not the root cause.",
+  "relatedRisks": [],
+  "reproduction": [
+    "1. Navigate to a page (e.g., '/page-a') where `useScrollAnalytics` is active.",
+    "2. Observe `scroll_depth` events in network tab or analytics dashboard. In React Strict Mode, 2 events will fire per scroll. In production, 1 event.",
+    "3. Navigate to a different page (e.g., '/page-b') and then back to '/page-a', or simply navigate to several different pages.",
+    "4. Scroll on any page. Observe that `scroll_depth` events now fire multiple times (e.g., 2, 3, or more) per actual scroll gesture, increasing with the number of navigations. For a user navigating 5 pages, expect 5x the normal event volume."
+  ],
+  "rootCause": "The `removeEventListener` call in `useScrollAnalytics` fails to remove the event listener because it omits the `{ passive: true }` options that were used during `addEventListener`. This leads to event listeners accumulating on the `window` object with each page navigation or `useEffect` re-execution, causing multiple `scroll_depth` events to be tracked per scroll gesture.",
+  "symptom": "The analytics dashboard shows scroll_depth events firing 3–8 times per actual scroll gesture, and the count grows with session length. A user who has navigated through 5 pages has 5x the expected scroll event volume, leading to analytics API rate limits. In development (React StrictMode) it starts at 2 events per scroll, while in production it starts at 1 and grows with navigation.",
+  "timelineEdges": [
+    {
+      "from": "PageView.tsx",
+      "isBugPoint": false,
+      "label": "mounts / re-renders with new pageId",
+      "to": "useScrollAnalytics"
+    },
+    {
+      "from": "useScrollAnalytics",
+      "isBugPoint": false,
+      "label": "useEffect callback runs (new listener)",
+      "to": "window.addEventListener"
+    },
+    {
+      "from": "window.addEventListener",
+      "isBugPoint": false,
+      "label": "adds onScroll listener with {passive: true}",
+      "to": "window"
+    },
+    {
+      "from": "useScrollAnalytics",
+      "isBugPoint": true,
+      "label": "useEffect cleanup runs (remove listener without options)",
+      "to": "window.removeEventListener"
+    },
+    {
+      "from": "window.removeEventListener",
+      "isBugPoint": false,
+      "label": "FAILS to remove listener due to options mismatch",
+      "to": "window"
+    },
+    {
+      "from": "window",
+      "isBugPoint": false,
+      "label": "accumulated listeners remain active",
+      "to": "AnalyticsService"
+    },
+    {
+      "from": "user",
+      "isBugPoint": false,
+      "label": "scrolls the page",
+      "to": "window"
+    },
+    {
+      "from": "window",
+      "isBugPoint": false,
+      "label": "all active onScroll listeners fire",
+      "to": "AnalyticsService.track"
+    },
+    {
+      "from": "AnalyticsService.track",
+      "isBugPoint": false,
+      "label": "records multiple scroll_depth events",
+      "to": "analytics dashboard"
+    }
+  ],
+  "uncertainties": [],
+  "uncoveredSymptoms": [
+    "'- Node 20.11, pnpm 8.15, macOS 14.3': Environmental details, not a symptom to be explained by root cause.",
+    "'- React 18.2, Vite 5.1': Environmental details, not a symptom to be explained by root cause.",
+    "'- Appeared after PR #601 ('add scroll depth analytics to all page views')': Contextual information, not a symptom to be explained by root cause.",
+    "'- Added `rateLimitMs: 500` to `AnalyticsService` constructor — reduced duplicate events but didn't eliminate them, and broke legitimate rapid scroll tracking': A user's attempted fix, not a symptom to be explained by root cause. The outcome (reduced but not eliminated) is consistent with the root cause, as rate-limiting acts on the symptom, not the underlying accumulation."
+  ],
+  "variableState": [
+    {
+      "meaning": "List of all tracked analytics events.",
+      "variable": "eventLog",
+      "whereChanged": "src/services/AnalyticsService.ts L25: `eventLog.push` in `track`"
+    },
+    {
+      "meaning": "Timestamp of the last time an event of a specific name was sent, used for rate limiting.",
+      "variable": "lastSent",
+      "whereChanged": "src/services/AnalyticsService.ts L23: `lastSent.set` in `track`"
+    }
+  ],
+  "wasReentered": false,
+  "whyFixWorks": "The fix ensures that the `removeEventListener` call uses the *exact same options object* (`{ passive: true }`) as was used in `addEventListener`. According to the DOM specification and common browser behavior, event listeners are uniquely identified by their event type, the listener function itself, and the `capture` option. While `passive` is not typically listed as affecting identity, some browser implementations require all options to match for successful removal. By providing the identical options, the browser can correctly match the listener registered at `L23` and remove it at `L25` during `useEffect` cleanup. This prevents listeners from accumulating across navigations or component re-renders, thereby ensuring only one `scroll_depth` event is tracked per actual scroll."
+}

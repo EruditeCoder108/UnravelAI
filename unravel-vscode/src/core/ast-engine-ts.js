@@ -7,10 +7,22 @@
 
 const isBrowser = typeof window !== 'undefined';
 
+// ── Environment detection ──────────────────────────────────────────────────────
+// True in Node.js (MCP server, VS Code extension host).
+// False in browser (Vite dev, WebApp, VS Code webview with browser globals).
+const _IS_NODE = typeof process !== 'undefined' && !!process.versions?.node
+               && typeof window === 'undefined';
+// Native bindings (Node.js only) — loaded lazily inside initParser()
+let _nativeTreeSitter = null; // tree-sitter Parser class
+let _nativeTSLang     = null;
+let _nativeTSXLang    = null;
+let _nativeJSLang     = null;
+
 // TreeSitter is loaded lazily inside initParser()
 // — NOT at module scope so there is no top-level await
 // that would break esbuild's es2020 target.
-let TreeSitter = null;
+let TreeSitter = null;  // The Parser class
+let LanguageClass = null; // The Language class (separate in web-tree-sitter 0.26+)
 
 // --- Timing/Async API names we care about ---
 const TIMING_APIS = new Set([
@@ -42,95 +54,130 @@ export async function initParser() {
     if (_initPromise) return _initPromise;
     _initPromise = (async () => {
         try {
-            if (!TreeSitter) {
-                // ── web-tree-sitter module resolution ──────────────────────────────
-                //
+            if (_IS_NODE) {
+                // ── Native path (Node.js / MCP server) ───────────────────────────
+                // Uses `tree-sitter` + `tree-sitter-typescript` + `tree-sitter-javascript`
+                // native Node-API bindings. No WASM, no .init(), no locateFile.
+                // This path is taken by the MCP server and the VS Code extension host.
+                if (!_nativeTreeSitter) {
+                    const { createRequire } = await import('module');
+                    // UNRAVEL_NATIVE_BASE allows the calling package (e.g. unravel-mcp)
+                    // to specify where tree-sitter is installed, since ast-engine-ts.js
+                    // lives in unravel-v3/src/core which has no tree-sitter dependency.
+                    const resolveBase = process.env.UNRAVEL_NATIVE_BASE || import.meta.url;
+                    const _require = createRequire(resolveBase);
+                    _nativeTreeSitter = _require('tree-sitter');
+                    const { typescript: TSGrammar, tsx: TSXGrammar } = _require('tree-sitter-typescript');
+                    _nativeJSLang  = _require('tree-sitter-javascript');
+                    _nativeTSLang  = TSGrammar;
+                    _nativeTSXLang = TSXGrammar;
+                }
+                // Wire a shared parser instance to match the WASM path API.
+                // parseCode() uses parserInstance.setLanguage() — same API on both paths.
+                parserInstance = new _nativeTreeSitter();
+                parserInstance.setLanguage(_nativeJSLang); // default; parseCode() overrides per file
+                jsLang  = _nativeJSLang;
+                tsLang  = _nativeTSLang;
+                tsxLang = _nativeTSXLang;
+                process.stderr.write('[AST-TS] Native tree-sitter initialized (Node.js mode).\n');
+
+            } else {
+                // ── WASM path (Browser / Vite / VS Code webview) ──────────────────
                 // web-tree-sitter 0.22.x switched to a new Emscripten build pipeline
                 // that changes the export shape depending on the bundler/environment.
                 // Vite dev mode (even with optimizeDeps.exclude) can produce any of:
-                //
                 //   A  tsModule.default            — ESM default (most common)
                 //   B  tsModule.default.default     — double-wrapped CJS interop
                 //   C  tsModule.Parser              — named export
                 //   D  tsModule.default.Parser      — nested named export
                 //   E  tsModule.TreeSitter          — named export by old package name
                 //   F  tsModule                     — namespace IS the class (CJS passthrough)
-                //
-                // ADDITIONALLY, 0.22.x may use the Emscripten MODULARIZE factory pattern,
-                // where the export is an async factory function rather than the class itself:
-                //   G  await tsModule.default()     — factory returns the Parser class
+                //   G  await tsModule.default()     — factory returns the class (MODULARIZE=1)
                 //   H  await tsModule()             — namespace is the factory
-                //
-                // We probe A–F for `.init()` first (old-style direct class).
-                // If none match, we try G–H (new-style factory).
-                // ──────────────────────────────────────────────────────────────────
-                const tsModule = await import('web-tree-sitter');
-
-                // Debug: log the actual shape so we can diagnose on first failure
-                console.log('[AST-TS] web-tree-sitter module shape:', {
-                    moduleType:   typeof tsModule,
-                    moduleKeys:   Object.keys(tsModule).slice(0, 15),
-                    defaultType:  typeof tsModule.default,
-                    defaultKeys:  tsModule.default ? Object.keys(tsModule.default).slice(0, 15) : [],
-                    hasInit:      typeof tsModule.default?.init,
-                    hasDblDefault:typeof tsModule.default?.default,
-                    hasParser:    typeof tsModule.Parser ?? typeof tsModule.default?.Parser,
-                });
-
-                // ── Phase 1: direct class probe (shapes A–F) ──────────────────────
-                const directCandidates = [
-                    tsModule.default,             // A
-                    tsModule.default?.default,    // B
-                    tsModule.Parser,              // C
-                    tsModule.default?.Parser,     // D
-                    tsModule.TreeSitter,          // E
-                    tsModule,                     // F
-                ];
-                TreeSitter = directCandidates.find(c => c && typeof c.init === 'function') ?? null;
-
-                // ── Phase 2: factory function probe (shapes G–H) ──────────────────
-                // In web-tree-sitter >= 0.22 with MODULARIZE=1 Emscripten output,
-                // the export is a callable that returns a promise resolving to the class.
                 if (!TreeSitter) {
-                    for (const factory of [tsModule.default, tsModule]) {
-                        if (typeof factory !== 'function') continue;
-                        try {
-                            const result = await factory();
-                            const factoryCandidates = [result, result?.Parser, result?.default];
-                            const found = factoryCandidates.find(c => c && typeof c.init === 'function');
-                            if (found) {
-                                TreeSitter = found;
-                                console.log('[AST-TS] Resolved via factory pattern.');
-                                break;
-                            }
-                        } catch { /* factory call failed — try next */ }
+                    const tsModule = await import('web-tree-sitter');
+
+                    const directCandidates = [
+                        tsModule.Parser,
+                        tsModule.default,
+                        tsModule.default?.default,
+                        tsModule.default?.Parser,
+                        tsModule.TreeSitter,
+                        tsModule,
+                    ];
+                    TreeSitter = directCandidates.find(c => c && typeof c.init === 'function') ?? null;
+
+                    LanguageClass =
+                        tsModule.Language ??
+                        tsModule.default?.Language ??
+                        (TreeSitter && TreeSitter.Language) ??
+                        null;
+
+                    if (!TreeSitter) {
+                        for (const factory of [tsModule.default, tsModule]) {
+                            if (typeof factory !== 'function') continue;
+                            try {
+                                const result = await factory();
+                                const factoryCandidates = [result, result?.Parser, result?.default];
+                                const found = factoryCandidates.find(c => c && typeof c.init === 'function');
+                                if (found) {
+                                    TreeSitter = found;
+                                    LanguageClass = LanguageClass ?? result?.Language ?? found.Language;
+                                    console.log('[AST-TS] Resolved via factory pattern.');
+                                    break;
+                                }
+                            } catch { /* try next */ }
+                        }
                     }
+
+                    if (!TreeSitter) {
+                        throw new Error(
+                            'web-tree-sitter: Parser class not found after exhaustive probe. ' +
+                            `Module keys: ${Object.keys(tsModule).join(', ')}`
+                        );
+                    }
+
+                    LanguageClass =
+                        tsModule.Language ??
+                        tsModule.default?.Language ??
+                        null;
+
+                    console.log('[AST-TS] Parser resolved successfully.');
                 }
 
-                if (!TreeSitter) {
+                const wasmBase = typeof __dirname !== 'undefined'
+                    ? __dirname + '/../wasm'
+                    : '/wasm';
+
+                await TreeSitter.init({ locateFile: (filename) => `${wasmBase}/${filename}` });
+
+                if (!LanguageClass) {
+                    LanguageClass =
+                        TreeSitter.Language ??
+                        (TreeSitter.default && TreeSitter.default.Language) ??
+                        null;
+                }
+
+                if (!LanguageClass) {
                     throw new Error(
-                        'web-tree-sitter 0.22.x: Parser class not found after exhaustive probe ' +
-                        '(checked shapes A–H including Emscripten factory pattern). ' +
-                        'See [AST-TS] log above for the actual module shape. ' +
-                        'Try: npm install web-tree-sitter@0.20.8 to pin to the last stable API, ' +
-                        'or clear the Vite cache: rm -rf node_modules/.vite && npx vite --force'
+                        'web-tree-sitter: Language class not found after init(). ' +
+                        `Parser.Language=${typeof TreeSitter?.Language}. ` +
+                        'Check that web-tree-sitter is not excluded from optimizeDeps.'
                     );
                 }
+
+                jsLang  = await LanguageClass.load(`${wasmBase}/tree-sitter-javascript.wasm`);
+                tsLang  = await LanguageClass.load(`${wasmBase}/tree-sitter-typescript.wasm`);
+                tsxLang = await LanguageClass.load(`${wasmBase}/tree-sitter-tsx.wasm`);
+                parserInstance = new TreeSitter();
+                console.log('[AST-TS] WASM tree-sitter initialized. wasmBase:', wasmBase);
             }
 
-            const wasmBase = typeof __dirname !== 'undefined' ? __dirname + '/../wasm' : '/wasm';
-            await TreeSitter.init({ locateFile: () => `${wasmBase}/tree-sitter.wasm` });
-            jsLang  = await TreeSitter.Language.load(`${wasmBase}/tree-sitter-javascript.wasm`);
-            tsLang  = await TreeSitter.Language.load(`${wasmBase}/tree-sitter-typescript.wasm`);
-            tsxLang = await TreeSitter.Language.load(`${wasmBase}/tree-sitter-tsx.wasm`);
-            parserInstance = new TreeSitter();
-            console.log('[AST-TS] Tree-sitter WASM parser initialized.');
-
         } catch (err) {
-            // Reset so a hot-reload / next call can retry instead of returning
-            // a permanently cached rejected promise.
             _initPromise = null;
             TreeSitter = null;
+            LanguageClass = null;
+            _nativeTreeSitter = null;
             throw err;
         }
     })();
@@ -857,7 +904,7 @@ export function findTimingNodes(tree) {
             apiName = `${apiName}("${eventName}")`;
         }
 
-        timingNodes.push({ api: apiName, callback: callbackName, line, enclosingFn });
+        timingNodes.push({ api: apiName, callback: callbackName, line, enclosingFn, isAwaited: isAwaited(call) });
     }
 
     return timingNodes;
@@ -913,7 +960,7 @@ export async function runFullAnalysis(code, filename = '') {
 // MULTI-FILE ANALYSIS (async — was sync with Babel)
 // ═══════════════════════════════════════════════════
 
-export async function runMultiFileAnalysis(files) {
+export async function runMultiFileAnalysis(files, detail = 'full') {
     await initParser();
 
     const mergedMutations = Object.create(null);
@@ -924,6 +971,11 @@ export async function runMultiFileAnalysis(files) {
     const mergedListenerParity = [];
     const mergedStateMutations = [];
     const mergedGlobalWriteRaces = [];
+    const mergedForEachMutations = [];
+    const mergedSpecRisks = [];
+    const allFileBindings = {};
+    const allAsyncFnNames = {};         // { shortName: Set<string> } — async fn names per file
+    const allUnawaitedCallsForCross = [];// { callee, line, fn, file } — unawaited calls collecting across files
     let totalParsed = 0;
     let totalFailed = 0;
     const failedFiles = [];
@@ -1015,7 +1067,29 @@ export async function runMultiFileAnalysis(files) {
         try { globalWriteRaces = detectGlobalMutationBeforeAwait(tree); anySucceeded = true; }
         catch (e) { console.warn(`[AST-TS] Global write race failed for ${shortName}:`, e.message); }
 
-        tree.delete(); // Free WASM memory
+        try { allFileBindings[shortName] = extractModuleLevelBindings(tree); }
+        catch (e) { console.warn(`[AST-TS] Module bindings failed for ${shortName}:`, e.message); }
+
+        // ── forEach collection mutation detection ──
+        let forEachMutationsLocal = [];
+        try { forEachMutationsLocal = detectForEachCollectionMutation(tree, shortName); anySucceeded = true; }
+        catch (e) { console.warn('[AST-TS] forEach mutation detection failed:', e.message); }
+
+        // ── spec violation risk heuristics (structural, general) ──
+        let specRisksLocal = [];
+        try { specRisksLocal = detectStrictComparisonInPredicateGate(tree, shortName); anySucceeded = true; }
+        catch (e) { console.warn('[AST-TS] Predicate gate detection failed:', e.message); }
+
+        // ── Collect async function names + unawaited calls for cross-file floating promise detection ──
+        try {
+            allAsyncFnNames[shortName] = extractAsyncFunctionNames(tree);
+        } catch (e) { console.warn(`[AST-TS] Async fn name extraction failed for ${shortName}:`, e.message); }
+        try {
+            const unawaitedLocal = collectUnawaitedCallsForCrossFile(tree, shortName);
+            for (const c of unawaitedLocal) allUnawaitedCallsForCross.push(c);
+        } catch (e) { console.warn(`[AST-TS] Unawaited call collection failed for ${shortName}:`, e.message); }
+
+        tree.delete?.(); // Free WASM memory (no-op on native tree-sitter — GC-managed)
 
         if (!anySucceeded) {
             totalFailed++;
@@ -1024,20 +1098,15 @@ export async function runMultiFileAnalysis(files) {
         }
 
         totalParsed++;
-        // Track partial files separately — DO NOT embed the flag in the map key.
-        // Downstream code (expandMutationChains, emitRiskSignals) does moduleMap[fileName]
-        // lookups using the extracted key fragment, so keys must stay clean shortNames.
         if (isPartialResult) partialFiles.push(shortName);
 
-        // Merge mutations
+        // Merge all per-file results into the global accumulators
         for (const [varName, data] of Object.entries(mutations)) {
             const key = `${varName} [${shortName}]`;
             if (!mergedMutations[key]) mergedMutations[key] = { writes: [], reads: [] };
             mergedMutations[key].writes.push(...data.writes);
             mergedMutations[key].reads.push(...data.reads);
         }
-
-        // Merge closures
         for (const [fnName, vars] of Object.entries(closures)) {
             const key = `${fnName} [${shortName}]`;
             if (!mergedClosures[key]) mergedClosures[key] = [];
@@ -1045,28 +1114,14 @@ export async function runMultiFileAnalysis(files) {
                 if (!mergedClosures[key].includes(v)) mergedClosures[key].push(v);
             }
         }
-
-        // Merge timing
-        for (const t of timing) {
-            mergedTiming.push({ ...t, file: shortName });
-        }
-
-        // Merge react patterns and floating promises (per-file, annotate with filename)
-        for (const p of reactPatterns) {
-            mergedReactPatterns.push({ ...p, file: shortName });
-        }
-        for (const p of floatingPromises) {
-            mergedFloatingPromises.push({ ...p, file: shortName });
-        }
-        for (const p of listenerParity) {
-            mergedListenerParity.push({ ...p, file: shortName });
-        }
-        for (const p of stateMutations) {
-            mergedStateMutations.push({ ...p, file: shortName });
-        }
-        for (const p of globalWriteRaces) {
-            mergedGlobalWriteRaces.push({ ...p, file: shortName });
-        }
+        for (const t of timing)         mergedTiming.push({ ...t, file: shortName });
+        for (const p of reactPatterns)  mergedReactPatterns.push({ ...p, file: shortName });
+        for (const p of floatingPromises) mergedFloatingPromises.push({ ...p, file: shortName });
+        for (const p of listenerParity)  mergedListenerParity.push({ ...p, file: shortName });
+        for (const p of stateMutations)  mergedStateMutations.push({ ...p, file: shortName });
+        for (const p of globalWriteRaces) mergedGlobalWriteRaces.push({ ...p, file: shortName });
+        for (const m of forEachMutationsLocal) mergedForEachMutations.push(m);
+        for (const r of specRisksLocal)  mergedSpecRisks.push(r);
     }
 
     if (totalParsed === 0) {
@@ -1076,7 +1131,57 @@ export async function runMultiFileAnalysis(files) {
         };
     }
 
-    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises, mergedListenerParity, mergedStateMutations, mergedGlobalWriteRaces);
+    // ── Cross-file: constructor-captured reference detection ──
+    let mergedConstructorCaptures = [];
+    let mergedStaleModuleCaptures = [];
+    if (Object.keys(allFileBindings).length >= 2) {
+        try {
+            mergedConstructorCaptures = detectConstructorCapturedReference(allFileBindings, mergedMutations);
+            if (mergedConstructorCaptures.length > 0) {
+                console.log(`[AST-TS] Constructor-captured references detected: ${mergedConstructorCaptures.length}`);
+            }
+        } catch (e) {
+            console.warn('[AST-TS] Constructor capture detection failed:', e.message);
+        }
+        try {
+            mergedStaleModuleCaptures = detectStaleModuleCaptures(allFileBindings, mergedMutations);
+            if (mergedStaleModuleCaptures.length > 0) {
+                console.log(`[AST-TS] Stale module captures detected: ${mergedStaleModuleCaptures.length}`);
+            }
+        } catch (e) {
+            console.warn('[AST-TS] Stale module capture detection failed:', e.message);
+        }
+    }
+
+    // ── Cross-file: user-defined async function floating promise detection ──
+    // Build global set of all async function names found across every file.
+    // Any unawaited call to a name in this set is a true floating promise.
+    const globalAsyncFns = new Set();
+    for (const names of Object.values(allAsyncFnNames)) {
+        for (const n of names) globalAsyncFns.add(n);
+    }
+    if (globalAsyncFns.size > 0) {
+        for (const c of allUnawaitedCallsForCross) {
+            if (globalAsyncFns.has(c.callee)) {
+                // Avoid duplicates — don't re-add if the main detector already found it
+                const alreadyFound = mergedFloatingPromises.some(
+                    p => p.file === c.file && p.line === c.line && p.api === c.callee
+                );
+                if (!alreadyFound) {
+                    mergedFloatingPromises.push({
+                        api: c.callee, line: c.line, fn: c.fn,
+                        file: c.file, kind: 'user_async',
+                    });
+                }
+            }
+        }
+        const newFloating = mergedFloatingPromises.filter(p => p.kind === 'user_async');
+        if (newFloating.length > 0) {
+            console.log(`[AST-TS] User-defined floating promises detected: ${newFloating.length}`);
+        }
+    }
+
+    const formatted = formatAnalysis(mergedMutations, mergedClosures, mergedTiming, mergedReactPatterns, mergedFloatingPromises, mergedListenerParity, mergedStateMutations, mergedGlobalWriteRaces, mergedConstructorCaptures, mergedForEachMutations, mergedSpecRisks, detail, mergedStaleModuleCaptures);
     const header = `Files parsed: ${totalParsed}/${files.length}`;
     const failNote = totalFailed > 0
         ? ` (${totalFailed} failed: ${failedFiles.join(', ')})`
@@ -1090,7 +1195,10 @@ export async function runMultiFileAnalysis(files) {
         raw: { mutations: mergedMutations, closures: mergedClosures, timingNodes: mergedTiming,
                reactPatterns: mergedReactPatterns, floatingPromises: mergedFloatingPromises,
                listenerParity: mergedListenerParity, stateMutations: mergedStateMutations,
-               globalWriteRaces: mergedGlobalWriteRaces },
+               globalWriteRaces: mergedGlobalWriteRaces, constructorCaptures: mergedConstructorCaptures,
+               staleModuleCaptures: mergedStaleModuleCaptures,
+               forEachMutations: mergedForEachMutations, specRisks: mergedSpecRisks,
+               _source: _IS_NODE ? 'native-tree-sitter' : 'wasm-tree-sitter' },
         formatted: fullFormatted,
         partialFiles,
     };
@@ -1444,13 +1552,18 @@ export function detectListenerParity(tree) {
             });
         }
 
-        // The most common pattern: add has options but remove omits them entirely
-        // Flag this as a style warning so the LLM doesn't hallucinate it as the bug
+        // The most common pattern: add has options but remove omits them entirely.
+        // passive-only options do NOT affect listener identity (W3C spec: addEventListener step 3.3).
+        // Explicitly label this as NOT the root cause so the LLM cannot rationalize it away.
         if (add.optionsNode && !match.optionsNode) {
             const hasRealCapture = addCapture === true; // passive-only: not a bug
             findings.push({
                 type: hasRealCapture ? 'listener_capture_mismatch' : 'listener_options_omitted',
-                description: `addEventListener('${add.eventType}', ${add.listenerName}) added with options ${add.optionsNode.text} but removeEventListener omits options — ${hasRealCapture ? '⚠ capture:true will prevent removal' : 'passive/once omission is harmless (spec: only capture affects identity)'}`,
+                description: `addEventListener('${add.eventType}', ${add.listenerName}) added with options ${add.optionsNode.text} but removeEventListener omits options — ${
+                    hasRealCapture
+                        ? '⚠ capture:true will prevent removal'
+                        : 'passive/once omission CANNOT cause listener leak (W3C spec: only the capture boolean affects identity — this is NOT the root cause of any listener accumulation)'
+                }`,
                 addLine: add.line,
                 removeLine: match.line,
                 fn: add.enclosingFn,
@@ -1688,6 +1801,92 @@ export function detectFloatingPromises(tree) {
     }
 
     return floating;
+}
+
+/**
+ * Extract all async function names declared in a file.
+ * Covers: `async function foo()`, `const foo = async () => {}`,
+ *         `const foo = async function() {}`, exported variants.
+ * Used by the cross-file floating promise detector.
+ * @param {import('web-tree-sitter').Tree} tree
+ * @returns {Set<string>}
+ */
+function extractAsyncFunctionNames(tree) {
+    const names = new Set();
+    if (!tree) return names;
+    const root = tree.rootNode;
+
+    // ── async function declarations: `async function foo() {}` ──
+    const fnDecls = root.descendantsOfType('function_declaration');
+    for (const fn of fnDecls) {
+        // In tree-sitter JS grammar, `async function foo()` has `async` as child(0)
+        const firstChild = fn.child(0);
+        if (firstChild && firstChild.text === 'async') {
+            const nameNode = fn.childForFieldName('name');
+            if (nameNode?.type === 'identifier') names.add(nameNode.text);
+        }
+    }
+
+    // ── async arrow / function expressions: `const foo = async () => {}` ──
+    const declarators = root.descendantsOfType('variable_declarator');
+    for (const decl of declarators) {
+        const nameNode = decl.childForFieldName('name');
+        const init     = decl.childForFieldName('value');
+        if (!nameNode || !init) continue;
+        if (nameNode.type !== 'identifier') continue;
+        if (init.type !== 'arrow_function' && init.type !== 'function_expression') continue;
+        // Check first child of the expression for 'async' keyword
+        const firstChild = init.child(0);
+        if (firstChild && firstChild.text === 'async') {
+            names.add(nameNode.text);
+        }
+    }
+
+    return names;
+}
+
+/**
+ * Collect all unawaited call expressions in a file for cross-file async matching.
+ * Excludes calls already covered by ASYNC_CALL_PATTERNS (the browser/Node API set).
+ * The caller will cross-reference these against the global set of async function names.
+ * @param {import('web-tree-sitter').Tree} tree
+ * @param {string} fileShortName
+ * @returns {Array<{callee: string, line: number, fn: string, file: string}>}
+ */
+function collectUnawaitedCallsForCrossFile(tree, fileShortName) {
+    const result = [];
+    if (!tree) return result;
+    const root = tree.rootNode;
+
+    const calls = root.descendantsOfType('call_expression');
+    for (const call of calls) {
+        if (isAwaited(call)) continue;
+
+        const fnNode = call.childForFieldName('function');
+        if (!fnNode) continue;
+
+        let callee = null;
+        if (fnNode.type === 'identifier') {
+            callee = fnNode.text;
+        } else if (fnNode.type === 'member_expression') {
+            // e.g. metrics.flushMetrics() — capture property name
+            callee = fnNode.childForFieldName('property')?.text || null;
+        }
+
+        if (!callee) continue;
+        // Already handled by the ASYNC_CALL_PATTERNS browser/Node API detector
+        if (ASYNC_CALL_PATTERNS.has(callee)) continue;
+        // Skip obviously non-async names (constructors, known sync helpers)
+        if (callee[0] === callee[0].toUpperCase() && callee[0] !== callee[0].toLowerCase()) continue; // PascalCase = likely constructor
+
+        result.push({
+            callee,
+            line: call.startPosition.row + 1,
+            fn:   getEnclosingFunction(call),
+            file: fileShortName,
+        });
+    }
+    return result;
 }
 
 // ═══════════════════════════════════════════════════
@@ -2089,49 +2288,798 @@ function detectMultiSourceRace(chains) {
 }
 
 // ═══════════════════════════════════════════════════
+// CONSTRUCTOR-CAPTURED REFERENCE DETECTION (cross-file)
+// Detects class constructors that store an imported let
+// binding by value. If the exporting module later reassigns
+// that binding, the stored reference becomes permanently stale.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Extract module-level binding information needed for cross-file
+ * reference detection. Runs per-file during the analysis loop.
+ * Lightweight — only walks root.namedChildren (module scope).
+ */
+function extractModuleLevelBindings(tree) {
+    const root = tree.rootNode;
+    const imports = new Map();
+    const letBindings = new Set();
+    const moduleScopeNewExprs = [];
+    const moduleScopeCallExprs = [];
+    const classCaptures = new Map();
+
+    for (const child of root.namedChildren) {
+        // ── Imports ──
+        if (child.type === 'import_statement') {
+            const source = child.childForFieldName('source')
+                || child.namedChildren.find(c => c.type === 'string');
+            const sourceText = source?.text?.replace(/^['"]|['"]$/g, '');
+            if (!sourceText) continue;
+            const specifiers = child.descendantsOfType('import_specifier');
+            for (const spec of specifiers) {
+                const nameNode = spec.childForFieldName('name');
+                const aliasNode = spec.childForFieldName('alias');
+                const sourceName = nameNode?.text;
+                const localName = aliasNode?.text || sourceName;
+                if (sourceName && localName) {
+                    imports.set(localName, { sourceBinding: sourceName, sourceModule: sourceText });
+                }
+            }
+            continue;
+        }
+
+        // ── Unwrap export statement ──
+        let declNode = child;
+        if (child.type === 'export_statement') {
+            declNode = child.namedChildren.find(c =>
+                c.type === 'lexical_declaration' ||
+                c.type === 'variable_declaration' ||
+                c.type === 'class_declaration' ||
+                c.type === 'class'
+            );
+            if (!declNode) continue;
+        }
+
+        // ── Let bindings at module scope ──
+        if (declNode.type === 'lexical_declaration') {
+            const isLet = declNode.children[0]?.text === 'let';
+            if (isLet) {
+                const declarators = declNode.descendantsOfType('variable_declarator');
+                for (const decl of declarators) {
+                    const nameNode = decl.childForFieldName('name');
+                    if (nameNode?.type === 'identifier') {
+                        letBindings.add(nameNode.text);
+                    }
+                }
+            }
+        }
+
+        // ── Module-scope new expressions: const/let x = new Class(...) ──
+        if (declNode.type === 'lexical_declaration' || declNode.type === 'variable_declaration') {
+            const declarators = declNode.descendantsOfType('variable_declarator');
+            for (const decl of declarators) {
+                const nameNode = decl.childForFieldName('name');
+                const init = decl.childForFieldName('value');
+                if (!nameNode || !init) continue;
+                if (nameNode.type !== 'identifier') continue;
+
+                // Track new Class() constructor calls
+                if (init.type === 'new_expression') {
+                    const ctorNode = init.childForFieldName('constructor');
+                    const argsNode = init.childForFieldName('arguments');
+                    if (!ctorNode || !argsNode) continue;
+                    const args = [];
+                    for (const arg of argsNode.namedChildren) {
+                        args.push(arg.type === 'identifier' ? arg.text : null);
+                    }
+                    moduleScopeNewExprs.push({
+                        instanceVar: nameNode.text,
+                        className: ctorNode.text,
+                        args,
+                        line: declNode.startPosition.row + 1,
+                    });
+                }
+
+                // Track const x = fn() / const x = obj.fn() call expressions at module scope
+                if (init.type === 'call_expression') {
+                    const fnNode = init.childForFieldName('function');
+                    if (!fnNode) continue;
+                    let callee = null;
+                    if (fnNode.type === 'identifier') callee = fnNode.text;
+                    else if (fnNode.type === 'member_expression') {
+                        callee = fnNode.childForFieldName('property')?.text || null;
+                    }
+                    if (callee) {
+                        moduleScopeCallExprs.push({
+                            localVar: nameNode.text,
+                            callee,
+                            line: declNode.startPosition.row + 1,
+                        });
+                    }
+                }
+            }
+        }
+
+        // ── Class definitions ──
+        if (declNode.type === 'class_declaration' || declNode.type === 'class') {
+            _extractClassConstructorCaptures(declNode, classCaptures);
+        }
+    }
+
+    return { imports, letBindings, moduleScopeNewExprs, classCaptures, moduleScopeCallExprs };
+}
+
+/**
+ * Extract constructor this.field = param assignments from a class node.
+ */
+function _extractClassConstructorCaptures(classNode, capturesMap) {
+    const nameNode = classNode.childForFieldName('name');
+    const className = nameNode?.text;
+    if (!className) return;
+
+    const body = classNode.childForFieldName('body');
+    if (!body) return;
+
+    const methods = body.descendantsOfType('method_definition');
+    const ctor = methods.find(m => m.childForFieldName('name')?.text === 'constructor');
+    if (!ctor) return;
+
+    const params = ctor.childForFieldName('parameters');
+    if (!params) return;
+    const paramNames = [];
+    for (const p of params.namedChildren) {
+        if (p.type === 'identifier') paramNames.push(p.text);
+        else if (p.type === 'required_parameter' || p.type === 'optional_parameter') {
+            const pName = p.childForFieldName('pattern') || p.childForFieldName('name');
+            if (pName) paramNames.push(pName.text);
+        } else if (p.type === 'assignment_pattern') {
+            const left = p.childForFieldName('left');
+            if (left?.type === 'identifier') paramNames.push(left.text);
+        }
+    }
+
+    const ctorBody = ctor.childForFieldName('body');
+    if (!ctorBody) return;
+
+    const captures = [];
+    const assigns = ctorBody.descendantsOfType('assignment_expression');
+    for (const assign of assigns) {
+        const left = assign.childForFieldName('left');
+        const right = assign.childForFieldName('right');
+        if (!left || !right) continue;
+        if (left.type !== 'member_expression') continue;
+        const obj = left.childForFieldName('object');
+        const prop = left.childForFieldName('property');
+        if (!obj || obj.text !== 'this' || !prop) continue;
+        if (right.type !== 'identifier') continue;
+        const paramIdx = paramNames.indexOf(right.text);
+        if (paramIdx === -1) continue;
+        captures.push({ fieldName: prop.text, paramIndex: paramIdx, paramName: right.text });
+    }
+
+    if (captures.length > 0) capturesMap.set(className, captures);
+}
+
+/**
+ * Resolve an import module specifier to a filename in the analysis set.
+ */
+function _resolveModuleToFile(moduleSpecifier, allFileNames) {
+    const base = moduleSpecifier.replace(/^\.\.?\//, '').split('/').pop();
+    for (const fileName of allFileNames) {
+        if (fileName === base) return fileName;
+        if (fileName.endsWith('/' + base)) return fileName;
+        for (const ext of ['.js', '.ts', '.jsx', '.tsx', '.mjs']) {
+            if (fileName === base + ext) return fileName;
+            if (fileName.endsWith('/' + base + ext)) return fileName;
+        }
+    }
+    return null;
+}
+
+/**
+ * Cross-file detector: find class constructors that capture imported let
+ * bindings by value, where the exporting module later reassigns the binding.
+ *
+ * @param {Object} allBindings  — { filename: extractModuleLevelBindings result }
+ * @param {Object} mergedMutations — keyed "varName [file]"
+ * @returns {Array} annotations with structured annotation text
+ */
+function detectConstructorCapturedReference(allBindings, mergedMutations) {
+    const annotations = [];
+    const allFileNames = Object.keys(allBindings);
+
+    for (const [file, bindings] of Object.entries(allBindings)) {
+        for (const expr of bindings.moduleScopeNewExprs) {
+            for (let i = 0; i < expr.args.length; i++) {
+                const argName = expr.args[i];
+                if (!argName) continue;
+
+                // Step 1: Is this arg imported from another module?
+                const imp = bindings.imports.get(argName);
+                if (!imp) continue;
+
+                // Step 2: Resolve source module to a file in our set
+                const sourceFile = _resolveModuleToFile(imp.sourceModule, allFileNames);
+                if (!sourceFile) continue;
+                const sourceBindings = allBindings[sourceFile];
+                if (!sourceBindings) continue;
+
+                // Step 3: Is the source binding a `let` (reassignable)?
+                if (!sourceBindings.letBindings.has(imp.sourceBinding)) continue;
+
+                // Step 4: Is the source binding REASSIGNED (not just mutated)?
+                const mutKey = `${imp.sourceBinding} [${sourceFile}]`;
+                const mutData = mergedMutations[mutKey];
+                if (!mutData) continue;
+                const reassignments = mutData.writes.filter(w => w.type === 'reassigned');
+                if (reassignments.length === 0) continue;
+
+                // Step 5: Does the constructor capture this arg as this.field?
+                let classCaptures = bindings.classCaptures.get(expr.className);
+                if (!classCaptures) {
+                    const classImp = bindings.imports.get(expr.className);
+                    if (classImp) {
+                        const classFile = _resolveModuleToFile(classImp.sourceModule, allFileNames);
+                        if (classFile && allBindings[classFile]) {
+                            classCaptures = allBindings[classFile].classCaptures.get(classImp.sourceBinding);
+                        }
+                    }
+                }
+                if (!classCaptures) continue;
+
+                const capture = classCaptures.find(c => c.paramIndex === i);
+                if (!capture) continue;
+
+                // ── All 5 conditions met — emit structured annotation ──
+                const sites = reassignments.map(r =>
+                    `    ${r.fn}() L${r.line}`
+                ).join('\n');
+
+                const annotationText = [
+                    `  ${file} L${expr.line}: const ${expr.instanceVar} = new ${expr.className}(${argName})`,
+                    `    ${argName}: imported from ${sourceFile}::${imp.sourceBinding} (let, reassignable)`,
+                    `    Constructor stores: this.${capture.fieldName} = ${capture.paramName}  [VALUE COPY at init time]`,
+                    ``,
+                    `  ${sourceFile} REASSIGNS ${imp.sourceBinding}:`,
+                    sites,
+                    ``,
+                    `  After reassignment:`,
+                    `    ${sourceFile}::${imp.sourceBinding}  → NEW object`,
+                    `    ${file}::${expr.instanceVar}.${capture.fieldName}  → OLD object (stale, abandoned)`,
+                    ``,
+                    `  ⚠ Reads via ${expr.instanceVar}.${capture.fieldName} see the abandoned old object.`,
+                    `    Writes via ${imp.sourceBinding} go to the new object (never read through ${expr.instanceVar}).`,
+                    `    STALE REFERENCE: ${expr.instanceVar}.${capture.fieldName} is permanently diverged from ${imp.sourceBinding}.`,
+                ].join('\n');
+
+                annotations.push({
+                    type: 'constructor_captured_reference',
+                    severity: 'critical',
+                    file, line: expr.line,
+                    instanceVar: expr.instanceVar, className: expr.className,
+                    capturedField: capture.fieldName, argName,
+                    sourceFile, sourceBinding: imp.sourceBinding,
+                    reassignSites: reassignments,
+                    annotationText,
+                });
+            }
+        }
+    }
+
+    return annotations;
+}
+
+/**
+ * Cross-file detector: find module-scope const x = importedFn() captures
+ * where importedFn's underlying variable is later reassigned in the source module.
+ *
+ * Classic pattern: const _cachedEntries = getEntries()
+ *   where getEntries() returns _entries, and rebalance() reassigns _entries.
+ * After reassignment, _cachedEntries holds a stale reference.
+ *
+ * @param {Object} allBindings  — { filename: extractModuleLevelBindings result }
+ * @param {Object} mergedMutations — keyed "varName [file]"
+ * @returns {Array} stale module capture annotations
+ */
+function detectStaleModuleCaptures(allBindings, mergedMutations) {
+    const annotations = [];
+    const allFileNames = Object.keys(allBindings);
+
+    for (const [file, bindings] of Object.entries(allBindings)) {
+        const callExprs = bindings.moduleScopeCallExprs || [];
+        for (const expr of callExprs) {
+            // Is the callee imported from another module?
+            const imp = bindings.imports.get(expr.callee);
+            if (!imp) continue;
+
+            // Resolve source module to a file in our analysis set
+            const sourceFile = _resolveModuleToFile(imp.sourceModule, allFileNames);
+            if (!sourceFile || sourceFile === file) continue;
+
+            // Find all cross-function variables in the source file
+            // A stale reference occurs if the source module reassigns a variable
+            // in one function that was captured at module scope in the calling file.
+            const reassignedVars = [];
+            for (const [mutKey, mutData] of Object.entries(mergedMutations)) {
+                if (!mutKey.endsWith(`[${sourceFile}]`)) continue;
+                const varName = mutKey.replace(/ \[.*\]$/, '');
+                const reassignments = mutData.writes.filter(w => w.type === 'reassigned');
+                if (reassignments.length === 0) continue;
+
+                // The callee function should return this variable (heuristic:
+                // if callee name contains or matches the var name, or var is from
+                // getEntries→_entries, getWorkerPool→_workers etc)
+                // We use a broad heuristic: any let/reassignable var in source module
+                // that is later reassigned in a different function is a candidate.
+                const writeFns = new Set(mutData.writes.map(w => w.fn));
+                const readFns  = new Set(mutData.reads.map(r => r.fn));
+                if (writeFns.size > 0 && readFns.size > 0) {
+                    // Cross-function var in the origin file — the getter likely exposes it
+                    reassignedVars.push({ varName, reassignments, writeFns: [...writeFns] });
+                }
+            }
+
+            if (reassignedVars.length === 0) continue;
+
+            // Emit one annotation per most-likely related reassigned var
+            // Heuristic: pick the var whose name is most similar to callee
+            const best = reassignedVars.sort((a, b) => {
+                const aScore = expr.callee.toLowerCase().includes(a.varName.replace(/^_/,'').toLowerCase()) ? 1 : 0;
+                const bScore = expr.callee.toLowerCase().includes(b.varName.replace(/^_/,'').toLowerCase()) ? 1 : 0;
+                return bScore - aScore;
+            })[0];
+
+            annotations.push({
+                type: 'stale_module_capture',
+                severity: 'high',
+                file,
+                line: expr.line,
+                variable: expr.localVar,
+                capturedVia: expr.callee,
+                sourceFile,
+                sourceBinding: imp.sourceBinding,
+                reassignedVar: best.varName,
+                reassignSites: best.reassignments,
+                description: [
+                    `${file} L${expr.line}: const ${expr.localVar} = ${expr.callee}()`,
+                    `  ${expr.callee} is imported from ${sourceFile}.`,
+                    `  ${sourceFile} REASSIGNS ${best.varName} in: ${best.writeFns.join(', ')}`,
+                    `  After reassignment, ${expr.localVar} in ${file} references the OLD value.`,
+                    `  ⚠ STALE REFERENCE: ${expr.localVar} captured at module load never updates.`,
+                ].join('\n'),
+            });
+        }
+    }
+
+    return annotations;
+}
+
+// Detects Set/Map/Array mutations (add, delete, push, splice, etc.)
+// inside a .forEach() callback on the SAME collection.
+//
+// WHY THIS MATTERS (JS spec, ECMA-262 §23.2.3.6 for Set.forEach):
+//   The specification states that if a value is deleted and then added
+//   back during iteration, it WILL be visited again. This means a
+//   Set.delete(x) followed by Set.add(x) inside forEach causes x to
+//   be processed TWICE — a hidden double-count with no visible error.
+//   This is the exact mechanism behind Raft vote double-counting bugs.
+// ═══════════════════════════════════════════════════
+
+/**
+ * Build a map of functionName -> body AST node for all named functions/methods
+ * in the file. Used for depth-1 callee expansion during forEach analysis.
+ */
+/**
+ * Build a map of functionName → body AST node for all named functions/methods
+ * in the file. Used for depth-1 callee expansion during forEach analysis.
+ *
+ * Uses descendantsOfType() — the same API used by all other working detectors —
+ * instead of manual node.children recursion (which silently skips nodes in
+ * web-tree-sitter because node.children is not a plain JS iterable array).
+ */
+function buildFunctionBodyMap(rootNode) {
+    const map = new Map();
+
+    // function foo() { ... }  /  async function foo() { ... }
+    for (const node of rootNode.descendantsOfType('function_declaration')) {
+        const name = node.childForFieldName('name');
+        const body = node.childForFieldName('body');
+        if (name?.text && body) map.set(name.text, body);
+    }
+
+    // const foo = function() { ... }  /  const foo = () => { ... }
+    for (const node of rootNode.descendantsOfType('variable_declarator')) {
+        const name  = node.childForFieldName('name');
+        const value = node.childForFieldName('value');
+        if (!name?.text || !value) continue;
+        const isFunc = value.type === 'function' || value.type === 'arrow_function';
+        if (isFunc) {
+            const body = value.childForFieldName('body');
+            if (body) map.set(name.text, body);
+        }
+    }
+
+    // Class method: _refreshVoterRecord() { ... }
+    // method_definition grammar fields: name (property_identifier), value (function)
+    // The function node's body field = statement_block.
+    // Fallback: if childForFieldName('value') is null (grammar version differences),
+    // find the statement_block child directly.
+    for (const node of rootNode.descendantsOfType('method_definition')) {
+        const name  = node.childForFieldName('name');
+        if (!name?.text) continue;
+        const value = node.childForFieldName('value'); // function node (may be null in some grammars)
+        let body = value?.childForFieldName('body');
+        if (!body) {
+            // Fallback: first statement_block descendant directly inside this method
+            const bodies = node.descendantsOfType('statement_block');
+            body = bodies.length > 0 ? bodies[0] : null;
+        }
+        if (body) map.set(name.text, body);
+    }
+
+    return map;
+}
+
+/**
+ * Detect mutations to a collection (Set/Map/Array) on which .forEach
+ * is being called, where the mutation happens inside the callback
+ * OR inside a function directly called by the callback (depth-1 expansion).
+ *
+ * WHY DEPTH-1 MATTERS:
+ * Real-world forEach callbacks frequently delegate to helper functions.
+ * Example: votes.forEach(v => _refreshVoterRecord(v))  where
+ * _refreshVoterRecord calls votes.delete(v) + votes.add(v_updated).
+ * Without depth-1 expansion the detector misses this entirely.
+ */
+export function detectForEachCollectionMutation(tree, filename = '') {
+    const results = [];
+    if (!tree?.rootNode) return results;
+
+    // Pre-build function body map once per file for depth-1 lookup
+    const fnBodyMap = buildFunctionBodyMap(tree.rootNode);
+
+    // Mutation methods that are spec-dangerous during iteration
+    const DANGEROUS_MUTATIONS = new Set([
+        'delete', 'add',    // Set/Map — causes re-visit per ECMA spec §24.2.3.7
+        'set',              // Map — updates entry mid-iteration
+        'clear',            // Set/Map — destroys remaining entries
+        'push', 'pop', 'shift', 'unshift', 'splice', // Array
+    ]);
+
+    // Read methods — these are always safe
+    const SAFE_READS = new Set(['has', 'get', 'size', 'forEach', 'entries', 'keys', 'values']);
+
+    /**
+     * Find all calls on `targetName` inside a subtree using descendantsOfType.
+     * Matches: targetName.method()  OR  this.targetName.method()
+     * Records: { method, line }
+     */
+    function findCallsOnTarget(subtree, targetName, out) {
+        if (!subtree) return;
+        for (const call of subtree.descendantsOfType('call_expression')) {
+            const callee = call.childForFieldName('function');
+            if (callee?.type !== 'member_expression') continue;
+            const obj  = callee.childForFieldName('object');
+            const prop = callee.childForFieldName('property');
+            if (!obj || !prop) continue;
+            const objText = obj.text;
+            // Direct: this._grantedVotes.delete()  OR  _votes.delete()
+            if (objText === targetName || objText.endsWith('.' + targetName)) {
+                out.push({ method: prop.text, line: call.startPosition.row + 1 });
+            }
+        }
+    }
+
+    /**
+     * Collect callee names from a subtree for depth-1 expansion.
+     * Includes: plain calls foo() AND class method calls this.foo()
+     * Excludes: chained calls (a.b.c()), IIFEs.
+     */
+    function collectStandaloneCallees(subtree) {
+        const names = new Set();
+        if (!subtree) return names;
+        for (const call of subtree.descendantsOfType('call_expression')) {
+            const callee = call.childForFieldName('function');
+            if (callee?.type === 'identifier') {
+                names.add(callee.text);
+            } else if (callee?.type === 'member_expression') {
+                const obj  = callee.childForFieldName('object');
+                const prop = callee.childForFieldName('property');
+                // this.foo() — single-hop, obj is exactly 'this'
+                if (obj?.text === 'this' && prop?.text) {
+                    names.add(prop.text);
+                }
+            }
+        }
+        return names;
+    }
+
+    // ── Main scan: find all <expr>.forEach(callback) call_expressions ──
+    const _allCalls = tree.rootNode.descendantsOfType('call_expression');
+    for (const node of _allCalls) {
+        const callee = node.childForFieldName('function');
+        if (callee?.type !== 'member_expression') continue;
+
+        const prop = callee.childForFieldName('property');
+        if (prop?.text !== 'forEach') continue;
+
+        const args = node.childForFieldName('arguments');
+        if (!args) continue;
+
+        const collectionNode = callee.childForFieldName('object');
+        if (!collectionNode) continue;
+
+        const collectionName = collectionNode.text;
+        const forEachLine    = node.startPosition.row + 1;
+
+        // First argument is the callback (arrow fn, function expression, or identifier)
+        const callbackArg = args.namedChildren?.[0];
+        if (!callbackArg) continue;
+
+        // Step 1: direct mutations inside callback (depth 0)
+        const mutations = [];
+        findCallsOnTarget(callbackArg, collectionName, mutations);
+
+        // Step 2: depth-1 expansion
+        // For every named fn called from the callback, search its body too.
+        const calledFns = collectStandaloneCallees(callbackArg);
+        for (const fnName of calledFns) {
+            const body = fnBodyMap.get(fnName);
+            if (!body) continue;
+            const indirect = [];
+            findCallsOnTarget(body, collectionName, indirect);
+            for (const hit of indirect) mutations.push({ ...hit, via: fnName });
+        }
+
+        // Filter to actually dangerous ops (skip safe reads)
+        const dangerous = mutations.filter(m => DANGEROUS_MUTATIONS.has(m.method) && !SAFE_READS.has(m.method));
+        if (dangerous.length === 0) continue;
+
+        const hasDelete = dangerous.some(m => m.method === 'delete');
+        const hasAdd    = dangerous.some(m => m.method === 'add' || m.method === 'set' || m.method === 'push');
+
+        let severity = 'warning';
+        let specNote = '';
+        if (hasDelete && hasAdd) {
+            severity = 'critical';
+            specNote = 'ECMAScript §24.2.3.7: deleted-then-re-added elements ARE visited again — count fires TWICE per re-added element.';
+        } else if (hasDelete) {
+            specNote = 'ECMAScript §24.2.3.7: elements added after deletion MAY be visited; iteration count is unpredictable.';
+        } else {
+            specNote = 'Mutating the collection during iteration produces spec-undefined behaviour.';
+        }
+
+        const mutDesc = dangerous.map(m => {
+            const via = m.via ? ` (via ${m.via}())` : '';
+            return `${m.method}()${via} L${m.line}`;
+        }).join(', ');
+
+        results.push({
+            type: 'foreach_collection_mutation',
+            severity,
+            collection: collectionName,
+            file: filename,
+            line: forEachLine,
+            mutations: dangerous,
+            specNote,
+            description: `${collectionName}.forEach() — mutated during iteration: ${mutDesc}`,
+        });
+    }
+
+    return results;
+}
+
+// ═══════════════════════════════════════════════════
+// FEATURE 9: Strict Comparison in Predicate Gate (General)
+//
+// Detects strict > or < comparisons inside functions whose NAMES follow
+// universal predicate naming conventions: is*, can*, has*, should*,
+// meets*, passes*, eligible*, ready*, allows*, permits*, qualifies*.
+//
+// The structural signal is function ROLE, not domain vocabulary.
+// This fires equally on:
+//   isAdult(age)          → age > 18       (should be >=?)
+//   canBorrow(score)      → score > limit  (should be >=?)
+//   hasPermission(level)  → level > req    (should be >=?)
+//   isLogUpToDate(...)    → idx > lastIdx  (should be >=?)
+//   meetsThreshold(val)   → val > min      (should be >=?)
+//
+// These are ATTENTION SIGNALS — not verified bugs.
+// Labelled HEURISTIC in the formatted output block.
+//
+// Pattern motivation: in predicate gates (functions that return a boolean
+// to allow/deny an action), the equality case is frequently the one that
+// reveals a spec violation. "strictly greater than" excludes the exact
+// boundary case, which is often meaningful: "at least N", "at least X".
+// ═══════════════════════════════════════════════════
+
+// Predicate prefix patterns — universal naming convention across all domains.
+// These are structural properties of code style, not domain vocabulary.
+const PREDICATE_NAME_PATTERN = /^(is[A-Z_]|can[A-Z_]|has[A-Z_]|should[A-Z_]|meets?[A-Z_]?$|meets[A-Z_]|passes?[A-Z_]?$|passes[A-Z_]|eligible[A-Z_]?$|ready[A-Z_]?$|allows?[A-Z_]?$|allows[A-Z_]|permits?[A-Z_]?$|permits[A-Z_]|qualifies?[A-Z_]?$)/;
+
+// Also catch snake_case variants: is_adult, can_vote, has_permission
+const PREDICATE_NAME_SNAKE = /^(is_|can_|has_|should_|meets_|passes_|eligible_|allows_|permits_|qualifies_)/;
+
+/**
+ * Detect strict comparisons (> <) inside predicate-named functions.
+ * The pattern: a function whose name signals "this decides yes/no"
+ * contains a strict boundary comparison that may exclude the equality case.
+ *
+ * @param {Object} tree - tree-sitter parse tree
+ * @param {string} filename - source filename for annotations
+ * @returns {Array} findings
+ */
+export function detectStrictComparisonInPredicateGate(tree, filename = '') {
+    const results = [];
+    if (!tree?.rootNode) return results;
+
+    const STRICT_OPS = new Set(['>', '<']);
+
+    /**
+     * Extract the name of the innermost enclosing named function/method.
+     * Returns null if inside an anonymous function or module scope.
+     */
+    function getEnclosingPredicateName(node) {
+        let cur = node.parent;
+        while (cur) {
+            if (cur.type === 'function_declaration') {
+                return cur.childForFieldName('name')?.text || null;
+            }
+            if (cur.type === 'method_definition') {
+                return cur.childForFieldName('name')?.text || null;
+            }
+            if (cur.type === 'variable_declarator') {
+                const val = cur.childForFieldName('value');
+                if (val?.type === 'function' || val?.type === 'arrow_function') {
+                    return cur.childForFieldName('name')?.text || null;
+                }
+            }
+            // Stop at class/module boundaries — don't leak across unrelated scopes
+            if (cur.type === 'class_body' || cur.type === 'program') break;
+            cur = cur.parent;
+        }
+        return null;
+    }
+
+    function isPredicateName(name) {
+        if (!name) return false;
+        return PREDICATE_NAME_PATTERN.test(name) || PREDICATE_NAME_SNAKE.test(name);
+    }
+
+    function nodeText(node) {
+        try { return node?.text?.slice(0, 80) || ''; }
+        catch { return ''; }
+    }
+
+    // Use descendantsOfType for reliable traversal — node.children is a C++ proxy
+    // in web-tree-sitter and cannot be iterated with for...of or .find().
+    // descendantsOfType returns a real JS array, same pattern as all other detectors.
+    const binaryExprs = tree.rootNode.descendantsOfType('binary_expression');
+
+    for (const node of binaryExprs) {
+        // The operator in a binary_expression is a non-named child node
+        // whose text is the operator symbol itself.
+        // childForFieldName('operator') works in tree-sitter 0.22+.
+        // Fallback: scan namedChildren for the operator text.
+        let opText = node.childForFieldName('operator')?.text;
+        if (!opText) {
+            // Fallback: find child whose text is exactly '>' or '<'
+            for (let i = 0; i < node.childCount; i++) {
+                const c = node.child(i);
+                if (c && (c.text === '>' || c.text === '<')) { opText = c.text; break; }
+            }
+        }
+
+        if (!opText || !STRICT_OPS.has(opText)) continue;
+
+        const fnName = getEnclosingPredicateName(node);
+        if (!fnName || !isPredicateName(fnName)) continue;
+
+        const left  = nodeText(node.childForFieldName('left')  || node.namedChildren?.[0]);
+        const right = nodeText(node.childForFieldName('right') || node.namedChildren?.[1]);
+        const line  = node.startPosition.row + 1;
+        const saferOp = opText === '>' ? '>=' : '<=';
+
+        results.push({
+            type: 'predicate_strict_comparison',
+            severity: 'attention',
+            file: filename,
+            line,
+            fnName,
+            expression: `${left} ${opText} ${right}`,
+            operator: opText,
+            suggestedOperator: saferOp,
+            description: `\`${fnName}\`: strict \`${opText}\` at L${line} — confirm the equality case (\`${left} === ${right}\`) is intentionally excluded`,
+            note: `HEURISTIC (unverified): Predicate functions named ${fnName}() typically gate an action based on a threshold. ` +
+                  `Strict \`${opText}\` excludes the exact boundary case. ` +
+                  `If the spec/requirement says "at least N" or "N or more", use \`${saferOp}\`. ` +
+                  `No change needed if "strictly greater/less than" is the deliberate intent.`,
+        });
+    }
+
+    return results;
+}
+
+
+
+// ═══════════════════════════════════════════════════
 // FORMAT: Same output format as the old engine
 // ═══════════════════════════════════════════════════
 
-function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [], globalWriteRaces = []) {
+// detail: 'priority' | 'standard' | 'full'
+//   priority — only high-severity confirmed findings (~50 lines). For tight agent contexts.
+//   standard — filtered signal: suspicious mutations, confirmed race/closure findings. Default for MCP.
+//   full     — everything unfiltered, current behavior. For webapp / debugging the engine itself.
+function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatingPromises = [], listenerParity = [], stateMutations = [], globalWriteRaces = [], constructorCaptures = [], forEachMutations = [], specRisks = [], detail = 'full', staleModuleCaptures = []) {
     const lines = [];
     lines.push('VERIFIED STATIC ANALYSIS — deterministic, not hallucinated');
     lines.push('══════════════════════════════════════════════════════════');
     lines.push('');
 
-    // Functions
-    const allFunctions = new Set();
-    for (const variable of Object.keys(mutations)) {
-        for (const w of mutations[variable].writes) allFunctions.add(w.fn);
-        for (const r of mutations[variable].reads) allFunctions.add(r.fn);
-    }
-    allFunctions.delete('(module scope)');
-    if (allFunctions.size > 0) {
-        lines.push('Relevant Functions:');
-        lines.push(`  ${Array.from(allFunctions).join(', ')}`);
-        lines.push('');
+    const isPriority = detail === 'priority';
+    const isStandard = detail === 'standard' || isPriority;
+
+    // ── Relevant Functions ──
+    // Suppressed in standard/priority — it's a raw name dump with no diagnostic value.
+    // The agent can read function names from the file content it already has.
+    if (!isStandard) {
+        const allFunctions = new Set();
+        for (const variable of Object.keys(mutations)) {
+            for (const w of mutations[variable].writes) allFunctions.add(w.fn);
+            for (const r of mutations[variable].reads) allFunctions.add(r.fn);
+        }
+        allFunctions.delete('(module scope)');
+        if (allFunctions.size > 0) {
+            lines.push('Relevant Functions:');
+            lines.push(`  ${Array.from(allFunctions).join(', ')}`);
+            lines.push('');
+        }
     }
 
-    // Mutation chains
-    const mutatedVars = Object.entries(mutations).filter(([, data]) =>
-        data.writes.some(w => w.fn !== '(module scope)')
-    );
+    // Mutation chains — precise cross-function filter for standard/priority
+    //   INCLUDE if: writes in function A AND reads in function B (true cross-function state sharing)
+    //   INCLUDE if: confirmed by globalWriteRaces or constructorCaptures detector (force-include)
+    //   SUPPRESS if: all writes and reads are within the same function (local var, not suspicious)
+    //   SUPPRESS if: only 1 write and 0 reads tracked (declared but not shared)
+    //   SUPPRESS if: name matches noise set
+    // NOTE: ≥2 writes in the SAME function is not a signal — it's a loop counter or local reassignment.
+    const NOISE_VARS = new Set(['i', 'j', 'k', 'n', 'm', 'x', 'y', '_', 'err', 'error', 'e',
+        'res', 'result', 'temp', 'tmp', 'key', 'val', 'value', 'item', 'el', 'elem',
+        'node', 'cb', 'fn', 'idx', 'len', 'count', 'index', 'event', 'evt', 'ctx']);
+    // Build confirmed-variable sets from high-signal detectors for force-include
+    const raceVarNames     = new Set(globalWriteRaces.map(r => (r.variable || '').split(/[.[]/)[0]));
+    const captureVarNames  = new Set(constructorCaptures.map(c => c.sourceBinding || ''));
+    // Full candidate list (used for suppression count)
+    const allMutatedVarsFull = Object.entries(mutations).filter(([, data]) =>
+        data.writes.some(w => w.fn !== '(module scope)'));
+    const mutatedVars = allMutatedVarsFull.filter(([name, data]) => {
+        if (!isStandard) return true; // full — no filter
+        const baseName = name.split(/[.[]/)[0];
+        if (NOISE_VARS.has(baseName)) return false;
+        // Force-include: confirmed by another high-signal detector
+        if (raceVarNames.has(baseName) || captureVarNames.has(baseName)) return true;
+        // Suppress: declared but not traced through multiple functions
+        if (data.writes.length <= 1 && data.reads.length === 0) return false;
+        // Key signal: writes come from at least one function, reads from a DIFFERENT function
+        const writeFns = new Set(data.writes.map(w => w.fn));
+        const readFns  = new Set(data.reads.map(r => r.fn));
+        const isCrossFunction = [...readFns].some(fn => !writeFns.has(fn));
+        return isCrossFunction; // same-function multi-write = loop/reassign, not suspicious
+    });
+    // Track suppressed count for the summary line at the end
+    let _suppressedEntries = isStandard ? (allMutatedVarsFull.length - mutatedVars.length) : 0;
     const allMutatedNames = mutatedVars.map(([name]) => name);
 
-    if (mutatedVars.length > 0) {
+    if (mutatedVars.length > 0 && !isPriority) {
         lines.push('Variable Mutation Chains:');
         for (const [name, data] of mutatedVars) {
             const isPropertyMutation = name.includes('.') || name.includes('[]');
-            const rootName = name.split(/[.\[]/)[0];
+            const rootName = name.split(/[.[]/)[0];
             const hasRelatedArrayMutation = isPropertyMutation && allMutatedNames.some(
                 n => n !== name && (n === rootName || n.startsWith(rootName + '.'))
             );
 
             lines.push(`  ${name}`);
             if (data.writes.length > 0) {
-                // Split by mutation type for clearer output:
-                //   reassigned: variable received a new value (a = x, augmented +=, destructured)
-                //   written:    property/element on the object was mutated (a.x = y, a[k] = y)
-                // Unlabeled writes (pre-migration data) fall back to old behaviour.
                 const reassigned = data.writes.filter(w => w.type === 'reassigned' || (!w.type && !isPropertyMutation));
                 const written    = data.writes.filter(w => w.type === 'written'    || (!w.type && isPropertyMutation));
                 if (reassigned.length > 0) {
@@ -2144,7 +3092,6 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
                     lines.push(`    written: ${written.map(w => `${w.fn} L${w.line}${w.conditional ? ' [CONDITIONAL]' : ''}`).join(', ')}${annotation}`);
                 }
                 if (reassigned.length === 0 && written.length === 0) {
-                    // Fallback — shouldn't occur after full migration but keeps output safe
                     lines.push(`    written: ${data.writes.map(w => `${w.fn} L${w.line}`).join(', ')}`);
                 }
             }
@@ -2159,17 +3106,31 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
         lines.push('');
     }
 
-    // Timing
-    if (timing.length > 0) {
-        lines.push('Async / Timing Nodes:');
-        for (const t of timing) {
-            lines.push(`  ${t.api}  → ${t.callback}  [L${t.line}]`);
+    // Timing nodes
+    // standard/priority: only timing nodes whose callback writes a tracked suspicious var
+    const mutatedVarNames = new Set(mutatedVars.map(([n]) => n.split(/[.[]/)[0]));
+    const suspectedTimingCallbacks = new Set();
+    if (!isStandard) {
+        // full mode — emit all
+        if (timing.length > 0) {
+            lines.push('Async / Timing Nodes:');
+            for (const t of timing) lines.push(`  ${t.api}  → ${t.callback}  [L${t.line}]`);
+            lines.push('');
         }
-        lines.push('');
+    } else {
+        // standard/priority: skip timing section — the relevant ones surface in Causal Chains and Global Write Races
+        // Record callbacks for closure filter below
+        for (const t of timing) suspectedTimingCallbacks.add(t.callback);
     }
 
-    // Closures
-    const captureEntries = Object.entries(closures);
+    // Closure Captures
+    // standard/priority: only closures that capture a var that has ≥2 writes
+    //   OR captures a var involved in a timing callback (stale closure risk)
+    const captureEntries = Object.entries(closures).filter(([fnName, vars]) => {
+        if (!isStandard) return true; // full — all closures
+        if (isPriority) return false; // priority — closures surfaced via constructor captures section
+        return vars.some(v => mutatedVarNames.has(v) || suspectedTimingCallbacks.has(fnName));
+    });
     if (captureEntries.length > 0) {
         lines.push('Closure Captures:');
         for (const [fnName, vars] of captureEntries) {
@@ -2275,7 +3236,7 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
             lines.push('');
         }
         if (styleWarn.length > 0) {
-            lines.push('Event Listener Options Notes (style, does not affect removal):');
+            lines.push('⛔ W3C SPEC CONSTRAINT — passive/once DO NOT affect listener identity (this annotation is a hard spec fact, not open to browser-speculation override):');
             for (const p of styleWarn) {
                 lines.push(`  ${p.description}  [addL${p.addLine} / removeL${p.removeLine}]`);
             }
@@ -2305,13 +3266,342 @@ function formatAnalysis(mutations, closures, timing, reactPatterns = [], floatin
         }
     }
 
-    if (mutatedVars.length === 0 && timing.length === 0 && captureEntries.length === 0
-        && reactPatterns.length === 0 && floatingPromises.length === 0 && listenerParity.length === 0
-        && stateMutations.length === 0 && globalWriteRaces.length === 0) {
+    // Constructor-captured references — cross-file stale object identity
+    if (constructorCaptures.length > 0) {
+        lines.push('Constructor-Captured References ⚠ STALE OBJECT IDENTITY:');
+        for (const c of constructorCaptures) {
+            lines.push(c.annotationText);
+            lines.push('');
+        }
+    }
+
+    // Module-scope stale captures — const x = fn() at module load, fn's backing var later reassigned
+    if (staleModuleCaptures.length > 0) {
+        lines.push('Stale Module-Scope Captures ⚠ CACHED REFERENCE DIVERGES FROM SOURCE:');
+        for (const c of staleModuleCaptures) {
+            const fileTag = c.file ? ` [${c.file}]` : '';
+            lines.push(`  ${c.variable}${fileTag}  captured via ${c.capturedVia}()  at L${c.line}`);
+            lines.push(`  Source: ${c.sourceFile} — ${c.reassignedVar} reassigned in: ${c.reassignSites.map(r => `${r.fn}() L${r.line}`).join(', ')}`);
+            lines.push(`  ⚠ After reassignment, ${c.variable} references the OLD value. All reads are stale.`);
+            lines.push(`  → Fix: call ${c.capturedVia}() each time it's needed instead of caching at module scope.`);
+            lines.push('');
+        }
+    }
+
+    // forEach collection mutation — deterministic JS spec violation
+    if (forEachMutations.length > 0) {
+        lines.push('Collection Mutated During Iteration ⚠ JS SPEC VIOLATION:');
+        for (const m of forEachMutations) {
+            const fileTag = m.file ? ` [${m.file}]` : '';
+            const sev = m.severity === 'critical' ? '🔴 CRITICAL' : '⚠ WARNING';
+            lines.push(`  ${sev}: ${m.collection}.forEach()${fileTag}  L${m.line}`);
+            lines.push(`  Mutations inside callback: ${m.mutations.map(x => `${x.method}() L${x.line}`).join(', ')}`);
+            lines.push(`  ${m.specNote}`);
+            lines.push(`  → Effect: elements may be visited MULTIPLE TIMES or skipped — counts/decisions based on this loop are unreliable.`);
+            lines.push('');
+        }
+    }
+
+    // ── Heuristic Attention Signals — suppressed in standard/priority (already labelled unverified)
+    if (!isStandard && specRisks.length > 0) {
+        lines.push('');
+        lines.push('HEURISTIC ATTENTION SIGNALS — unverified, require human review');
+        lines.push('──────────────────────────────────────────────────────────────');
+        lines.push('(These are NOT confirmed bugs. The following patterns are structurally');
+        lines.push(' associated with off-by-one spec violations. Investigate before acting.)');
+        lines.push('');
+        lines.push('Strict Comparison in Predicate Gate Function:');
+        for (const r of specRisks) {
+            const fileTag = r.file ? ` [${r.file}]` : '';
+            lines.push(`  ATTENTION${fileTag}  L${r.line}  in \`${r.fnName}\``);
+            lines.push(`    Expression: \`${r.expression}\``);
+            lines.push(`    ${r.description}`);
+            lines.push(`    ${r.note}`);
+            lines.push('');
+        }
+    }
+
+    const hasVerifiedFindings = (
+        mutatedVars.length > 0 || timing.length > 0 || captureEntries.length > 0 ||
+        reactPatterns.length > 0 || floatingPromises.length > 0 || listenerParity.length > 0 ||
+        stateMutations.length > 0 || globalWriteRaces.length > 0 || constructorCaptures.length > 0 ||
+        staleModuleCaptures.length > 0 || forEachMutations.length > 0
+    );
+
+    if (!hasVerifiedFindings && specRisks.length === 0) {
         lines.push('No significant mutation chains, timing nodes, or closure captures detected.');
         lines.push('The LLM should analyze the code without AST hints.');
         lines.push('');
     }
 
+    // ── Suppression Summary (standard/priority only) ──
+    // Tells the calling agent that more data exists without forcing it to process all of it.
+    // If agents frequently request detail:'full', the standard filter is too aggressive.
+    if (isStandard && _suppressedEntries > 0) {
+        lines.push(`■ FULL ANALYSIS (${_suppressedEntries} additional same-function mutation chain(s) not shown — pass detail:'full' to analyze() for complete output)`);
+        lines.push('');
+    }
+
     return lines.join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STRUCTURAL EXTRACTION — for the Knowledge Graph Indexer
+//
+// Lightweight single-pass extraction of:
+//   functions[]  — name + lineRange (AST_VERIFIED)
+//   classes[]    — name + lineRange (AST_VERIFIED)
+//   imports[]    — source + specifiers + resolvedPath (from resolver)
+//   exports[]    — name + type (for call-graph edge generation)
+//
+// This is intentionally separate from the mutation/closure analysis
+// so it can be called independently and cheaply (no LLM).
+// Re-uses the already-initialized parserInstance — no extra WASM cost.
+// ═══════════════════════════════════════════════════════════════
+
+const FUNCTION_NODE_TYPES_STRUCT = new Set([
+    'function_declaration', 'generator_function_declaration',
+    'method_definition',
+    // Variable declarators whose value is a function expression or arrow
+    // are handled separately below for named arrow functions.
+]);
+
+/**
+ * Extract a human-readable name from a function-related node.
+ * Returns null for anonymous functions (they're not useful in the graph).
+ */
+function _extractFnName(node) {
+    // function foo() {}  |  function* foo() {}
+    const nameField = node.childForFieldName('name');
+    if (nameField) return nameField.text;
+
+    // Detect: const foo = () => {}  /  const foo = function() {}
+    // The function node's parent is a variable_declarator
+    const parent = node.parent;
+    if (parent?.type === 'variable_declarator') {
+        const varName = parent.childForFieldName('name');
+        return varName?.text || null;
+    }
+    // class method: method_definition has 'name' field
+    if (node.type === 'method_definition') {
+        const key = node.childForFieldName('name');
+        return key?.text || null;
+    }
+    return null;
+}
+
+/**
+ * Walk a root node and collect all function and class declarations.
+ * @param {import('web-tree-sitter').Node} rootNode
+ * @returns {{ functions: Array<{name, lineRange}>, classes: Array<{name, lineRange}> }}
+ */
+function _extractFunctionsAndClasses(rootNode) {
+    const functions = [];
+    const classes = [];
+
+    function walk(node) {
+        // Function declarations
+        if (FUNCTION_NODE_TYPES_STRUCT.has(node.type)) {
+            const name = _extractFnName(node);
+            if (name && name !== '(anonymous)') {
+                functions.push({
+                    name,
+                    lineRange: [node.startPosition.row + 1, node.endPosition.row + 1],
+                });
+            }
+        }
+
+        // Arrow / function expressions assigned to a variable (const foo = () => {})
+        if (node.type === 'variable_declarator') {
+            const value = node.childForFieldName('value');
+            if (value && (value.type === 'arrow_function' || value.type === 'function' || value.type === 'function_expression')) {
+                const varName = node.childForFieldName('name');
+                if (varName?.text) {
+                    functions.push({
+                        name: varName.text,
+                        lineRange: [node.startPosition.row + 1, node.endPosition.row + 1],
+                    });
+                }
+            }
+        }
+
+        // Class declarations
+        if (node.type === 'class_declaration' || node.type === 'class') {
+            const nameField = node.childForFieldName('name');
+            if (nameField?.text) {
+                classes.push({
+                    name: nameField.text,
+                    lineRange: [node.startPosition.row + 1, node.endPosition.row + 1],
+                });
+            }
+        }
+
+        for (const child of node.namedChildren) {
+            walk(child);
+        }
+    }
+
+    walk(rootNode);
+    return { functions, classes };
+}
+
+/**
+ * Extract all import statements from the root node.
+ * Returns an array of:
+ *   { source: string, specifiers: string[], isDefault: bool, isNamespace: bool }
+ * resolvedPath is NOT set here — that's done by the resolve step in ast-bridge.js.
+ */
+function _extractImports(rootNode) {
+    const imports = [];
+    for (const child of rootNode.namedChildren) {
+        if (child.type !== 'import_statement') continue;
+
+        // Get the source string (the 'from' path)
+        const sourceNode = child.childForFieldName('source');
+        if (!sourceNode) continue;
+        // source node text includes quotes — strip them
+        const source = sourceNode.text.replace(/^['"`]|['"`]$/g, '');
+
+        const specifiers = [];
+        let isDefault = false;
+        let isNamespace = false;
+
+        const clause = child.childForFieldName('import')
+            || child.namedChildren.find(c => c.type === 'import_clause');
+
+        if (clause) {
+            for (const n of clause.namedChildren) {
+                if (n.type === 'identifier') {
+                    // import Foo from '...'
+                    specifiers.push(n.text);
+                    isDefault = true;
+                } else if (n.type === 'namespace_import') {
+                    // import * as X from '...'
+                    const alias = n.namedChildren.find(c => c.type === 'identifier');
+                    if (alias) specifiers.push(`* as ${alias.text}`);
+                    isNamespace = true;
+                } else if (n.type === 'named_imports') {
+                    // import { a, b as c } from '...'
+                    for (const spec of n.namedChildren) {
+                        if (spec.type === 'import_specifier') {
+                            const alias = spec.childForFieldName('alias');
+                            const name = spec.childForFieldName('name');
+                            const localName = alias?.text || name?.text;
+                            if (localName) specifiers.push(localName);
+                        }
+                    }
+                }
+            }
+        }
+
+        imports.push({ source, specifiers, isDefault, isNamespace, resolvedPath: null });
+    }
+    return imports;
+}
+
+/**
+ * Extract top-level exports from the root node.
+ * Returns: Array<{ name: string, type: 'function'|'class'|'variable'|'reexport' }>
+ */
+function _extractExports(rootNode) {
+    const exports = [];
+    for (const child of rootNode.namedChildren) {
+        if (child.type === 'export_statement') {
+            // export function foo() {}
+            const decl = child.childForFieldName('declaration');
+            if (decl) {
+                if (decl.type === 'function_declaration' || decl.type === 'generator_function_declaration') {
+                    const name = decl.childForFieldName('name');
+                    if (name) exports.push({ name: name.text, type: 'function' });
+                } else if (decl.type === 'class_declaration') {
+                    const name = decl.childForFieldName('name');
+                    if (name) exports.push({ name: name.text, type: 'class' });
+                } else if (decl.type === 'lexical_declaration' || decl.type === 'variable_declaration') {
+                    for (const declarator of decl.namedChildren) {
+                        if (declarator.type === 'variable_declarator') {
+                            const name = declarator.childForFieldName('name');
+                            if (name?.text) exports.push({ name: name.text, type: 'variable' });
+                        }
+                    }
+                }
+            }
+            // export { a, b as c }
+            const exportClause = child.namedChildren.find(n => n.type === 'export_clause');
+            if (exportClause) {
+                for (const spec of exportClause.namedChildren) {
+                    if (spec.type === 'export_specifier') {
+                        const alias = spec.childForFieldName('alias');
+                        const name = spec.childForFieldName('name');
+                        const exportedName = alias?.text || name?.text;
+                        if (exportedName) exports.push({ name: exportedName, type: 'reexport' });
+                    }
+                }
+            }
+        }
+        // module.exports = { ... }  (CJS)
+        if (child.type === 'expression_statement') {
+            const expr = child.namedChildren[0];
+            if (expr?.type === 'assignment_expression') {
+                const left = expr.childForFieldName('left');
+                const right = expr.childForFieldName('right');
+                if (left?.text === 'module.exports' && right?.type === 'object') {
+                    for (const pair of right.namedChildren) {
+                        if (pair.type === 'pair' || pair.type === 'shorthand_property_identifier') {
+                            const key = pair.childForFieldName('key') || pair;
+                            if (key?.text) exports.push({ name: key.text, type: 'variable' });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return exports;
+}
+
+/**
+ * Extract structural information from a single file's source code.
+ * Returns the shape that GraphBuilder.addFileWithAnalysis() expects.
+ *
+ * @param {string} code — raw source content
+ * @param {string} filename — used to select JS vs TS grammar
+ * @returns {{ functions, classes, imports, exports } | null}
+ */
+export function extractStructuralInfo(code, filename = '') {
+    // Parser must be initialized — call initParser() before using this function.
+    if (!parserInstance || !jsLang) {
+        console.warn('[AST-TS] extractStructuralInfo: parser not initialized — call initParser() first');
+        return null;
+    }
+    const tree = parseCode(code, filename);
+    if (!tree) return null;
+
+    try {
+        const { functions, classes } = _extractFunctionsAndClasses(tree.rootNode);
+        const imports = _extractImports(tree.rootNode);
+        const exports = _extractExports(tree.rootNode);
+        return { functions, classes, imports, exports };
+    } catch (err) {
+        console.warn('[AST-TS] extractStructuralInfo failed:', err.message);
+        return null;
+    } finally {
+        tree.delete();
+    }
+}
+
+/**
+ * Run structural analysis across multiple files.
+ * Returns a Map<filename, structuralInfo> for use in ast-bridge.js.
+ * Safe to call after initParser() has resolved.
+ *
+ * @param {Array<{name: string, content: string}>} files
+ * @returns {Promise<Map<string, object|null>>}
+ */
+export async function runStructuralAnalysis(files) {
+    await initParser();
+    const result = new Map();
+    for (const file of files) {
+        const info = extractStructuralInfo(file.content, file.name.split(/[\\/]/).pop());
+        result.set(file.name, info);
+    }
+    return result;
 }
