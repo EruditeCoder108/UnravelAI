@@ -35,9 +35,9 @@ jobs:
 
       - name: Run Unravel Analysis
         id: unravel
-        # Use 'npx unravel' to call the CLI detective (not the server).
+        # Explicitly tell npx to use the unravel-mcp package to find the 'unravel' command.
         run: |
-          npx -y unravel \
+          npx -y --package unravel-mcp unravel \
             --directory . \
             --symptom "PR diff analysis — identify race conditions, floating promises, stale closures" \
             --format sarif \
