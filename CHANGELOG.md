@@ -3,6 +3,20 @@
 All notable changes to Unravel are documented here.
 Format: `YYYY-MM-DD HH:MM IST | File(s) | What changed | Why`
 
+## 2026-04-04 — 10:00 IST | Oracle V2.3 — The Scholar Model (MCP Distribution Ready)
+
+**Status: Consult Mode Reshaped into a Synthesized JSON Oracle Output.**
+
+- **[NEW] Scholar Mode Architecture (`unravel-mcp/index.js`):** Refactored `formatConsultForAgent` to return a fully structured JSON interface rather than dumping context files as plain text. Replaces raw file dumps with four tailored response keys designed to minimize LLM context bloat:
+  - `intelligence_brief`: The executive summary combining KG readiness, project overview, and a tiered Reasoning Mandate.
+  - `structural_evidence`: Extracted critical AST fragments along with inline source snippets for context. Uses new section-extraction helpers (`extractRelevantSections`) to prune unneeded code bodies.
+  - `project_context`: Cross-file dependency and symbol origin mapping.
+  - `memory`: Injected Task Codex and Diagnosis Archive historical data.
+- **[NEW] Layer 2 AST Noise Reduction in Consult:** Migrated the `filterAstRawMutations` logic into `consult` mode, ensuring consistency with `analyze` mode and completely shielding the context window from variable noise. Context usage reduced by up to 80% on large files.
+- **[DOCS] MCP Distribution Guides:** Added comprehensive installation tutorials to `README.md` for major MCP clients including Claude Code, Cursor, and Cline, along with instructions to acquire a `GEMINI_API_KEY` for semantic embeddings. Updated `how_unravel_works (1).md` to reflect the new Scholar Model output format.
+
+---
+
 ## 2026-04-03 — 13:08 IST | Oracle V2.2 — JSDoc/TSDoc Extraction
 
 **Status: KG Node Summaries Now Human-Authored, Not Heuristic-Only.**

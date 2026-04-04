@@ -441,7 +441,7 @@ Or:
 
 **Auto-builds KG on first call** if none exists (~15-30s, one-time). Every subsequent call is instant (incremental staleness check).
 
-**What §0 contains (Oracle V2.x intelligence layers — all zero-cost):**
+**What §0 contains (Oracle Scholar Model intelligence layers — all zero-cost):**
 
 | Layer | Source | Trust |
 |---|---|---|
@@ -449,7 +449,7 @@ Or:
 | **Dependency Manifest** | `package.json` / `requirements.txt` / `go.mod` | HIGH — direct file read |
 | **Git Context** | Live `git log` / `git diff`, cached per HEAD | HIGH — deterministic |
 | **Context Files** | `README.md`, `CHANGELOG.md`, `ARCHITECTURE.md`, `how-*.md`, `.unravel/context.json` | MEDIUM/HIGH — human-authored |
-| **JSDoc/TSDoc** | Regex scan of raw file source (compiled into KG node `fileSummary`) | MEDIUM — regex, not AST |
+| **JSDoc/TSDoc** | Regex scan of raw file source (compiled into KG node `fileSummary`) | MEDIUM — regex |
 
 **`include` vs `maxFiles`:**
 - `include: ["src/core"]` — only those files/folders are analyzed. KG routing is completely bypassed. Works like a scalpel.
@@ -457,7 +457,7 @@ Or:
 - Both can coexist: `include` wins if both are set.
 
 **Human-written context files (`.unravel/context.json`):**
-You can tell `consult` which files to always inject into §0 by creating this file:
+You can tell `consult` which files to always inject into its context by creating this file:
 ```json
 {
   "include": ["how_unravel_works.md", "docs/architecture.md"],
@@ -465,22 +465,34 @@ You can tell `consult` which files to always inject into §0 by creating this fi
   "maxCharsPerFile": 8000
 }
 ```
-This is the recommended way to give `consult` your own architectural documents, ADRs, or runbooks. Files listed here are injected with your specified trust level — use `"high"` for documents you personally wrote and vouch for.
+This is the recommended way to give `consult` your own architectural documents, ADRs, or runbooks.
 
-**§5 Reasoning Mandate — query type classification:**
-Every response includes a classified reasoning directive:
-- `FACTUAL` — "answer directly, cite exact file:line from §2 AST"
-- `ANALYTICAL` — "think step by step, trace through §3 call graph"
-- `FEASIBILITY` — "map every file that must change, identify invariants from §2 AST"
+**Reasoning Mandate — query type classification:**
+Every response includes a classified reasoning directive under `intelligence_brief`:
+- `FACTUAL` — "answer directly, cite exact file:line from structural_evidence"
+- `ANALYTICAL` — "think step by step, trace through project_context call graph"
+- `FEASIBILITY` — "map every file that must change, identify invariants"
 
-**What it returns:**
+**What it returns (The Scholar Model output):**
 ```json
 {
-  "query": "...",
-  "relevant_files": ["index.js", "embedding.js"],
-  "evidence_report": "=== UNRAVEL CONSULT — Project Intelligence Report ===\n\n§0 PROJECT OVERVIEW...\n§1 STRUCTURAL SCOPE...\n§2 AST FACTS...\n§3 CROSS-FILE GRAPH...\n§4 MEMORY...\n§5 REASONING MANDATE...",
-  "_readiness": { "score": "3/3 core", "layers": { ... } },
-  "_provenance": { "engineVersion": "3.3", "timestamp": "..." }
+  "intelligence_brief": {
+    "project_overview": "Architecture mental model: goals, dependencies...",
+    "structural_scope": "KG routing: what is in scope for this query",
+    "readiness_score": "3/3 core + 1/2 memory",
+    "reasoning_mandate": "Analytical step-by-step trace..."
+  },
+  "structural_evidence": {
+    "ast_facts": "Verified AST analysis of routed files",
+    "critical_snippets": "Inline source for AST-flagged sites (no view_file needed)"
+  },
+  "project_context": {
+    "cross_file_graph": "Call graph, symbol origins, import chains"
+  },
+  "memory": {
+    "codex_discoveries": "Prior task context",
+    "diagnosis_archive": "Verified fixes matching this query"
+  }
 }
 ```
 

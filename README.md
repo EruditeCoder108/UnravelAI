@@ -95,31 +95,34 @@ Tested on real bugs in major open-source repositories before any formal benchmar
 
 ## MCP Quickstart
 
-Unravel's primary interface is an MCP server. Any agent that speaks MCP — Claude Code, Gemini CLI, Cursor, Windsurf — can call it without modification.
+Unravel is available as a public package. Any agent that speaks MCP — Claude Code, Cursor, Windsurf, or Cline — can call it natively via `npx`.
 
+### 1. Enable Semantic Intelligence (Optional but Recommended)
+
+Unravel's most powerful features—Knowledge Graph semantic routing, the Diagnosis Archive, and the Task Codex—rely on Gemini Embedding 2. To use them, you must provide a Gemini API key (the free tier is fully sufficient).
+
+Get your key from [Google AI Studio](https://aistudio.google.com/).
+
+### 2. Add to your AI Agent
+
+**For Claude Code:**
+Add it instantly with one command (includes the optional Gemini key):
 ```bash
-# 1. Install
-cd unravel-mcp && npm install
-
-# 2. Add to Claude Code (or any MCP-compatible agent)
-# In your agent's MCP config:
-{
-  "mcpServers": {
-    "unravel": {
-      "command": "node",
-      "args": ["/path/to/unravel-mcp/index.js"]
-    }
-  }
-}
-
-# 3. Optional: enable semantic search (Gemini Embedding 2)
-export GEMINI_API_KEY=your_key
-
-# 4. Run
-node unravel-mcp/index.js
+claude mcp add unravel-mcp "npx -y unravel-mcp" --env GEMINI_API_KEY=YOUR_KEY_HERE
 ```
 
-Once connected, the agent gains five tools. For a large repo:
+**For Cursor (or Cline / Roo Code in VS Code):**
+1. Open Cursor Settings → **Features** → **MCP Servers**.
+2. Click **+ Add new MCP server**.
+3. Name: `unravel`
+4. Type: `command`
+5. Command: `npx -y unravel-mcp`
+6. *(Optional)* Provide your `GEMINI_API_KEY` in the environment variables section if the tool supports it, or set it globally.
+7. Click **Save** and verify the server connects (the green circle appears).
+
+### 4. How the Agent Uses It
+
+Once connected, the agent gains six tools. For a large repo, the workflow looks like this:
 
 ```
 build_map("/repo")                                     → builds Knowledge Graph (~5s)
@@ -370,13 +373,12 @@ consult({ query: "...", include: ["src/core"] })
 consult({ query: "...", maxFiles: 20 })
 ```
 
-**Response — The Source-Verified Intelligence Report:**
-*   **§0 Project Overview**: High-context synthesis of Git history, JSDoc intent, and local documentation.
-*   **§1 Structural Scope**: Explicit list of which files were analyzed vs. skipped by the KG router.
-*   **§2 AST Facts**: Deterministic mutation chains, async timing signatures, and closure captures.
-*   **§3 Cross-File Graph**: Call edges and symbol origins from `ast-project.js`.
-*   **§4 Memory**: Past Task Codex entries and Diagnosis Archive hits (requires Gemini key).
-*   **§5 Reasoning Mandate**: Detailed step-by-step instructions the LLM must follow to synthesize the truth.
+**Response — The Scholar Model Intelligence Report:**
+Rather than dumping raw text, Unravel synthesizes the data into four distinct sections designed for LLM context digestion:
+*   **`intelligence_brief`**: The executive summary. High-level project architecture, what's in scope, readiness score, and a tiered Reasoning Mandate guiding the LLM on exactly how to process the response (e.g., Factual, Analytical, Feasibility).
+*   **`structural_evidence`**: Deterministic mutation chains, async timing signatures, closure captures, and Critical Source Snippets (autofetched inline for any AST-flagged site). Layer 2 noise reduction ensures context stays lean.
+*   **`project_context`**: The cross-file call graph showing dependencies and origin chains of symbols across the project.
+*   **`memory`**: Retrieval from the Task Codex (past task records) and the Diagnosis Archive (past root causes), automatically providing institutional memory.
 
 ---
 

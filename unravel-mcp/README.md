@@ -18,33 +18,30 @@ Unravel is a static analysis engine that wraps your AI agent's reasoning with AS
 
 ## Installation
 
+Unravel is available as a public package. Call it natively via `npx` with any MCP-compatible agent.
+
+### 1. Enable Semantic Intelligence (Optional but Recommended)
+
+Unravel's most powerful features—Knowledge Graph semantic routing, the Diagnosis Archive, and the Task Codex—rely on Gemini Embedding 2. To use them, you must provide a Gemini API key (the free tier is fully sufficient).
+
+Get your key from [Google AI Studio](https://aistudio.google.com/).
+
+### 2. Add to your AI Agent
+
+**For Claude Code:**
+Add it instantly with one command (includes the optional Gemini key):
 ```bash
-npm install                     # from unravel-mcp/
+claude mcp add unravel-mcp "npx -y unravel-mcp" --env GEMINI_API_KEY=YOUR_KEY_HERE
 ```
 
-### Register with Claude Code
-```bash
-claude mcp add unravel -- node /path/to/unravel-mcp/index.js
-```
-
-### Register with Gemini CLI
-```json
-// .gemini/settings.json
-{
-  "mcpServers": {
-    "unravel": {
-      "command": "node",
-      "args": ["/path/to/unravel-mcp/index.js"]
-    }
-  }
-}
-```
-
-**Optional — enable semantic search:**
-```bash
-export GEMINI_API_KEY=your_key_here
-```
-Required for: embedding-based file routing, semantic codex search, diagnosis archive hit-finding. Without it, keyword routing only.
+**For Cursor (or Cline / Roo Code in VS Code):**
+1. Open Cursor Settings → **Features** → **MCP Servers**.
+2. Click **+ Add new MCP server**.
+3. Name: `unravel`
+4. Type: `command`
+5. Command: `npx -y unravel-mcp`
+6. *(Optional)* Provide your `GEMINI_API_KEY` in the environment variables section if the tool supports it, or set it globally.
+7. Click **Save** and verify the server connects (the green circle appears).
 
 ---
 
@@ -185,13 +182,12 @@ consult({ query: "...", include: ["src/core"] })
 consult({ query: "...", maxFiles: 20 })
 ```
 
-**Response — The Source-Verified Intelligence Report:**
-*   **§0 Project Overview**: Merged intelligence from Git context, JSDoc, and human-written docs.
-*   **§1 Structural Scope**: Which files were routed/embedded vs left out.
-*   **§2 AST Facts**: Deterministic mutation chains and async boundaries.
-*   **§3 Cross-File Graph**: Call edges and symbol origins.
-*   **§4 Memory**: Past codex and archive hits.
-*   **§5 Reasoning Mandate**: Direct step-by-step synthesis instructions for the LLM.
+**Response — The Scholar Model Intelligence Report:**
+Rather than dumping raw text, Unravel synthesizes the data into four distinct sections designed for LLM context digestion:
+*   **`intelligence_brief`**: The executive summary. High-level project architecture, what's in scope, readiness score, and a tiered Reasoning Mandate guiding the LLM on exactly how to process the response (e.g., Factual, Analytical, Feasibility).
+*   **`structural_evidence`**: Deterministic mutation chains, async timing signatures, closure captures, and Critical Source Snippets (autofetched inline for any AST-flagged site). Layer 2 noise reduction ensures context stays lean.
+*   **`project_context`**: The cross-file call graph showing dependencies and origin chains of symbols across the project.
+*   **`memory`**: Retrieval from the Task Codex (past task records) and the Diagnosis Archive (past root causes), automatically providing institutional memory.
 
 ---
 

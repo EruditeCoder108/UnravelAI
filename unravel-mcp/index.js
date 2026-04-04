@@ -2640,124 +2640,194 @@ function buildReadiness({ graph, codexMatches, archiveHits, patternMatches, file
     };
 }
 
+// ── Scholar-Mode Section Extraction ─────────────────────────────────────────
+// Instead of dumping full context docs into the output, extract only the
+// sections whose headings are relevant to the query. Returns: heading index
+// (for navigation) + top matching sections (for content). Full document
+// accessible via view_file for anything not included.
+const _CONSULT_STOP_WORDS = new Set([
+    'the','a','an','is','are','was','were','be','been','being','have','has','had',
+    'do','does','did','will','would','could','should','may','might','can','shall',
+    'to','of','in','for','on','with','at','by','from','as','into','through',
+    'during','before','after','and','but','or','nor','not','so','yet','both',
+    'either','neither','each','every','all','any','few','more','most','other',
+    'some','such','no','only','own','same','than','too','very','just','how',
+    'what','where','when','why','which','who','whom','this','that','these',
+    'those','about','work','use','using','get','set','make','like',
+]);
+
+function extractRelevantSections(content, query, maxTotalChars = 2500) {
+    const queryWords = (query || '').toLowerCase().split(/\W+/).filter(w => w.length > 2 && !_CONSULT_STOP_WORDS.has(w));
+    if (queryWords.length === 0 || !content) {
+        const truncated = (content || '').slice(0, maxTotalChars);
+        return truncated + (content && content.length > maxTotalChars ? '\n[... truncated — use view_file for full content]' : '');
+    }
+    // Split by markdown headings
+    const sections = [];
+    const headingRegex = /^(#{1,4})\s+(.+)$/gm;
+    const allHeadings = [];
+    let match;
+    while ((match = headingRegex.exec(content)) !== null) {
+        if (sections.length > 0) {
+            sections[sections.length - 1].body = content.slice(sections[sections.length - 1].bodyStart, match.index).trim();
+        }
+        sections.push({ heading: match[2].trim(), level: match[1].length, bodyStart: match.index + match[0].length, score: 0 });
+        allHeadings.push(match[2].trim());
+    }
+    if (sections.length > 0) {
+        sections[sections.length - 1].body = content.slice(sections[sections.length - 1].bodyStart).trim();
+    }
+    if (sections.length === 0) {
+        const truncated = content.slice(0, maxTotalChars);
+        return truncated + (content.length > maxTotalChars ? '\n[... truncated]' : '');
+    }
+    // Score each section by query keyword overlap
+    for (const sec of sections) {
+        const text = (sec.heading + ' ' + (sec.body || '')).toLowerCase();
+        sec.score = queryWords.reduce((sum, w) => sum + (text.includes(w) ? 1 : 0), 0);
+    }
+    const ranked = [...sections].sort((a, b) => b.score - a.score);
+    const output = [];
+    let totalChars = 0;
+    // Always include heading index for navigation
+    const headingIdx = 'Document sections: ' + allHeadings.join(' | ');
+    output.push(headingIdx);
+    totalChars += headingIdx.length;
+    // Include top-scoring sections
+    for (const sec of ranked) {
+        if (sec.score === 0) continue;
+        const body = (sec.body || '').slice(0, 800);
+        const block = `${'#'.repeat(sec.level)} ${sec.heading}\n${body}${(sec.body || '').length > 800 ? '\n[... section truncated]' : ''}`;
+        if (totalChars + block.length > maxTotalChars && output.length > 1) break;
+        output.push(block);
+        totalChars += block.length;
+    }
+    if (output.length <= 1) {
+        output.push(content.slice(0, 500) + (content.length > 500 ? '\n[... use view_file for full content]' : ''));
+    }
+    output.push(`[Full document: ${content.length} chars — use view_file for deeper context]`);
+    return output.join('\n\n');
+}
+
 function formatConsultForAgent({ query, consultResult, codexResult, archiveHits, patternMatches, rankedFiles, graph, allFilePaths, analysisScope, fileContents, projectRoot }) {
     const evidence  = consultResult.evidence || {};
     const cf        = evidence.contextFormatted || '';
     const crossFile = evidence.crossFileRaw;
-    const lines     = [];
-    lines.push('=== UNRAVEL CONSULT â€” Project Intelligence Report ===');
-    lines.push('');
-    lines.push('READING GUIDE:');
-    lines.push('  §0 project_overview  â€” Architecture mental model: goals, key files, critical paths');
-    lines.push('  §1 structural_scope  â€” KG topology: what is in scope for this query, what is not');
-    lines.push('  §2 ast_facts         â€” Verified AST analysis of routed files');
-    lines.push('  §3 cross_file_graph  â€” Call graph, symbol origins, import chains');
-    lines.push('  §4 memory            â€” Codex discoveries, archive fixes, pattern signals');
-    lines.push('  §5 reasoning_mandate â€” How to synthesize your answer from this evidence');
-    lines.push('');
+    const queryWords = (query || '').toLowerCase().split(/\W+/).filter(w => w.length > 2 && !_CONSULT_STOP_WORDS.has(w));
 
-    // "" @0 Project Overview """""""""""""""""""""""""""""""""""""""""""""""""
-    // The senior dev's mental model - architecture, goals, key files, critical paths.
-    // Loaded from .unravel/project-overview.md (auto-generated + human-enriched).
-    // Goes FIRST so the LLM interprets low-level AST facts in architectural context.
-    lines.push('-- §0 PROJECT OVERVIEW (architecture mental model) ---------------------------');
+    // ══════════════════════════════════════════════════════════════════════
+    // KEY 1: intelligence_brief — Agent reads this FIRST.
+    //   Reasoning mandate + project overview + intelligence score + scope.
+    //   Usually sufficient for factual queries.
+    // ══════════════════════════════════════════════════════════════════════
+    const briefLines = [];
+    briefLines.push('=== UNRAVEL CONSULT — Project Intelligence Report ===');
+    briefLines.push('');
+    briefLines.push('READING ORDER (structured keys — read selectively, not linearly):');
+    briefLines.push('  1. intelligence_brief    — START HERE. Mandate + overview + scope');
+    briefLines.push('  2. structural_evidence   — AST facts + source snippets + call graph');
+    briefLines.push('  3. memory                — Past discoveries + pattern signals');
+    briefLines.push('  4. project_context       — Deps, git, doc excerpts (verbose — read only if needed)');
+    briefLines.push('');
+
+    // ── §5 REASONING MANDATE (first — instructions before data) ─────────
+    const qLower = (query || '').toLowerCase();
+    const isFeasibility = /\bcan i\b|\bcould i\b|\bwhat would break\b|\bif i\b|\bwould it\b|\bshould i\b|\bsafe to\b|\brefactor\b/.test(qLower);
+    const isFactual     = /\bwhere (is|are|does)\b|\bwhat is\b|\bwhat does\b|\bshow me\b|\bfind\b|\bwhich file\b|\bdefined\b/.test(qLower);
+    const queryType     = isFeasibility ? 'feasibility' : isFactual ? 'factual' : 'analytical';
+
+    const _TIERED = {
+        factual: [
+            'FACTUAL QUERY — answer directly. Cite exact file:line from structural_evidence. Be brief.',
+            'If the answer is not in the evidence, say so. Do not guess.',
+        ],
+        analytical: [
+            'ANALYTICAL QUERY — think step by step through the evidence.',
+            'Trace the full chain through the cross-file graph in structural_evidence.',
+            'Identify what the evidence DOES and DOES NOT cover. State assumptions explicitly.',
+            'If the query touches files NOT in scope, say so and suggest include:[X].',
+            'Do NOT speculate beyond what AST evidence and call graph confirm.',
+        ],
+        feasibility: [
+            'FEASIBILITY QUERY — assess from structural evidence, not opinion.',
+            'Map every file that would need to change (use call graph + scope list).',
+            'Identify invariants from AST facts that must not break.',
+            'Report: CAN DO / CANNOT DO / CAN DO WITH CAVEATS + specific file:line constraints.',
+            'If evidence is insufficient, state which files are missing from scope.',
+        ],
+    };
+
+    briefLines.push('Query classified as: ' + queryType.toUpperCase());
+    for (const _r of _TIERED[queryType]) briefLines.push('  - ' + _r);
+    briefLines.push('');
+
+    const inst = consultResult._instructions || {};
+    if (inst.role) briefLines.push('ROLE: ' + inst.role);
+    if (inst.honesty_rules?.length) {
+        briefLines.push('HONESTY RULES:');
+        for (const _hr of inst.honesty_rules) briefLines.push('  - ' + _hr);
+    }
+    if (inst.scope?.not_a_debug_session) briefLines.push('SCOPE: ' + inst.scope.not_a_debug_session);
+    briefLines.push('CODE_FETCH: structural_evidence has inline source for critical AST sites. For other lines, use view_file.');
+    briefLines.push('');
+
+    // ── §0 PROJECT OVERVIEW ─────────────────────────────────────────────
+    briefLines.push('-- PROJECT OVERVIEW (senior dev mental model) --------------------------');
     const overview = projectRoot ? loadProjectOverview(projectRoot) : null;
     if (overview) {
-        lines.push(overview.trimEnd());
+        briefLines.push(overview.trimEnd());
     } else {
-        lines.push('No project overview yet. Run build_map to auto-generate one.');
-        lines.push('(Tip: Edit .unravel/project-overview.md to add project goals and architecture notes.)');
+        briefLines.push('No project overview yet. Run build_map to auto-generate one.');
     }
-    lines.push('');
+    briefLines.push('');
 
-    // -- S0.2 Intelligence readiness score (upfront, not buried at bottom) ----
+    // ── Intelligence Score ───────────────────────────────────────────────
     const _rInline = formatReadinessInline({ graph, codexMatches: codexResult?.matches?.length || 0, archiveHits: archiveHits.length, filesAnalyzed: evidence.fileCount || 0 });
-    lines.push(`Intelligence Score: ${_rInline.score}`);
-    for (const _row of _rInline.rows) lines.push(_row);
-    lines.push(`Tip: ${_rInline.tip}`);
-    lines.push('');
+    briefLines.push(`Intelligence Score: ${_rInline.score}`);
+    for (const _row of _rInline.rows) briefLines.push(_row);
+    briefLines.push(`Tip: ${_rInline.tip}`);
+    briefLines.push('');
 
-    // -- S0.3 Dependency manifest -------------------------------------------
-    if (projectRoot) {
-        const _deps = loadDependencyManifest(projectRoot);
-        if (_deps && (_deps.runtime.length > 0 || _deps.dev.length > 0)) {
-            lines.push('## Dependencies');
-            if (_deps.engines)        lines.push(`Engine: ${_deps.engines}`);
-            if (_deps.runtime.length) lines.push(`Runtime: ${_deps.runtime.join(', ')}`);
-            if (_deps.dev.length)     lines.push(`Dev tools: ${_deps.dev.join(', ')}`);
-            if (_deps.packageManager) lines.push(`Package manager: ${_deps.packageManager}`);
-            lines.push('');
-        }
-    }
-
-    // -- S0.4 Git context ---------------------------------------------------
-    if (projectRoot) {
-        const _git = getGitContext(projectRoot);
-        if (_git) {
-            lines.push('## Recent Activity (git)');
-            if (_git.unstagedFiles.length) lines.push(`Unstaged changes: ${_git.unstagedFiles.join(', ')}`);
-            if (_git.stagedFiles.length)   lines.push(`Staged (uncommitted): ${_git.stagedFiles.join(', ')}`);
-            if (_git.recentFiles.length)   lines.push(`Modified last 14 days: ${_git.recentFiles.join(', ')}`);
-            if (_git.hotFiles.length)      lines.push(`Hotspots (30d churn): ${_git.hotFiles.join(' | ')}`);
-            if (_git.recentCommits.length) {
-                lines.push('Recent commits:');
-                for (const _c of _git.recentCommits) lines.push(`  ${_c}`);
-            }
-            lines.push('[GIT TRUST: HIGH - deterministic from live git log]');
-            lines.push('');
-        }
-    }
-
-    // -- S0.5 Human-written context files (README, CHANGELOG, how-X.md) -----
-    // Intent, goals, domain - things AST cannot derive.
-    // RULE: where these conflict with S2 AST facts, AST wins.
-    if (projectRoot) {
-        const _ctxFiles = loadContextFiles(projectRoot);
-        if (_ctxFiles.length > 0) {
-            lines.push('## Context Files (human-written - use for intent; cross-reference S2 AST for ground truth)');
-            for (const _cf of _ctxFiles) {
-                lines.push(`### ${_cf.name} [TRUST: ${_cf.trust.toUpperCase()}]`);
-                lines.push(_cf.content);
-                lines.push('');
-            }
-        }
-    }
-
-    // "" @1 Structural Scope
-    lines.push('-- §1 STRUCTURAL SCOPE (KG routing for this query) -------------------------');
+    // ── §1 STRUCTURAL SCOPE ─────────────────────────────────────────────
+    briefLines.push('-- STRUCTURAL SCOPE -------------------------------------------------------');
     const totalNodes = (graph?.nodes || []).length;
     const totalEdges = (graph?.edges || []).length;
     const embeddedCount = (graph?.nodes || []).filter(n => n.embedding?.length > 0).length;
-    lines.push(`KG: ${totalNodes} nodes · ${totalEdges} edges · ${embeddedCount} embedded · ${allFilePaths?.length || 0} files indexed`);
-    lines.push('');
+    briefLines.push(`KG: ${totalNodes} nodes · ${totalEdges} edges · ${embeddedCount} embedded · ${allFilePaths?.length || 0} files indexed`);
+    briefLines.push('');
 
-    // What is in analysis scope vs what is not
     const inScopeSet = new Set((analysisScope || rankedFiles || []).map(p => p.replace(/\\/g, '/')));
-    lines.push(`Files in AST analysis scope (${inScopeSet.size}):`);
-    for (const p of [...inScopeSet].slice(0, 20)) lines.push(`  ✓ ${p}`);
-    if (inScopeSet.size > 20) lines.push(`  ... ${inScopeSet.size - 20} more`);
-    lines.push('');
-    const outOfScope = (allFilePaths || []).filter(p => !inScopeSet.has(p.replace(/\\/g, '/'))).slice(0, 20);
+    briefLines.push(`Files in AST analysis scope (${inScopeSet.size}):`);
+    for (const p of [...inScopeSet].slice(0, 20)) briefLines.push(`  ✓ ${p}`);
+    if (inScopeSet.size > 20) briefLines.push(`  ... ${inScopeSet.size - 20} more`);
+    briefLines.push('');
+
+    const outOfScope = (allFilePaths || []).filter(p => !inScopeSet.has(p.replace(/\\/g, '/'))).slice(0, 15);
     if (outOfScope.length > 0) {
-        lines.push(`Files in KG but NOT in AST scope (KG metadata only - use include:[...] for full analysis):`);
+        briefLines.push('Files in KG but NOT analyzed (use include:[...] for full analysis):');
         const _outMeta = buildOutOfScopeWithMeta(outOfScope, graph);
         for (const _m of _outMeta) {
             const _tagStr = _m.tags.length ? ` [${_m.tags.join(', ')}]` : '';
             const _sumStr = _m.summary     ? ` "${_m.summary}"` : '';
-            lines.push(`  ✗ ${_m.path}${_tagStr}${_sumStr}`);
+            briefLines.push(`  ✗ ${_m.path}${_tagStr}${_sumStr}`);
         }
         const remaining = (allFilePaths?.length || 0) - inScopeSet.size - outOfScope.length;
-        if (remaining > 0) lines.push(`  ... and ${remaining} more files in KG`);
+        if (remaining > 0) briefLines.push(`  ... and ${remaining} more files in KG`);
     }
-    lines.push('');
+    briefLines.push('');
 
-    lines.push('-- §2 AST FACTS (verified structural analysis) -----------------------------------');
-    lines.push(cf ? cf.trimEnd() : 'No AST analysis available.');
-    lines.push('');
+    // ══════════════════════════════════════════════════════════════════════
+    // KEY 2: structural_evidence — AST facts + snippets + call graph.
+    //   The deterministic core. Read for analytical/feasibility queries.
+    // ══════════════════════════════════════════════════════════════════════
+    const evidenceLines = [];
 
-    // "" @2.5 Critical Source Snippets """""""""""""""""""""""""""""""""""""
-    // Auto-extract actual source code for the most critical AST-flagged sites.
-    // This eliminates the CODE_FETCH roundtrip " the LLM gets the code inline.
+    // ── §2 AST FACTS ────────────────────────────────────────────────────
+    evidenceLines.push('-- AST FACTS (verified structural analysis) -------------------------');
+    evidenceLines.push(cf ? cf.trimEnd() : 'No AST analysis available.');
+    evidenceLines.push('');
+
+    // ── §2.5 CRITICAL SOURCE SNIPPETS ───────────────────────────────────
     const astRaw = consultResult?.evidence?.astRaw;
     if (astRaw && fileContents && fileContents.size > 0) {
         const snippets = [];
@@ -2787,15 +2857,12 @@ function formatConsultForAgent({ query, consultResult, codexResult, archiveHits,
             snippets.push({ file: fileName, targetLine, label, text: sl.join('\n') });
         };
 
-        // P1: Global write races (ordering is the key question)
         for (const r of (astRaw.globalWriteRaces || []).slice(0, 3)) {
             extractSnippet(r.file || '', r.writeLine, `${r.variable} written before await (race risk)`);
         }
-        // P2: Floating promises
         for (const p of (astRaw.floatingPromises || []).slice(0, 2)) {
             extractSnippet(p.file || '', p.line, `${p.api}() unawaited`);
         }
-        // P3: Cross-file call graph edges
         const cfrSnippet = consultResult?.evidence?.crossFileRaw;
         if (cfrSnippet?.callGraph) {
             const seenCallees = new Set();
@@ -2807,134 +2874,164 @@ function formatConsultForAgent({ query, consultResult, codexResult, archiveHits,
         }
 
         if (snippets.length > 0) {
-            lines.push('-- S2.5 CRITICAL SOURCE SNIPPETS -------------------------------------------');
-            lines.push('(Auto-extracted from AST-flagged sites. No view_file needed for these lines.)');
-            lines.push('');
+            evidenceLines.push('-- CRITICAL SOURCE SNIPPETS (auto-extracted, no view_file needed) ----');
             for (const s of snippets) {
-                lines.push(`  ${s.file}:${s.targetLine} -- ${s.label}`);
-                lines.push(s.text);
-                lines.push('');
+                evidenceLines.push(`  ${s.file}:${s.targetLine} -- ${s.label}`);
+                evidenceLines.push(s.text);
+                evidenceLines.push('');
             }
         }
     }
 
-    lines.push('-- §3 CROSS-FILE GRAPH (call graph, symbol origins) --------------------------');
+    // ── §3 CROSS-FILE GRAPH (query-sorted) ──────────────────────────────
+    evidenceLines.push('-- CROSS-FILE GRAPH (call graph, symbol origins) --------------------');
     if (crossFile) {
         const calls = crossFile.callGraph || [];
         if (calls.length > 0) {
-            lines.push('Call graph (caller → callee):');
-            // Edge fields from ast-project.js buildCallGraph():
-            //   edge.caller   = callerFile (e.g. "index.js")
-            //   edge.callee   = calleeFile (e.g. "embedding.js")
-            //   edge.function = function name called (e.g. "loadDiagnosisArchive")
-            //   edge.line     = call site line number
-            for (const edge of calls.slice(0, 30)) {
+            // Sort by query relevance: edges mentioning query keywords first
+            const sortedCalls = [...calls].sort((a, b) => {
+                const aText = `${a.caller} ${a.callee} ${a.function}`.toLowerCase();
+                const bText = `${b.caller} ${b.callee} ${b.function}`.toLowerCase();
+                const aScore = queryWords.reduce((s, w) => s + (aText.includes(w) ? 1 : 0), 0);
+                const bScore = queryWords.reduce((s, w) => s + (bText.includes(w) ? 1 : 0), 0);
+                return bScore - aScore;
+            });
+            evidenceLines.push('Call graph (sorted by query relevance):');
+            for (const edge of sortedCalls.slice(0, 25)) {
                 const fn = edge.function ? `:${edge.function}()` : '';
                 const ln = edge.line ? ` L${edge.line}` : '';
-                lines.push(`  ${edge.caller} → ${edge.callee}${fn}${ln}`);
+                evidenceLines.push(`  ${edge.caller} → ${edge.callee}${fn}${ln}`);
             }
-            if (calls.length > 30) lines.push(`  ... ${calls.length - 30} more edges`);
+            if (calls.length > 25) evidenceLines.push(`  ... ${calls.length - 25} more edges`);
         }
         const symKeys = Object.keys(crossFile.symbolOrigins || {});
         if (symKeys.length > 0) {
-            lines.push('Symbol origins:');
-            for (const k of symKeys.slice(0, 20)) {
+            evidenceLines.push('Symbol origins:');
+            for (const k of symKeys.slice(0, 15)) {
                 const info = crossFile.symbolOrigins[k];
-                // info is an object: { name, file, line, importedBy: [{file, ...}] }
                 if (info && typeof info === 'object') {
                     const importedBy = (info.importedBy || []).map(i => i.file || i).join(', ');
                     const loc = info.file ? `${info.file}${info.line ? ':L' + info.line : ''}` : '?';
-                    lines.push(`  ${info.name || k}@${loc} → imported by: ${importedBy || 'none'}`);
+                    evidenceLines.push(`  ${info.name || k}@${loc} → imported by: ${importedBy || 'none'}`);
                 } else {
-                    lines.push(`  ${k} → ${info}`);
+                    evidenceLines.push(`  ${k} → ${info}`);
                 }
             }
         }
     } else {
-        lines.push('No cross-file graph available (requires 2+ JS/TS files).');
+        evidenceLines.push('No cross-file graph available (requires 2+ JS/TS files).');
     }
-    lines.push('');
-    lines.push('-- §4 MEMORY LAYERS (past discoveries, verified fixes, pattern signals) ------');
+    evidenceLines.push('');
+
+    // ══════════════════════════════════════════════════════════════════════
+    // KEY 3: memory — Past discoveries, verified fixes, pattern signals.
+    // ══════════════════════════════════════════════════════════════════════
+    const memoryLines = [];
     if (patternMatches.length > 0) {
-        lines.push('STRUCTURAL PATTERN SIGNALS:');
+        memoryLines.push('STRUCTURAL PATTERN SIGNALS:');
         for (const m of patternMatches.slice(0, 3)) {
-            lines.push(`  [${m.pattern?.id || m.pattern?.bugType}] ${(m.confidence * 100).toFixed(0)}% â€” ${m.pattern?.description}`);
+            memoryLines.push(`  [${m.pattern?.id || m.pattern?.bugType}] ${(m.confidence * 100).toFixed(0)}% — ${m.pattern?.description}`);
         }
-        lines.push('');
+        memoryLines.push('');
     }
     if (codexResult?.matches?.length > 0) {
-        lines.push('CODEX PRE-BRIEFING â€” Past debugging discoveries in this area:');
+        memoryLines.push('CODEX PRE-BRIEFING — Past debugging discoveries:');
         for (const m of codexResult.matches) {
-            lines.push(`  [${m.taskId}] "${m.problem}"`);
+            memoryLines.push(`  [${m.taskId}] "${m.problem}"`);
             if (m.discoveries) {
-                for (const dl of m.discoveries.slice(0, 400).trim().split('\n').slice(0, 8)) lines.push(`    ${dl}`);
+                for (const dl of m.discoveries.slice(0, 300).trim().split('\n').slice(0, 6)) memoryLines.push(`    ${dl}`);
             }
-            lines.push('');
+            memoryLines.push('');
         }
     }
     if (archiveHits.length > 0) {
-        lines.push('DIAGNOSIS ARCHIVE â€” Past verified fixes in this area:');
+        memoryLines.push('DIAGNOSIS ARCHIVE — Past verified fixes:');
         for (const h of archiveHits) {
-            lines.push(`  ${(h.score * 100).toFixed(0)}% match â€” ${h.rootCause?.slice(0, 120)}`);
-            lines.push(`    @ ${h.codeLocation} | "${h.symptom?.slice(0, 80)}"`);
+            memoryLines.push(`  ${(h.score * 100).toFixed(0)}% match — ${h.rootCause?.slice(0, 120)}`);
+            memoryLines.push(`    @ ${h.codeLocation} | "${h.symptom?.slice(0, 80)}"`);
         }
-        lines.push('');
+        memoryLines.push('');
     }
     if (!patternMatches.length && !codexResult?.matches?.length && !archiveHits.length) {
-        lines.push('No memory layer matches yet. Run analyze → verify sessions to grow the archive and codex.');
+        memoryLines.push('No memory layer matches yet. Run analyze → verify sessions to grow the archive and codex.');
     }
-    lines.push('');
-    lines.push('-- §5 REASONING MANDATE -------------------------------------------------------');
-    
-        // Heuristic query type classifier " drives tiered reasoning depth
-        const qLower = (query || '').toLowerCase();
-        const isFeasibility = /\bcan i\b|\bcould i\b|\bwhat would break\b|\bif i\b|\bwould it\b|\bshould i\b|\bsafe to\b|\brefactor\b/.test(qLower);
-        const isFactual     = /\bwhere (is|are|does)\b|\bwhat is\b|\bwhat does\b|\bshow me\b|\bfind\b|\bwhich file\b|\bdefined\b/.test(qLower);
-        const queryType     = isFeasibility ? 'feasibility' : isFactual ? 'factual' : 'analytical';
-    
-        const _TIERED = {
-            factual: [
-                'FACTUAL QUERY â€” answer directly. Cite exact file:line from §2 AST. Be brief.',
-                'If the answer is not in the evidence, say so. Do not guess.',
-            ],
-            analytical: [
-                'ANALYTICAL QUERY â€” think step by step through the evidence.',
-                'Trace the full chain through §3 cross-file graph. Do not summarize vaguely.',
-                'Identify what the evidence DOES and DOES NOT cover. State assumptions explicitly.',
-                'If the query touches files NOT in §1 scope, say so and suggest include:[X].',
-                'Do NOT speculate beyond what AST evidence and call graph confirm.',
-            ],
-            feasibility: [
-                'FEASIBILITY QUERY â€” assess from structural evidence, not opinion.',
-                'Map every file that would need to change (use §3 call graph + §1 scope).',
-                'Identify invariants from §2 AST that must not break.',
-                'Report: CAN DO / CANNOT DO / CAN DO WITH CAVEATS + specific file:line constraints.',
-                'If evidence is insufficient, state which files are missing from scope.',
-            ],
-        };
-    
-        lines.push('Query classified as: ' + queryType.toUpperCase());
-        for (const _r of _TIERED[queryType]) lines.push('  - ' + _r);
-        lines.push('');
-    
-        // Role + honesty rules from orchestrate _instructions
-        const inst = consultResult._instructions || {};
-        if (inst.role) lines.push('ROLE: ' + inst.role);
-        if (inst.honesty_rules?.length) {
-            lines.push('HONESTY RULES:');
-            for (const _hr of inst.honesty_rules) lines.push('  - ' + _hr);
+
+    // ══════════════════════════════════════════════════════════════════════
+    // KEY 4: project_context — Dependencies, git activity, doc excerpts.
+    //   Verbose context. Read ONLY when intelligence_brief is insufficient.
+    // ══════════════════════════════════════════════════════════════════════
+    const contextLines = [];
+
+    // ── Dependencies ────────────────────────────────────────────────────
+    if (projectRoot) {
+        const _deps = loadDependencyManifest(projectRoot);
+        if (_deps && (_deps.runtime.length > 0 || _deps.dev.length > 0)) {
+            contextLines.push('## Dependencies');
+            if (_deps.engines)        contextLines.push(`Engine: ${_deps.engines}`);
+            if (_deps.runtime.length) contextLines.push(`Runtime: ${_deps.runtime.join(', ')}`);
+            if (_deps.dev.length)     contextLines.push(`Dev tools: ${_deps.dev.join(', ')}`);
+            if (_deps.packageManager) contextLines.push(`Package manager: ${_deps.packageManager}`);
+            contextLines.push('');
         }
-        if (inst.scope?.not_a_debug_session) lines.push('SCOPE: ' + inst.scope.not_a_debug_session);
-        lines.push('CODE_FETCH: S2.5 above has inline source for critical AST sites. For any other cited line, use view_file â€” never guess ordering from line numbers alone.');
-    lines.push('');
+    }
+
+    // ── Git Context (scope-filtered) ────────────────────────────────────
+    if (projectRoot) {
+        const _git = getGitContext(projectRoot);
+        if (_git) {
+            contextLines.push('## Recent Activity (git)');
+            const _filterGitFiles = (files) => {
+                if (!files || files.length === 0) return [];
+                return files.filter(f => {
+                    const fNorm = f.replace(/\\/g, '/');
+                    if (inScopeSet.has(fNorm)) return true;
+                    const fLower = fNorm.toLowerCase();
+                    return queryWords.some(w => fLower.includes(w));
+                });
+            };
+            const relevantUnstaged = _filterGitFiles(_git.unstagedFiles);
+            const relevantStaged   = _filterGitFiles(_git.stagedFiles);
+            const relevantRecent   = _filterGitFiles(_git.recentFiles);
+            if (relevantUnstaged.length) contextLines.push(`Unstaged (in scope): ${relevantUnstaged.join(', ')}`);
+            if (relevantStaged.length)   contextLines.push(`Staged (in scope): ${relevantStaged.join(', ')}`);
+            if (relevantRecent.length)   contextLines.push(`Modified last 14 days (in scope): ${relevantRecent.join(', ')}`);
+            if (_git.hotFiles.length)    contextLines.push(`Hotspots (30d churn): ${_git.hotFiles.slice(0, 10).join(' | ')}`);
+            if (_git.recentCommits.length) {
+                contextLines.push('Recent commits:');
+                for (const _c of _git.recentCommits.slice(0, 5)) contextLines.push(`  ${_c}`);
+            }
+            contextLines.push('');
+        }
+    }
+
+    // ── Context Files (Scholar-mode: section extraction, not full dump) ──
+    if (projectRoot) {
+        const _ctxFiles = loadContextFiles(projectRoot);
+        if (_ctxFiles.length > 0) {
+            contextLines.push('## Context Files (section-extracted — use view_file for full docs)');
+            for (const _cf of _ctxFiles) {
+                contextLines.push(`### ${_cf.name} [TRUST: ${_cf.trust.toUpperCase()}]`);
+                contextLines.push(extractRelevantSections(_cf.content, query, 2500));
+                contextLines.push('');
+            }
+        }
+    }
+
+    // ── Build readiness + return structured keys ────────────────────────
     const readiness = buildReadiness({
         graph, codexMatches: codexResult?.matches?.length || 0,
         archiveHits: archiveHits.length, patternMatches: patternMatches.length,
         filesAnalyzed: evidence.fileCount || 0,
     });
     return JSON.stringify({
-        query, relevant_files: rankedFiles, evidence_report: lines.join('\n'),
-        _readiness: readiness, _provenance: consultResult._provenance || {},
+        query,
+        relevant_files: rankedFiles,
+        intelligence_brief: briefLines.join('\n'),
+        structural_evidence: evidenceLines.join('\n'),
+        memory: memoryLines.join('\n'),
+        project_context: contextLines.join('\n'),
+        _readiness: readiness,
+        _provenance: consultResult._provenance || {},
     }, null, 2);
 }
 
@@ -3203,7 +3300,19 @@ server.tool(
                 consultResult = { verdict: 'CONSULT_EVIDENCE', _mode: 'consult', evidence: { contextFormatted: '', filesAnalyzed: [], fileCount: 0 }, _instructions: {}, _provenance: { engineVersion: '3.3', timestamp: new Date().toISOString() } };
             }
 
-            if (consultResult.evidence?.astRaw) { session.astRaw = consultResult.evidence.astRaw; session.crossFileRaw = consultResult.evidence.crossFileRaw || null; }
+            // Cache unfiltered AST for verify(), then apply noise reduction for output
+            if (consultResult.evidence?.astRaw) {
+                session.astRaw = consultResult.evidence.astRaw;
+                session.crossFileRaw = consultResult.evidence.crossFileRaw || null;
+                // Layer 2 noise reduction (same as analyze mode)
+                if (detail !== 'full') {
+                    const { filtered, suppressed } = filterAstRawMutations(consultResult.evidence.astRaw);
+                    if (suppressed > 0) {
+                        consultResult.evidence.astRaw = filtered;
+                        process.stderr.write(`[consult] Mutations filtered: ${suppressed} noise vars suppressed\n`);
+                    }
+                }
+            }
 
             const patternMatches = session.astRaw ? matchPatterns(session.astRaw).slice(0, 5) : [];
             if (patternMatches.length) process.stderr.write(`[consult] Patterns: ${patternMatches.length} signal(s)\n`);
