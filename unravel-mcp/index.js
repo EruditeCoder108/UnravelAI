@@ -3050,6 +3050,30 @@ server.tool(
         try {
             await loadCoreModules();
 
+            // ── TEMPORARILY PAUSED (v3.4.3) ────────────────────────────────────
+            // consult mode is being reworked for output quality improvements.
+            // The core engine, KG, and AST analysis are fully operational via
+            // analyze, verify, build_map, and query_graph.
+            return {
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        status: 'TEMPORARILY_PAUSED',
+                        tool: 'consult',
+                        message: 'consult is temporarily paused while we improve output quality and reduce noise in the Scholar Model response format. The tool works — we\'re just making it better.',
+                        what_consult_does: 'consult is Unravel\'s project oracle — it answers any architecture, data-flow, or feasibility question about your codebase by firing every memory layer simultaneously: Knowledge Graph (semantic routing), AST analysis (mutation chains, closures, async), cross-file call graph, Task Codex (past discoveries), and the Diagnosis Archive. It auto-builds a KG on first call and then runs instant incremental staleness checks on every query.',
+                        alternatives: [
+                            'Use build_map to index your project, then query_graph to find relevant files for a symptom.',
+                            'Use analyze to get full deterministic AST evidence for a specific bug.',
+                            'Use verify to cross-check your diagnosis against real code.',
+                        ],
+                        open_source: 'Unravel is open source. If you\'re a nerd and want to check out the implementation or help improve consult mode, the full codebase is at: https://github.com/EruditeCoder108/unravelai',
+                        eta: 'coming back soon in v3.5.0',
+                    }, null, 2),
+                }],
+            };
+            // ───────────────────────────────────────────────────────────────────
+
             const apiKey = process.env.GEMINI_API_KEY;
             if (!apiKey) {
                 process.stderr.write('[consult] No GEMINI_API_KEY â€” returning SETUP_REQUIRED\n');

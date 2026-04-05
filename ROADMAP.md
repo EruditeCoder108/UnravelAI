@@ -55,3 +55,14 @@
 | Webapp self-heal loop in MCP | MCP gives evidence to external agent — agent decides file fetching |
 | MCP streaming results | MCP is one-shot request-response; streaming is webapp-only |
 | Full-codebase Task Codex | Task-scope is the entire point — full-codebase produces same context problem |
+
+
+____________________________
+
+To truly claim we have "zero lag," we should consolidate the staleness logic into a shared helper and call it at the start of query_graph and analyze. This ensures that any tool interacting with the KG guarantees it's fresh.
+
+The Plan:
+
+Extract the consult staleness check logic into an ensureGraphIsFresh(projectRoot) function.
+Call it in analyze, query_graph, and consult.
+This makes the KG "self-healing" as you work.

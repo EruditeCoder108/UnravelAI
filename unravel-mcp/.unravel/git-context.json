@@ -1,0 +1,43 @@
+{
+  "headHash": "e48b73eca8de4930fb036c43147be3b9075d124b",
+  "data": {
+    "recentFiles": [
+      "unravel-mcp/package.json",
+      "unravel-mcp/.unravel/git-context.json",
+      "CHANGELOG.md",
+      "README.md",
+      "how_unravel_works (1).md",
+      "unravel-mcp/.unravel/knowledge.json",
+      "unravel-mcp/.unravel/meta.json",
+      "unravel-mcp/.unravel/project-overview.md",
+      "unravel-mcp/README.md",
+      "unravel-mcp/index.js"
+    ],
+    "hotFiles": [
+      "README.md (27 commits)",
+      "unravel-v3/src/App.jsx (19 commits)",
+      "unravel-v3/src/core/orchestrate.js (17 commits)",
+      "unravel-v3/src/core/ast-engine-ts.js (15 commits)",
+      "unravel-v3/src/core/config.js (12 commits)",
+      "unravel-vscode/src/core/orchestrate.js (12 commits)",
+      ".gitignore (10 commits)",
+      "unravel-vscode/src/core/index.js (8 commits)"
+    ],
+    "recentCommits": [
+      "e48b73e 3.4.2",
+      "1debd35 .",
+      "bfa9913 consult improvements",
+      "a9b64a6 100th",
+      "fdb6fd5 ...",
+      "464c03b yes..",
+      "90274de and again",
+      "48f9f87 again"
+    ],
+    "unstagedFiles": [
+      "ROADMAP.md",
+      "unravel-mcp/.unravel/knowledge.json",
+      "unravel-mcp/.unravel/meta.json"
+    ],
+    "stagedFiles": []
+  }
+}

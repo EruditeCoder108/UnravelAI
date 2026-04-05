@@ -3,7 +3,18 @@
 All notable changes to Unravel are documented here.
 Format: `YYYY-MM-DD HH:MM IST | File(s) | What changed | Why`
 
-## 2026-04-04 — 10:00 IST | Oracle V2.3 — The Scholar Model (MCP Distribution Ready)
+## 2026-04-05 — 12:35 IST | v3.4.3 — consult mode temporarily paused
+
+**Status: consult mode disabled pending output quality fixes. All other tools fully operational.**
+
+- **[PAUSED] `consult` tool (`unravel-mcp/index.js`):** Temporarily replaced the full consult handler with an early-return that explains what consult is, why it's paused, and the ETA for v3.5.0. The tool remains registered in the MCP server — calling agents get a clean `TEMPORARILY_PAUSED` JSON response with useful context and alternatives instead of an error.
+- **[OPEN SOURCE] GitHub invite:** The pause message includes a direct link to the public repo (`github.com/EruditeCoder108/unravelai`) inviting contributors to inspect and improve the Scholar Model output format.
+- **[INTERNALS] Why paused:** The Scholar Model JSON output (`intelligence_brief`, `structural_evidence`, `memory`, `project_context`) was producing excessive `async_state_race` noise in `structural_evidence` — module-level `let` variable assignments were being surfaced as false-positive race signals. This made the consult output 45KB+ on large files and degraded the signal-to-noise ratio for calling agents. v3.5.0 will address this with smarter mutation filtering in consult mode.
+- **[VERSION] Bumped `unravel-mcp` to `3.4.3`.**
+
+---
+
+
 
 **Status: Consult Mode Reshaped into a Synthesized JSON Oracle Output.**
 
