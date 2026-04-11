@@ -348,8 +348,9 @@ export async function orchestrate(codeFiles, symptom, options = {}) {
     // ── Phase 1b: Cross-File AST Resolution ──
     // In the unified engine, ast-engine-ts.js auto-detects Node.js (native) vs WASM.
     // We no longer inject parseCodeNative separately — runCrossFileAnalysis uses
-    // the same engine internally. We gate on _source to confirm native bindings
-    // are active (WASM cross-file is not supported — WASM crashes on cross-file calls).
+    // are active. WASM cross-file MAY panic on some grammars — the try/catch
+    // below handles this gracefully (falls back to single-file analysis).
+    // v3.5.0: canRunCrossFile allows both MCP (native) and browser (WASM+catch).
     let crossFileRaw = null;
     const isNativePath = astRaw?._source === 'native-tree-sitter';
     const canRunCrossFile = options._mode !== 'mcp' || isNativePath;

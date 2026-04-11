@@ -732,10 +732,12 @@ function formatAnalysisForAgent(payload, detail = 'standard') {
     // the engine found no structural bugs. Tell the agent explicitly.
     const astRaw = payload.evidence?.astRaw || {};
     const detectorsFired = [
-        ...(astRaw.globalWriteRaces || []),
+        ...(astRaw.globalWriteRaces    || []).filter(r => !r.writeKind?.includes('UNRESOLVED')),
         ...(astRaw.constructorCaptures || []),
         ...(astRaw.staleModuleCaptures || []),
-        ...(astRaw.floatingPromises || []),
+        ...(astRaw.floatingPromises    || []),
+        ...(astRaw.forEachMutations    || []),
+        ...(astRaw.specRisks           || []),
     ].length;
     const patternMatchCount = (payload.patternMatches || []).length;
     const hasCriticalSignal = cf && cf.trim().length > 50; // contextFormatted has real content
@@ -868,7 +870,7 @@ function filterAstRawMutations(raw) {
         ...(raw.globalWriteRaces    || []).map(r => (r.variable || '').split(/[.[]/)[0]),
         ...(raw.constructorCaptures || []).map(c => c.sourceBinding || ''),
         ...(raw.staleModuleCaptures || []).map(c => (c.variable   || '').split(/[.[]/)[0]),
-        ...(raw.floatingPromises    || []).map(f => f.calledFn    || ''),
+        ...(raw.floatingPromises    || []).map(f => f.api         || ''),
     ]);
 
     const filtered = {};
@@ -1001,10 +1003,20 @@ server.tool(
             // Always load MCP-level patterns.json on first analyze call so that
             // penalizePattern / learnFromDiagnosis operate on the persisted weights
             // from disk (not just the in-memory starter defaults).
-            const mcpPatternFile = join(resolve(import.meta.dirname), '.unravel', 'patterns.json');
-            session.mcpPatternFile = mcpPatternFile; // store for use in verify penalize/learn
+            // v3.5.0: Pattern store is per-project when projectRoot is available,
+            // falls back to MCP-global only for inline-file debugging.
+            const globalPatternFile = join(resolve(import.meta.dirname), '.unravel', 'patterns.json');
+            const projectPatternFile = session.projectRoot
+                ? join(session.projectRoot, '.unravel', 'patterns.json')
+                : null;
+            session.mcpPatternFile = projectPatternFile || globalPatternFile;
             if (!session.patternsLoaded) {
-                await loadPatterns(mcpPatternFile);
+                await loadPatterns(globalPatternFile);
+                // Overlay project-level patterns if available
+                if (projectPatternFile && existsSync(projectPatternFile)) {
+                    await loadPatterns(projectPatternFile);
+                    process.stderr.write(`[unravel-mcp] Project patterns overlaid from ${projectPatternFile}\n`);
+                }
                 session.patternsLoaded = true;
                 process.stderr.write(`[unravel-mcp] Pattern store ready (${getPatternCount()} patterns)\n`);
             }
@@ -1072,7 +1084,7 @@ server.tool(
             // LLM should treat a high-weight match as H1 without needing to
             // re-derive it from the evidence from scratch.
             if (base._instructions && topPatterns.length > 0) {
-                const strongPatterns = topPatterns.filter(p => p.confidence >= 0.5);
+                const strongPatterns = topPatterns.filter(p => p.confidence >= 0.65);
                 if (strongPatterns.length > 0) {
                     base._instructions.patternHints = strongPatterns.map(p => ({
                         patternId:   p.patternId,
@@ -1112,6 +1124,31 @@ server.tool(
                     }
                 } catch (archiveErr) {
                     process.stderr.write(`[unravel:archive] Phase 7b search error (non-fatal): ${archiveErr.message}\n`);
+                }
+            }
+
+            //  Phase 5c-1b: Codex Pre-Briefing in analyze 
+            // Same data as query_graph pre_briefing, but injected into _instructions
+            // so agents who call analyze() directly still get codex context.
+            // v3.5.0: Previously codex was only available via query_graph. Agents
+            // who called analyze(directory, symptom) on small repos got zero codex.
+            if (session.projectRoot && args.symptom) {
+                try {
+                    const codexResult = await searchCodex(session.projectRoot, args.symptom);
+                    if (codexResult.matches.length > 0 && base._instructions) {
+                        base._instructions.codexPreBriefing = {
+                            note: 'Prior debugging sessions matched this symptom. Read these discoveries — they may contain key insights.',
+                            entries: codexResult.matches.map(m => ({
+                                codex: `codex-${m.taskId}`,
+                                problem: m.problem,
+                                relevance_score: m.relevance_score ?? m.score,
+                                discoveries: m.discoveries,
+                            })),
+                        };
+                        process.stderr.write(`[unravel:codex] analyze: ${codexResult.matches.length} codex pre-briefing(s) injected.\n`);
+                    }
+                } catch (codexErr) {
+                    process.stderr.write(`[unravel:codex] analyze pre-briefing error (non-fatal): ${codexErr.message}\n`);
                 }
             }
 

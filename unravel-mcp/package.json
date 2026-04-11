@@ -1,6 +1,6 @@
 {
   "name": "unravel-mcp",
-  "version": "3.4.3",
+  "version": "3.5.0",
   "description": "Unravel MCP Server — Zero-hallucination AST evidence for AI coding agents. Deterministic tree-sitter analysis, mutation chains, cross-file call graphs, and claim verification.",
   "type": "module",
   "bin": {

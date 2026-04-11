@@ -3,6 +3,22 @@
 All notable changes to Unravel are documented here.
 Format: `YYYY-MM-DD HH:MM IST | File(s) | What changed | Why`
 
+## 2026-04-11 — 06:30 IST | v3.5.0 — Code Audit: 8 Fixes (Correctness, Coverage & Context Integrity)
+
+**Status: Full code-audit pass. All confirmed bugs fixed, architectural gaps closed.**
+
+- **[FIX] STATIC_BLIND false verdict (`index.js`):** `forEachMutations` and `specRisks` detectors were not counted in the `detectorsFired` check. A file with only `forEach` mutation or predicate-comparison findings would incorrectly get a "zero detectors fired" verdict. Now all 6 detector types are counted.
+- **[FIX] `filterAstRawMutations` force-include (`index.js`):** The floating-promise force-include was reading `f.calledFn` — a field that doesn't exist. Changed to `f.api`, the correct field. Variables confirmed by floating promise detection are now correctly preserved through the mutation filter.
+- **[FIX] Pass B imported-setter false positives (`ast-engine-ts.js`):** `detectGlobalMutationBeforeAwait` Pass B flagged ANY imported function matching `set*/clear*/reset*/init*` as a confirmed race write. Functions like `initParser`, `setLanguage` produced noise. Now labelled `imported_setter_call (UNRESOLVED)` — still surfaces the signal but clearly marks it as heuristic. Excluded from `detectorsFired` count so they don't cause false STATIC_BLIND inflation.
+- **[FIX] Try-block expansion (`ast-engine-ts.js`):** `detectGlobalMutationBeforeAwait` only scanned top-level statements. The most common real-world server pattern (`try { setTenant(id); await db.query(); }`) was completely missed. Now recurses into `try_statement` bodies for patterns A/B/C.
+- **[NEW] Codex pre-briefing in `analyze` (`index.js`):** Previously codex context was only available via `query_graph`. Agents who called `analyze(directory, symptom)` directly got zero institutional memory from past sessions. Now `searchCodex()` runs in the `analyze` handler and injects matching discoveries into `_instructions.codexPreBriefing`.
+- **[FIX] Per-project pattern store (`index.js`):** Pattern learning was writing to the MCP server's install directory (global). Patterns from Project A could bleed into Project B's diagnoses. Now writes to each project's `.unravel/patterns.json` when `session.projectRoot` is available. Falls back to MCP-global only for inline-file debugging without a project root.
+- **[FIX] Pattern hint threshold raised (`index.js`):** Threshold for injecting pattern hints as H1 raised from 0.50 to 0.65. A 50% confidence pattern being promoted as "treat as primary hypothesis" was too aggressive and could bias agents toward false positives.
+- **[FIX] Browser cross-file comment (`orchestrate.js`):** Updated misleading comment that said "WASM crashes on cross-file calls." The try/catch at L365 already handles this gracefully. Comment now accurately reflects the behavior: WASM cross-file is attempted with graceful fallback.
+- **[VERSION] Bumped `unravel-mcp` to `3.5.0`.**
+
+---
+
 ## 2026-04-05 — 12:35 IST | v3.4.3 — consult mode temporarily paused
 
 **Status: consult mode disabled pending output quality fixes. All other tools fully operational.**

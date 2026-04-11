@@ -2006,10 +2006,9 @@ export function detectGlobalMutationBeforeAwait(tree) {
     // Then we look for the first `await_expression` in a *subsequent*
     // statement within the same block and emit a signal.
     //
-    // Limitation: only inspects direct children of the `statement_block`.
-    // Setter calls wrapped in a try/if/switch at the top level are NOT caught
-    // because the top-level statement is a try_statement/if_statement, not an
-    // expression_statement. Extending to recurse into try bodies is a v2 task.
+    // v3.5.0: Extended to recurse into try_statement bodies (the most common
+    // real-world pattern: `try { setTenant(id); await db.query(); }`).
+    // Still does NOT recurse into if/switch — those are v4.
 
     for (const fnNode of allFunctions) {
         const body = fnNode.childForFieldName('body');
@@ -2052,10 +2051,57 @@ export function detectGlobalMutationBeforeAwait(tree) {
 
                         if (isLocalSetter || isImportedSetter) {
                             writeInfo = {
-                                kind: isLocalSetter ? 'local_setter_call' : 'imported_setter_call',
+                                kind: isLocalSetter ? 'local_setter_call' : 'imported_setter_call (UNRESOLVED)',
                                 variable: calleeName,
                                 line: stmt.startPosition.row + 1,
                             };
+                        }
+                    }
+                }
+            }
+
+            // v3.5.0: Recurse into try_statement bodies — the most common
+            // real-world pattern for server code: try { setTenant(id); await db.query(); }
+            if (!writeInfo && stmt.type === 'try_statement') {
+                const tryBody = stmt.namedChildren.find(c => c.type === 'statement_block');
+                if (tryBody) {
+                    for (const innerStmt of tryBody.namedChildren) {
+                        if (innerStmt.type !== 'expression_statement') continue;
+                        const expr = innerStmt.namedChildren[0];
+                        if (!expr) continue;
+
+                        // Pattern A: direct assignment inside try
+                        if (expr.type === 'assignment_expression') {
+                            const left = expr.childForFieldName('left');
+                            if (left?.type === 'identifier' && moduleScopeWritables.has(left.text)) {
+                                writeInfo = {
+                                    kind: 'direct_assignment',
+                                    variable: left.text,
+                                    line: innerStmt.startPosition.row + 1,
+                                };
+                                break;
+                            }
+                        }
+
+                        // Pattern B/C: setter call inside try
+                        if (expr.type === 'call_expression') {
+                            const callee = expr.childForFieldName('function');
+                            const calleeName = callee?.type === 'identifier' ? callee.text
+                                : callee?.type === 'member_expression'
+                                    ? callee.childForFieldName('property')?.text
+                                    : null;
+                            if (calleeName) {
+                                const isLocalSetter   = localSetterFunctions.has(calleeName);
+                                const isImportedSetter = importedSetterLike.has(calleeName);
+                                if (isLocalSetter || isImportedSetter) {
+                                    writeInfo = {
+                                        kind: isLocalSetter ? 'local_setter_call' : 'imported_setter_call (UNRESOLVED)',
+                                        variable: calleeName,
+                                        line: innerStmt.startPosition.row + 1,
+                                    };
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
