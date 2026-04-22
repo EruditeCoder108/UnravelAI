@@ -1,0 +1,1158 @@
+Let me search up the latest on Ollama embeddings and nomic-embed before I write anything.Good, I have everything I need. Now let me write the complete guide. This will be long — you asked for everything from start to end, so that's what you're getting.
+
+---
+
+## First — what is an embedding model and why does Unravel need it?
+
+Before we touch any code, you need to understand this concept because it affects almost every decision we'll make.
+
+When you call `query_graph("payment is silently failing")` in Unravel, it needs to figure out which files in your codebase are *relevant* to that bug — without you telling it which files. It does this by converting your symptom description into a list of numbers (a vector), and then comparing that vector to vectors it already computed for every file in your Knowledge Graph. Files whose vectors are mathematically "close" to your symptom vector are the relevant ones. This is called **semantic/cosine search**.
+
+That conversion — text → vector of numbers — is what an embedding model does. Right now Unravel uses Gemini's embedding API (`text-embedding-004`) to do this. What we're replacing it with is a **local embedding model running in Ollama**, so zero internet, zero API cost, fully offline.
+
+**Is it as good as Gemini's embeddings?** Honest answer: almost. `nomic-embed-text` scores 62.39 on the MTEB retrieval benchmark and runs entirely on CPU with no GPU needed. Gemini `text-embedding-004` scores around 65-66 on the same benchmark. For code search and bug symptoms specifically, the gap is negligible because your queries are short and direct ("payment silently failing", "race condition in rate limiter") — nomic-embed-text outperforms larger models on short, direct questions like "what does handleWebhook do?"
+
+For your use case — Unravel — nomic is the right pick. It's ~274MB on disk, runs in under 500MB RAM, produces **768-dimensional vectors** (same as Gemini text-embedding-004), and runs at 15–50ms locally vs 200–800ms for cloud APIs including network latency.
+
+Now let's build the whole thing.
+
+---
+
+## The complete integration — step by step
+
+### Step 1: Pull the models into Ollama
+
+Open your terminal. You already have Ollama running (since Gemma 4 E4B works). Run these:
+
+```bash
+# The reasoning brain
+ollama pull gemma4:e4b
+
+# The embedding model (274MB, runs on CPU, ~768-dim vectors)
+ollama pull nomic-embed-text
+
+# Verify both are available
+ollama list
+```
+
+You should see both listed. That's your entire local AI stack. No internet needed after this.
+
+---
+
+### Step 2: Understand what we're building
+
+Your Unravel codebase in `unravel-v3/src/core/` currently has something like an `embedding.js` file that calls the Gemini API, and an `orchestrate.js` that calls Claude/Gemini for reasoning. We are creating two new provider files and a config switch. Nothing else changes — your AST engine, verify(), KG builder, Task Codex, all of it stays exactly the same.
+
+The new files we'll create:
+
+```
+unravel-v3/src/core/
+  providers/
+    ollama-embed.js      ← replaces Gemini embedding calls
+    ollama-llm.js        ← replaces Claude/Gemini reasoning calls
+  config/
+    provider-config.js   ← single switch: 'local' vs 'cloud'
+```
+
+---
+
+### Step 3: The embedding provider (`ollama-embed.js`)
+
+This is the most important file. It must produce 768-dim vectors and match the interface your existing code expects.
+
+```javascript
+// unravel-v3/src/core/providers/ollama-embed.js
+
+const OLLAMA_BASE_URL = 'http://localhost:11434';
+const EMBED_MODEL = 'nomic-embed-text';
+
+/**
+ * Embed a single text string.
+ * Returns a Float32Array of 768 dimensions — same shape as Gemini text-embedding-004.
+ * Drop-in replacement for your existing embedText() function.
+ */
+async function embedText(text) {
+  if (!text || text.trim().length === 0) {
+    throw new Error('[ollama-embed] Cannot embed empty text');
+  }
+
+  // nomic-embed-text uses task prefixes for better retrieval quality.
+  // For documents (KG nodes being indexed): prefix with "search_document: "
+  // For queries (symptoms being searched): prefix with "search_query: "
+  // This is a nomic-specific feature that improves cosine search by ~3-5%.
+  // The caller should pass the correct prefix — see embedDocument() and embedQuery() below.
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/embed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: EMBED_MODEL,
+      input: text,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`[ollama-embed] HTTP ${response.status}: ${body}`);
+  }
+
+  const data = await response.json();
+
+  // Ollama returns: { embeddings: [[...768 numbers...]] }
+  // Note the outer array — it's a batch API even for single inputs
+  if (!data.embeddings || !data.embeddings[0]) {
+    throw new Error(`[ollama-embed] Unexpected response shape: ${JSON.stringify(data)}`);
+  }
+
+  return data.embeddings[0]; // plain number array, 768 elements
+}
+
+/**
+ * Embed a KG node / file description (document being indexed).
+ * Use this in build_map and consult cold builds.
+ */
+async function embedDocument(text) {
+  return embedText(`search_document: ${text}`);
+}
+
+/**
+ * Embed a bug symptom / query (being searched against the KG).
+ * Use this in query_graph and diagnosis archive search.
+ */
+async function embedQuery(text) {
+  return embedText(`search_query: ${text}`);
+}
+
+/**
+ * Batch embed multiple texts. Ollama processes them sequentially under the hood
+ * on CPU, so we just loop. On your hardware (i3, 12GB RAM) each embed
+ * takes ~20-40ms, so 50 nodes = ~1-2 seconds total. Acceptable for build_map.
+ */
+async function embedBatch(texts, type = 'document') {
+  const results = [];
+  for (const text of texts) {
+    const vec = type === 'query'
+      ? await embedQuery(text)
+      : await embedDocument(text);
+    results.push(vec);
+  }
+  return results;
+}
+
+/**
+ * Cosine similarity between two embedding vectors.
+ * This is what query_graph uses to rank files by relevance.
+ * Same math as before — this doesn't change.
+ */
+function cosineSimilarity(vecA, vecB) {
+  if (vecA.length !== vecB.length) {
+    throw new Error(`[ollama-embed] Vector length mismatch: ${vecA.length} vs ${vecB.length}`);
+  }
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dot   += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
+ * Health check — call this on startup to verify Ollama is running
+ * and nomic-embed-text is available before any user request hits embedText().
+ */
+async function checkEmbedHealth() {
+  try {
+    const vec = await embedText('health check');
+    if (vec.length !== 768) {
+      throw new Error(`Expected 768 dims, got ${vec.length}`);
+    }
+    console.log(`[ollama-embed] ✓ nomic-embed-text ready — ${vec.length} dims`);
+    return true;
+  } catch (err) {
+    console.error(`[ollama-embed] ✗ Health check failed: ${err.message}`);
+    console.error('  → Is Ollama running? Try: ollama serve');
+    console.error('  → Is model pulled? Try: ollama pull nomic-embed-text');
+    return false;
+  }
+}
+
+module.exports = { embedText, embedDocument, embedQuery, embedBatch, cosineSimilarity, checkEmbedHealth };
+```
+
+**Why the `search_document:` / `search_query:` prefixes?** This is a nomic-specific trick. The model was trained with these prefixes so it knows the *intent* of the text — is this something being stored (a file description) or something being searched for (a bug symptom)? Using the prefixes gives you measurably better cosine search results. Gemini's model didn't need this. This is the only behavioral difference you need to be aware of.
+
+---
+
+### Step 4: The LLM reasoning provider (`ollama-llm.js`)
+
+This replaces your Claude/Gemini API calls for reasoning — the 11-phase pipeline execution.
+
+```javascript
+// unravel-v3/src/core/providers/ollama-llm.js
+
+const OLLAMA_BASE_URL = 'http://localhost:11434';
+const REASONING_MODEL = 'gemma4:e4b';
+
+/**
+ * Send a reasoning request to Gemma 4 E4B.
+ * This is a drop-in for your existing LLM call in orchestrate.js.
+ *
+ * messages: OpenAI-style array — [{ role: 'system', content: '...' }, { role: 'user', content: '...' }]
+ * options: override temperature, num_ctx etc.
+ */
+async function chat(messages, options = {}) {
+  const payload = {
+    model: REASONING_MODEL,
+    messages,
+    stream: false, // get full response at once, not token-by-token
+    options: {
+      temperature:    options.temperature    ?? 0.1,  // LOW temp = deterministic, consistent reasoning
+      top_p:          options.top_p          ?? 0.9,
+      num_ctx:        options.num_ctx        ?? 16384, // 16K context — fits your typical analyze() payload
+      repeat_penalty: options.repeat_penalty ?? 1.1,  // prevents looping/repetition in long reasoning
+      num_predict:    options.num_predict    ?? 4096,  // max output tokens for a full diagnosis
+    },
+  };
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`[ollama-llm] HTTP ${response.status}: ${body}`);
+  }
+
+  const data = await response.json();
+
+  // Ollama chat response: { message: { role: 'assistant', content: '...' }, done: true, ... }
+  if (!data.message?.content) {
+    throw new Error(`[ollama-llm] Unexpected response: ${JSON.stringify(data)}`);
+  }
+
+  return {
+    content: data.message.content,
+    usage: {
+      // Ollama gives you token counts in the response
+      promptTokens:     data.prompt_eval_count     ?? 0,
+      completionTokens: data.eval_count            ?? 0,
+      totalTokens:     (data.prompt_eval_count ?? 0) + (data.eval_count ?? 0),
+    },
+  };
+}
+
+/**
+ * Health check — verifies Gemma 4 E4B is loaded and responding.
+ */
+async function checkLLMHealth() {
+  try {
+    const result = await chat([
+      { role: 'user', content: 'Reply with only the word: ready' }
+    ], { num_predict: 10, temperature: 0 });
+
+    console.log(`[ollama-llm] ✓ ${REASONING_MODEL} ready`);
+    return true;
+  } catch (err) {
+    console.error(`[ollama-llm] ✗ Health check failed: ${err.message}`);
+    console.error('  → Is Ollama running? Try: ollama serve');
+    console.error(`  → Is model pulled? Try: ollama pull ${REASONING_MODEL}`);
+    return false;
+  }
+}
+
+module.exports = { chat, checkLLMHealth };
+```
+
+**Why temperature 0.1?** This is important. Your 11-phase reasoning protocol is a structured procedure — it needs to produce consistent, verifiable output with `file:line` citations. Higher temperatures make models more "creative" which in this context means more likely to hallucinate line numbers. Keep it low. 0.0 is full determinism but sometimes causes the model to get stuck in repetitive patterns. 0.1 is the sweet spot.
+
+---
+
+### Step 5: The Modelfile — this is where Gemma becomes Unravel-aware
+
+This is the file that makes Gemma 4 E4B go from a generic coding assistant to something that deeply understands Unravel's protocol. Create this file anywhere and then build from it:
+
+```
+# File: Modelfile.unravel
+# Build with: ollama create unravel-gemma4 -f Modelfile.unravel
+
+FROM gemma4:e4b
+
+# Low temperature for structured reasoning
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 32768
+
+SYSTEM """
+You are the Unravel diagnosis engine — a deterministic bug-diagnosis assistant.
+Your ONLY job is to reason through AST evidence and produce verified bug diagnoses.
+
+## YOUR IDENTITY
+- You receive verified structural facts extracted by tree-sitter AST analysis
+- These facts CANNOT be hallucinated — they come from real code
+- Your job is to reason through them using the 11-phase protocol below
+- You do NOT make things up. If evidence is absent, you say so explicitly.
+
+## THE SANDWICH PROTOCOL
+Every diagnosis follows 3 layers:
+1. BASE (Evidence)   → AST facts from analyze() — treat as ground truth
+2. FILLING (Reason)  → You run the 11-phase pipeline below
+3. TOP (Verify)      → verify() checks your claims against real file content
+
+## THE 11-PHASE PIPELINE
+
+**Phase 1 — Symptom Parsing**
+Restate the symptom precisely. What is the observable failure? When does it happen?
+
+**Phase 2 — Evidence Inventory**
+List every AST fact provided. Do not skip any. Note: global_write_races, closure_captures,
+floating_promises, unawaited_calls, mutation_chains, cross_file_edges.
+
+**Phase 3 — Hypothesis Generation**
+Generate EXACTLY 3 mutually exclusive competing hypotheses. They must have DISTINCT
+root mechanisms — not variations of the same idea. For each hypothesis state:
+- H[N]: [mechanism in one sentence]
+- falsifiableIf: [what evidence would kill this hypothesis]
+EXCEPTION: If the bug is trivially obvious (missing semicolon, clear typo) → 1 hypothesis only.
+You MUST state "trivially obvious because: [reason]" or the exception does not apply.
+
+**Phase 3.5 — Hypothesis Expansion**
+Only runs AFTER Phase 4 reveals the full dependency map.
+Add AT MOST +2 new hypotheses if cross-file mechanisms were invisible before Phase 4.
+THE HYPOTHESIS SPACE CLOSES PERMANENTLY AFTER PHASE 3.5. No new hypotheses after this.
+
+**Phase 4 — Evidence Map**
+For each hypothesis, map:
+- supporting[]:    AST facts that support it (cite file:line)
+- contradicting[]: AST facts that contradict it (cite file:line)
+- missing[]:       evidence that would confirm it but is absent
+- verdict:         SUPPORTED | CONTESTED | UNVERIFIABLE | SPECULATIVE
+
+**Phase 5 — Hypothesis Elimination**
+Eliminate hypotheses one by one. EVERY elimination MUST cite the exact code fragment
+(file + line) that kills it. "Eliminated because no evidence" is NOT sufficient —
+you must cite what contradicts it.
+
+**Phase 5.5 — Adversarial Confirmation**
+PRE-CHECK FIRST: list all ⛔ annotations (off-limits for adversarial disproof).
+For each SURVIVING hypothesis: actively try to disprove it.
+If adversarial argument kills it → re-enter Phase 3.5 to add a replacement (max 2 rounds).
+If 2+ hypotheses survive all attacks → set multipleHypothesesSurvived: true.
+DO NOT force a single winner when multiple hypotheses survive.
+
+**Phase 6 — Root Cause Statement**
+State the root cause. MUST contain file:line citation.
+Format: "[file]:[line] — [exact mechanism in one sentence]"
+
+**Phase 7 — Fix Design**
+Propose a minimal fix. State exactly what changes and why.
+Do NOT propose refactors beyond what fixes the bug.
+
+**Phase 8 — Invariants**
+State invariants this fix must preserve.
+
+**Phase 8.5 — Fix-Invariant Check**
+Verify the fix satisfies every invariant. If violated, revise once.
+
+**Phase 9 — Confidence Scoring**
+Rate confidence 0.0–1.0. Justify with: number of AST citations,
+whether hypotheses were eliminated by code evidence vs by absence.
+
+**Phase 10 — verify() Call**
+Produce the verify() call with ALL required fields:
+```json
+{
+  "rootCause":    "file.ts:47 — [exact mechanism]",
+  "codeLocation": "file.ts:47",
+  "evidence":     ["exact literal from file content", "another literal"],
+  "minimalFix":   "Replace X with Y",
+  "hypotheses":   ["H1: ...", "H2: ...", "H3: ..."]
+}
+```
+
+## HARD GATES — verify() will REJECT if violated
+- hypotheses[] MUST be present and non-empty (HYPOTHESIS_GATE)
+- rootCause MUST contain a file:line citation (EVIDENCE_CITATION_GATE)
+- evidence[] strings MUST be exact literal text from the actual file content
+
+## WHAT YOU NEVER DO
+- Never invent line numbers not present in the AST evidence
+- Never claim a bug is in a file not included in the analysis
+- Never skip Phase 3 because "it seems obvious"
+- Never produce a verify() call without running Phases 3–8.5 first
+- Never treat ⛔ annotated facts as hypotheses to disprove
+"""
+```
+
+Build it:
+
+```bash
+ollama create unravel-gemma4 -f Modelfile.unravel
+
+# Test it responded correctly
+ollama run unravel-gemma4 "Say: UNRAVEL READY"
+```
+
+Update `REASONING_MODEL` in `ollama-llm.js` to `'unravel-gemma4'` instead of `'gemma4:e4b'`.
+
+---
+
+### Step 6: The provider config switch
+
+```javascript
+// unravel-v3/src/core/config/provider-config.js
+
+const PROVIDER = process.env.UNRAVEL_PROVIDER || 'local'; // 'local' or 'cloud'
+
+const config = {
+  local: {
+    embedDocument: require('../providers/ollama-embed').embedDocument,
+    embedQuery:    require('../providers/ollama-embed').embedQuery,
+    embedBatch:    require('../providers/ollama-embed').embedBatch,
+    cosineSim:     require('../providers/ollama-embed').cosineSimilarity,
+    chat:          require('../providers/ollama-llm').chat,
+    checkHealth: async () => {
+      const { checkEmbedHealth } = require('../providers/ollama-embed');
+      const { checkLLMHealth }   = require('../providers/ollama-llm');
+      const embedOk = await checkEmbedHealth();
+      const llmOk   = await checkLLMHealth();
+      return embedOk && llmOk;
+    },
+  },
+  cloud: {
+    // your existing Gemini/Claude setup
+    // leave this unchanged so you can switch back instantly
+  },
+};
+
+module.exports = config[PROVIDER];
+```
+
+Now in your existing `embedding.js`, replace direct API calls with:
+
+```javascript
+const provider = require('../config/provider-config');
+
+// Was: await geminiEmbed(text)
+// Now:
+const vec = await provider.embedDocument(text);
+```
+
+And in `orchestrate.js`, replace your Claude/Gemini API call with:
+
+```javascript
+const provider = require('../config/provider-config');
+
+const response = await provider.chat([
+  { role: 'system', content: staticServerDescription }, // your existing Layer 1 prompt
+  { role: 'user',   content: astEvidenceBlock },        // output of analyze()
+]);
+```
+
+Switch between local and cloud with a single env var:
+
+```bash
+UNRAVEL_PROVIDER=local  node your-mcp-server.js   # fully local
+UNRAVEL_PROVIDER=cloud  node your-mcp-server.js   # back to Gemini/Claude
+```
+
+---
+
+### Step 7: One critical issue — the 768-dim mismatch
+
+Your existing `diagnosis-archive.json` and KG embeddings were generated by Gemini's `text-embedding-004` model, which outputs 768 dimensions. `nomic-embed-text` also outputs 768 dimensions. **BUT** — even though the number is the same, the vectors are not comparable. They live in different mathematical spaces. A cosine search between a Gemini vector and a nomic vector will produce meaningless results.
+
+**Fix:** After switching to local, do a one-time re-embed of your existing data:
+
+```javascript
+// scripts/reembed-all.js
+// Run once after switching: node scripts/reembed-all.js
+
+const fs = require('fs');
+const { embedDocument, embedQuery } = require('../src/core/providers/ollama-embed');
+
+async function reembedKG() {
+  const kgPath = '.unravel/knowledge.json';
+  const kg = JSON.parse(fs.readFileSync(kgPath, 'utf8'));
+
+  console.log(`Re-embedding ${kg.nodes.length} KG nodes...`);
+
+  for (const node of kg.nodes) {
+    if (node.fileSummary) {
+      node.embedding = await embedDocument(node.fileSummary);
+      process.stdout.write('.'); // progress dot
+    }
+  }
+
+  fs.writeFileSync(kgPath, JSON.stringify(kg, null, 2));
+  console.log('\n✓ KG re-embedded');
+}
+
+async function reembedArchive() {
+  const archivePath = '.unravel/diagnosis-archive.json';
+  if (!fs.existsSync(archivePath)) return;
+
+  const archive = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
+  console.log(`Re-embedding ${archive.length} archive entries...`);
+
+  for (const entry of archive) {
+    const text = `${entry.symptom} ${entry.rootCause} ${(entry.evidence || []).join(' ')}`;
+    entry.embedding = await embedQuery(text); // archive entries are searched by symptom
+    process.stdout.write('.');
+  }
+
+  fs.writeFileSync(archivePath, JSON.stringify(archive, null, 2));
+  console.log('\n✓ Archive re-embedded');
+}
+
+(async () => {
+  await reembedKG();
+  await reembedArchive();
+  console.log('\nAll done. Run build_map once to verify KG integrity.');
+})();
+```
+
+Run it once: `node scripts/reembed-all.js`. Takes maybe 30 seconds on your hardware. After that everything is consistent and cosine search works correctly.
+
+---
+
+## How good will Gemma 4 E4B actually become?
+
+This is the honest answer. There are three levels and you'll move through them naturally.
+
+**Right now (zero sessions done):** Gemma 4 E4B with the Modelfile is already surprisingly capable on your benchmark-style bugs. It knows JavaScript, TypeScript, async patterns, closures, and race conditions deeply — this is baked into its training. Your 11-phase protocol in the system prompt will force it to reason methodically rather than just pattern-matching. The AST facts constrain it — it can't hallucinate structure that isn't there. Expect 60-75% of the quality of Claude Sonnet on straightforward bugs (floating promise, stale closure, global write race). On complex multi-file bugs like B-21 and B-22, it'll struggle more than Claude, mainly because the context is larger and the reasoning chains are longer.
+
+**After 20-30 `verify(PASSED)` cycles:** This is where it gets interesting. Your pattern store (`patterns.json`) and diagnosis archive build up from real fixed bugs in your project. These feed directly back into every subsequent `analyze()` call as pattern hints and semantic archive hits. These hints are model-agnostic — Gemma reads them the same way Claude did. By this point, for bug types you've seen before, Unravel with Gemma will perform nearly identically to the cloud version because the hard reasoning work has already been done and is being retrieved as ground truth.
+
+**After you do LoRA fine-tuning (future step):** This is where the gap with cloud models actually closes. LoRA lets you train the model on your specific verify(PASSED) history — your actual fixed bugs, your codebase patterns, your naming conventions. A Gemma 4 E4B fine-tuned on 50 of your own verified diagnoses will outperform a generic Claude Sonnet for *your specific project* because it has seen your code. We haven't built this yet — it's the next phase after this integration is stable.
+
+**The ceiling:** Gemma 4 E4B is a 4 billion parameter model. Claude Sonnet is ~70B parameters (estimated). On very novel, deeply nested multi-root-cause bugs where there's no archive match and the pattern store has nothing — you'll feel the gap. The model may fail Phase 5.5 (adversarial confirmation) or produce a weak Phase 9 confidence score. Your verify() gate will catch outright hallucinations. The practical effect is that some hard bugs will need a few more iterations of analyze → verify → retry before they converge. That's acceptable for a fully local, zero-cost system.
+
+---
+
+## Startup health check (put this in your MCP server init)
+
+```javascript
+// In your main index.js / MCP server startup
+
+const provider = require('./config/provider-config');
+
+async function startup() {
+  console.log('Unravel starting — checking local AI stack...');
+  const healthy = await provider.checkHealth();
+
+  if (!healthy) {
+    console.error('\n[FATAL] Local AI stack not ready.');
+    console.error('Run: ollama serve');
+    console.error('Then: ollama pull gemma4:e4b && ollama pull nomic-embed-text');
+    process.exit(1);
+  }
+
+  console.log('✓ Unravel local stack ready\n');
+  // rest of your startup...
+}
+
+startup();
+```
+
+---
+
+## Summary of what you've built
+
+| Component | Before | After |
+|---|---|---|
+| Reasoning (11-phase) | Claude / Gemini API | Gemma 4 E4B via Ollama |
+| Embeddings (KG search) | Gemini text-embedding-004 API | nomic-embed-text via Ollama |
+| AST engine | tree-sitter (local) | unchanged |
+| verify() gate | deterministic (local) | unchanged |
+| Pattern store | local JSON | unchanged |
+| Diagnosis archive | local JSON + embeddings | local JSON + nomic vectors |
+| Internet required | Yes | No |
+| Cost per diagnosis | API tokens | $0 |
+| Context window | 1M (Gemini) | 128K (Gemma 4 E4B) |
+
+The 128K context window is the one real constraint. Your current `consult` mode builds a large §0 PROJECT OVERVIEW — keep an eye on how big that gets. For most Unravel sessions it'll be fine. For very large repos with big codex entries and full git context, you may need to trim what you pass to Gemma.
+
+Want me to now write the LoRA fine-tuning setup (Unsloth) as the next phase, or do you want to get this integration running first?
+---
+
+## First — what is an embedding model and why does Unravel need it?
+
+Before we touch any code, you need to understand this concept because it affects almost every decision we'll make.
+
+When you call `query_graph("payment is silently failing")` in Unravel, it needs to figure out which files in your codebase are *relevant* to that bug — without you telling it which files. It does this by converting your symptom description into a list of numbers (a vector), and then comparing that vector to vectors it already computed for every file in your Knowledge Graph. Files whose vectors are mathematically "close" to your symptom vector are the relevant ones. This is called **semantic/cosine search**.
+
+That conversion — text → vector of numbers — is what an embedding model does. Right now Unravel uses Gemini's embedding API (`text-embedding-004`) to do this. What we're replacing it with is a **local embedding model running in Ollama**, so zero internet, zero API cost, fully offline.
+
+**Is it as good as Gemini's embeddings?** Honest answer: almost. `nomic-embed-text` scores 62.39 on the MTEB retrieval benchmark and runs entirely on CPU with no GPU needed. Gemini `text-embedding-004` scores around 65-66 on the same benchmark. For code search and bug symptoms specifically, the gap is negligible because your queries are short and direct ("payment silently failing", "race condition in rate limiter") — nomic-embed-text outperforms larger models on short, direct questions like "what does handleWebhook do?"
+
+For your use case — Unravel — nomic is the right pick. It's ~274MB on disk, runs in under 500MB RAM, produces **768-dimensional vectors** (same as Gemini text-embedding-004), and runs at 15–50ms locally vs 200–800ms for cloud APIs including network latency.
+
+Now let's build the whole thing.
+
+---
+
+## The complete integration — step by step
+
+### Step 1: Pull the models into Ollama
+
+Open your terminal. You already have Ollama running (since Gemma 4 E4B works). Run these:
+
+```bash
+# The reasoning brain
+ollama pull gemma4:e4b
+
+# The embedding model (274MB, runs on CPU, ~768-dim vectors)
+ollama pull nomic-embed-text
+
+# Verify both are available
+ollama list
+```
+
+You should see both listed. That's your entire local AI stack. No internet needed after this.
+
+---
+
+### Step 2: Understand what we're building
+
+Your Unravel codebase in `unravel-v3/src/core/` currently has something like an `embedding.js` file that calls the Gemini API, and an `orchestrate.js` that calls Claude/Gemini for reasoning. We are creating two new provider files and a config switch. Nothing else changes — your AST engine, verify(), KG builder, Task Codex, all of it stays exactly the same.
+
+The new files we'll create:
+
+```
+unravel-v3/src/core/
+  providers/
+    ollama-embed.js      ← replaces Gemini embedding calls
+    ollama-llm.js        ← replaces Claude/Gemini reasoning calls
+  config/
+    provider-config.js   ← single switch: 'local' vs 'cloud'
+```
+
+---
+
+### Step 3: The embedding provider (`ollama-embed.js`)
+
+This is the most important file. It must produce 768-dim vectors and match the interface your existing code expects.
+
+```javascript
+// unravel-v3/src/core/providers/ollama-embed.js
+
+const OLLAMA_BASE_URL = 'http://localhost:11434';
+const EMBED_MODEL = 'nomic-embed-text';
+
+/**
+ * Embed a single text string.
+ * Returns a Float32Array of 768 dimensions — same shape as Gemini text-embedding-004.
+ * Drop-in replacement for your existing embedText() function.
+ */
+async function embedText(text) {
+  if (!text || text.trim().length === 0) {
+    throw new Error('[ollama-embed] Cannot embed empty text');
+  }
+
+  // nomic-embed-text uses task prefixes for better retrieval quality.
+  // For documents (KG nodes being indexed): prefix with "search_document: "
+  // For queries (symptoms being searched): prefix with "search_query: "
+  // This is a nomic-specific feature that improves cosine search by ~3-5%.
+  // The caller should pass the correct prefix — see embedDocument() and embedQuery() below.
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/embed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: EMBED_MODEL,
+      input: text,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`[ollama-embed] HTTP ${response.status}: ${body}`);
+  }
+
+  const data = await response.json();
+
+  // Ollama returns: { embeddings: [[...768 numbers...]] }
+  // Note the outer array — it's a batch API even for single inputs
+  if (!data.embeddings || !data.embeddings[0]) {
+    throw new Error(`[ollama-embed] Unexpected response shape: ${JSON.stringify(data)}`);
+  }
+
+  return data.embeddings[0]; // plain number array, 768 elements
+}
+
+/**
+ * Embed a KG node / file description (document being indexed).
+ * Use this in build_map and consult cold builds.
+ */
+async function embedDocument(text) {
+  return embedText(`search_document: ${text}`);
+}
+
+/**
+ * Embed a bug symptom / query (being searched against the KG).
+ * Use this in query_graph and diagnosis archive search.
+ */
+async function embedQuery(text) {
+  return embedText(`search_query: ${text}`);
+}
+
+/**
+ * Batch embed multiple texts. Ollama processes them sequentially under the hood
+ * on CPU, so we just loop. On your hardware (i3, 12GB RAM) each embed
+ * takes ~20-40ms, so 50 nodes = ~1-2 seconds total. Acceptable for build_map.
+ */
+async function embedBatch(texts, type = 'document') {
+  const results = [];
+  for (const text of texts) {
+    const vec = type === 'query'
+      ? await embedQuery(text)
+      : await embedDocument(text);
+    results.push(vec);
+  }
+  return results;
+}
+
+/**
+ * Cosine similarity between two embedding vectors.
+ * This is what query_graph uses to rank files by relevance.
+ * Same math as before — this doesn't change.
+ */
+function cosineSimilarity(vecA, vecB) {
+  if (vecA.length !== vecB.length) {
+    throw new Error(`[ollama-embed] Vector length mismatch: ${vecA.length} vs ${vecB.length}`);
+  }
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dot   += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
+ * Health check — call this on startup to verify Ollama is running
+ * and nomic-embed-text is available before any user request hits embedText().
+ */
+async function checkEmbedHealth() {
+  try {
+    const vec = await embedText('health check');
+    if (vec.length !== 768) {
+      throw new Error(`Expected 768 dims, got ${vec.length}`);
+    }
+    console.log(`[ollama-embed] ✓ nomic-embed-text ready — ${vec.length} dims`);
+    return true;
+  } catch (err) {
+    console.error(`[ollama-embed] ✗ Health check failed: ${err.message}`);
+    console.error('  → Is Ollama running? Try: ollama serve');
+    console.error('  → Is model pulled? Try: ollama pull nomic-embed-text');
+    return false;
+  }
+}
+
+module.exports = { embedText, embedDocument, embedQuery, embedBatch, cosineSimilarity, checkEmbedHealth };
+```
+
+**Why the `search_document:` / `search_query:` prefixes?** This is a nomic-specific trick. The model was trained with these prefixes so it knows the *intent* of the text — is this something being stored (a file description) or something being searched for (a bug symptom)? Using the prefixes gives you measurably better cosine search results. Gemini's model didn't need this. This is the only behavioral difference you need to be aware of.
+
+---
+
+### Step 4: The LLM reasoning provider (`ollama-llm.js`)
+
+This replaces your Claude/Gemini API calls for reasoning — the 11-phase pipeline execution.
+
+```javascript
+// unravel-v3/src/core/providers/ollama-llm.js
+
+const OLLAMA_BASE_URL = 'http://localhost:11434';
+const REASONING_MODEL = 'gemma4:e4b';
+
+/**
+ * Send a reasoning request to Gemma 4 E4B.
+ * This is a drop-in for your existing LLM call in orchestrate.js.
+ *
+ * messages: OpenAI-style array — [{ role: 'system', content: '...' }, { role: 'user', content: '...' }]
+ * options: override temperature, num_ctx etc.
+ */
+async function chat(messages, options = {}) {
+  const payload = {
+    model: REASONING_MODEL,
+    messages,
+    stream: false, // get full response at once, not token-by-token
+    options: {
+      temperature:    options.temperature    ?? 0.1,  // LOW temp = deterministic, consistent reasoning
+      top_p:          options.top_p          ?? 0.9,
+      num_ctx:        options.num_ctx        ?? 16384, // 16K context — fits your typical analyze() payload
+      repeat_penalty: options.repeat_penalty ?? 1.1,  // prevents looping/repetition in long reasoning
+      num_predict:    options.num_predict    ?? 4096,  // max output tokens for a full diagnosis
+    },
+  };
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`[ollama-llm] HTTP ${response.status}: ${body}`);
+  }
+
+  const data = await response.json();
+
+  // Ollama chat response: { message: { role: 'assistant', content: '...' }, done: true, ... }
+  if (!data.message?.content) {
+    throw new Error(`[ollama-llm] Unexpected response: ${JSON.stringify(data)}`);
+  }
+
+  return {
+    content: data.message.content,
+    usage: {
+      // Ollama gives you token counts in the response
+      promptTokens:     data.prompt_eval_count     ?? 0,
+      completionTokens: data.eval_count            ?? 0,
+      totalTokens:     (data.prompt_eval_count ?? 0) + (data.eval_count ?? 0),
+    },
+  };
+}
+
+/**
+ * Health check — verifies Gemma 4 E4B is loaded and responding.
+ */
+async function checkLLMHealth() {
+  try {
+    const result = await chat([
+      { role: 'user', content: 'Reply with only the word: ready' }
+    ], { num_predict: 10, temperature: 0 });
+
+    console.log(`[ollama-llm] ✓ ${REASONING_MODEL} ready`);
+    return true;
+  } catch (err) {
+    console.error(`[ollama-llm] ✗ Health check failed: ${err.message}`);
+    console.error('  → Is Ollama running? Try: ollama serve');
+    console.error(`  → Is model pulled? Try: ollama pull ${REASONING_MODEL}`);
+    return false;
+  }
+}
+
+module.exports = { chat, checkLLMHealth };
+```
+
+**Why temperature 0.1?** This is important. Your 11-phase reasoning protocol is a structured procedure — it needs to produce consistent, verifiable output with `file:line` citations. Higher temperatures make models more "creative" which in this context means more likely to hallucinate line numbers. Keep it low. 0.0 is full determinism but sometimes causes the model to get stuck in repetitive patterns. 0.1 is the sweet spot.
+
+---
+
+### Step 5: The Modelfile — this is where Gemma becomes Unravel-aware
+
+This is the file that makes Gemma 4 E4B go from a generic coding assistant to something that deeply understands Unravel's protocol. Create this file anywhere and then build from it:
+
+```
+# File: Modelfile.unravel
+# Build with: ollama create unravel-gemma4 -f Modelfile.unravel
+
+FROM gemma4:e4b
+
+# Low temperature for structured reasoning
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
+PARAMETER num_ctx 32768
+
+SYSTEM """
+You are the Unravel diagnosis engine — a deterministic bug-diagnosis assistant.
+Your ONLY job is to reason through AST evidence and produce verified bug diagnoses.
+
+## YOUR IDENTITY
+- You receive verified structural facts extracted by tree-sitter AST analysis
+- These facts CANNOT be hallucinated — they come from real code
+- Your job is to reason through them using the 11-phase protocol below
+- You do NOT make things up. If evidence is absent, you say so explicitly.
+
+## THE SANDWICH PROTOCOL
+Every diagnosis follows 3 layers:
+1. BASE (Evidence)   → AST facts from analyze() — treat as ground truth
+2. FILLING (Reason)  → You run the 11-phase pipeline below
+3. TOP (Verify)      → verify() checks your claims against real file content
+
+## THE 11-PHASE PIPELINE
+
+**Phase 1 — Symptom Parsing**
+Restate the symptom precisely. What is the observable failure? When does it happen?
+
+**Phase 2 — Evidence Inventory**
+List every AST fact provided. Do not skip any. Note: global_write_races, closure_captures,
+floating_promises, unawaited_calls, mutation_chains, cross_file_edges.
+
+**Phase 3 — Hypothesis Generation**
+Generate EXACTLY 3 mutually exclusive competing hypotheses. They must have DISTINCT
+root mechanisms — not variations of the same idea. For each hypothesis state:
+- H[N]: [mechanism in one sentence]
+- falsifiableIf: [what evidence would kill this hypothesis]
+EXCEPTION: If the bug is trivially obvious (missing semicolon, clear typo) → 1 hypothesis only.
+You MUST state "trivially obvious because: [reason]" or the exception does not apply.
+
+**Phase 3.5 — Hypothesis Expansion**
+Only runs AFTER Phase 4 reveals the full dependency map.
+Add AT MOST +2 new hypotheses if cross-file mechanisms were invisible before Phase 4.
+THE HYPOTHESIS SPACE CLOSES PERMANENTLY AFTER PHASE 3.5. No new hypotheses after this.
+
+**Phase 4 — Evidence Map**
+For each hypothesis, map:
+- supporting[]:    AST facts that support it (cite file:line)
+- contradicting[]: AST facts that contradict it (cite file:line)
+- missing[]:       evidence that would confirm it but is absent
+- verdict:         SUPPORTED | CONTESTED | UNVERIFIABLE | SPECULATIVE
+
+**Phase 5 — Hypothesis Elimination**
+Eliminate hypotheses one by one. EVERY elimination MUST cite the exact code fragment
+(file + line) that kills it. "Eliminated because no evidence" is NOT sufficient —
+you must cite what contradicts it.
+
+**Phase 5.5 — Adversarial Confirmation**
+PRE-CHECK FIRST: list all ⛔ annotations (off-limits for adversarial disproof).
+For each SURVIVING hypothesis: actively try to disprove it.
+If adversarial argument kills it → re-enter Phase 3.5 to add a replacement (max 2 rounds).
+If 2+ hypotheses survive all attacks → set multipleHypothesesSurvived: true.
+DO NOT force a single winner when multiple hypotheses survive.
+
+**Phase 6 — Root Cause Statement**
+State the root cause. MUST contain file:line citation.
+Format: "[file]:[line] — [exact mechanism in one sentence]"
+
+**Phase 7 — Fix Design**
+Propose a minimal fix. State exactly what changes and why.
+Do NOT propose refactors beyond what fixes the bug.
+
+**Phase 8 — Invariants**
+State invariants this fix must preserve.
+
+**Phase 8.5 — Fix-Invariant Check**
+Verify the fix satisfies every invariant. If violated, revise once.
+
+**Phase 9 — Confidence Scoring**
+Rate confidence 0.0–1.0. Justify with: number of AST citations,
+whether hypotheses were eliminated by code evidence vs by absence.
+
+**Phase 10 — verify() Call**
+Produce the verify() call with ALL required fields:
+```json
+{
+  "rootCause":    "file.ts:47 — [exact mechanism]",
+  "codeLocation": "file.ts:47",
+  "evidence":     ["exact literal from file content", "another literal"],
+  "minimalFix":   "Replace X with Y",
+  "hypotheses":   ["H1: ...", "H2: ...", "H3: ..."]
+}
+```
+
+## HARD GATES — verify() will REJECT if violated
+- hypotheses[] MUST be present and non-empty (HYPOTHESIS_GATE)
+- rootCause MUST contain a file:line citation (EVIDENCE_CITATION_GATE)
+- evidence[] strings MUST be exact literal text from the actual file content
+
+## WHAT YOU NEVER DO
+- Never invent line numbers not present in the AST evidence
+- Never claim a bug is in a file not included in the analysis
+- Never skip Phase 3 because "it seems obvious"
+- Never produce a verify() call without running Phases 3–8.5 first
+- Never treat ⛔ annotated facts as hypotheses to disprove
+"""
+```
+
+Build it:
+
+```bash
+ollama create unravel-gemma4 -f Modelfile.unravel
+
+# Test it responded correctly
+ollama run unravel-gemma4 "Say: UNRAVEL READY"
+```
+
+Update `REASONING_MODEL` in `ollama-llm.js` to `'unravel-gemma4'` instead of `'gemma4:e4b'`.
+
+---
+
+### Step 6: The provider config switch
+
+```javascript
+// unravel-v3/src/core/config/provider-config.js
+
+const PROVIDER = process.env.UNRAVEL_PROVIDER || 'local'; // 'local' or 'cloud'
+
+const config = {
+  local: {
+    embedDocument: require('../providers/ollama-embed').embedDocument,
+    embedQuery:    require('../providers/ollama-embed').embedQuery,
+    embedBatch:    require('../providers/ollama-embed').embedBatch,
+    cosineSim:     require('../providers/ollama-embed').cosineSimilarity,
+    chat:          require('../providers/ollama-llm').chat,
+    checkHealth: async () => {
+      const { checkEmbedHealth } = require('../providers/ollama-embed');
+      const { checkLLMHealth }   = require('../providers/ollama-llm');
+      const embedOk = await checkEmbedHealth();
+      const llmOk   = await checkLLMHealth();
+      return embedOk && llmOk;
+    },
+  },
+  cloud: {
+    // your existing Gemini/Claude setup
+    // leave this unchanged so you can switch back instantly
+  },
+};
+
+module.exports = config[PROVIDER];
+```
+
+Now in your existing `embedding.js`, replace direct API calls with:
+
+```javascript
+const provider = require('../config/provider-config');
+
+// Was: await geminiEmbed(text)
+// Now:
+const vec = await provider.embedDocument(text);
+```
+
+And in `orchestrate.js`, replace your Claude/Gemini API call with:
+
+```javascript
+const provider = require('../config/provider-config');
+
+const response = await provider.chat([
+  { role: 'system', content: staticServerDescription }, // your existing Layer 1 prompt
+  { role: 'user',   content: astEvidenceBlock },        // output of analyze()
+]);
+```
+
+Switch between local and cloud with a single env var:
+
+```bash
+UNRAVEL_PROVIDER=local  node your-mcp-server.js   # fully local
+UNRAVEL_PROVIDER=cloud  node your-mcp-server.js   # back to Gemini/Claude
+```
+
+---
+
+### Step 7: One critical issue — the 768-dim mismatch
+
+Your existing `diagnosis-archive.json` and KG embeddings were generated by Gemini's `text-embedding-004` model, which outputs 768 dimensions. `nomic-embed-text` also outputs 768 dimensions. **BUT** — even though the number is the same, the vectors are not comparable. They live in different mathematical spaces. A cosine search between a Gemini vector and a nomic vector will produce meaningless results.
+
+**Fix:** After switching to local, do a one-time re-embed of your existing data:
+
+```javascript
+// scripts/reembed-all.js
+// Run once after switching: node scripts/reembed-all.js
+
+const fs = require('fs');
+const { embedDocument, embedQuery } = require('../src/core/providers/ollama-embed');
+
+async function reembedKG() {
+  const kgPath = '.unravel/knowledge.json';
+  const kg = JSON.parse(fs.readFileSync(kgPath, 'utf8'));
+
+  console.log(`Re-embedding ${kg.nodes.length} KG nodes...`);
+
+  for (const node of kg.nodes) {
+    if (node.fileSummary) {
+      node.embedding = await embedDocument(node.fileSummary);
+      process.stdout.write('.'); // progress dot
+    }
+  }
+
+  fs.writeFileSync(kgPath, JSON.stringify(kg, null, 2));
+  console.log('\n✓ KG re-embedded');
+}
+
+async function reembedArchive() {
+  const archivePath = '.unravel/diagnosis-archive.json';
+  if (!fs.existsSync(archivePath)) return;
+
+  const archive = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
+  console.log(`Re-embedding ${archive.length} archive entries...`);
+
+  for (const entry of archive) {
+    const text = `${entry.symptom} ${entry.rootCause} ${(entry.evidence || []).join(' ')}`;
+    entry.embedding = await embedQuery(text); // archive entries are searched by symptom
+    process.stdout.write('.');
+  }
+
+  fs.writeFileSync(archivePath, JSON.stringify(archive, null, 2));
+  console.log('\n✓ Archive re-embedded');
+}
+
+(async () => {
+  await reembedKG();
+  await reembedArchive();
+  console.log('\nAll done. Run build_map once to verify KG integrity.');
+})();
+```
+
+Run it once: `node scripts/reembed-all.js`. Takes maybe 30 seconds on your hardware. After that everything is consistent and cosine search works correctly.
+
+---
+
+## How good will Gemma 4 E4B actually become?
+
+This is the honest answer. There are three levels and you'll move through them naturally.
+
+**Right now (zero sessions done):** Gemma 4 E4B with the Modelfile is already surprisingly capable on your benchmark-style bugs. It knows JavaScript, TypeScript, async patterns, closures, and race conditions deeply — this is baked into its training. Your 11-phase protocol in the system prompt will force it to reason methodically rather than just pattern-matching. The AST facts constrain it — it can't hallucinate structure that isn't there. Expect 60-75% of the quality of Claude Sonnet on straightforward bugs (floating promise, stale closure, global write race). On complex multi-file bugs like B-21 and B-22, it'll struggle more than Claude, mainly because the context is larger and the reasoning chains are longer.
+
+**After 20-30 `verify(PASSED)` cycles:** This is where it gets interesting. Your pattern store (`patterns.json`) and diagnosis archive build up from real fixed bugs in your project. These feed directly back into every subsequent `analyze()` call as pattern hints and semantic archive hits. These hints are model-agnostic — Gemma reads them the same way Claude did. By this point, for bug types you've seen before, Unravel with Gemma will perform nearly identically to the cloud version because the hard reasoning work has already been done and is being retrieved as ground truth.
+
+**After you do LoRA fine-tuning (future step):** This is where the gap with cloud models actually closes. LoRA lets you train the model on your specific verify(PASSED) history — your actual fixed bugs, your codebase patterns, your naming conventions. A Gemma 4 E4B fine-tuned on 50 of your own verified diagnoses will outperform a generic Claude Sonnet for *your specific project* because it has seen your code. We haven't built this yet — it's the next phase after this integration is stable.
+
+**The ceiling:** Gemma 4 E4B is a 4 billion parameter model. Claude Sonnet is ~70B parameters (estimated). On very novel, deeply nested multi-root-cause bugs where there's no archive match and the pattern store has nothing — you'll feel the gap. The model may fail Phase 5.5 (adversarial confirmation) or produce a weak Phase 9 confidence score. Your verify() gate will catch outright hallucinations. The practical effect is that some hard bugs will need a few more iterations of analyze → verify → retry before they converge. That's acceptable for a fully local, zero-cost system.
+
+---
+
+## Startup health check (put this in your MCP server init)
+
+```javascript
+// In your main index.js / MCP server startup
+
+const provider = require('./config/provider-config');
+
+async function startup() {
+  console.log('Unravel starting — checking local AI stack...');
+  const healthy = await provider.checkHealth();
+
+  if (!healthy) {
+    console.error('\n[FATAL] Local AI stack not ready.');
+    console.error('Run: ollama serve');
+    console.error('Then: ollama pull gemma4:e4b && ollama pull nomic-embed-text');
+    process.exit(1);
+  }
+
+  console.log('✓ Unravel local stack ready\n');
+  // rest of your startup...
+}
+
+startup();
+```
+
+---
+
+## Summary of what you've built
+
+| Component | Before | After |
+|---|---|---|
+| Reasoning (11-phase) | Claude / Gemini API | Gemma 4 E4B via Ollama |
+| Embeddings (KG search) | Gemini text-embedding-004 API | nomic-embed-text via Ollama |
+| AST engine | tree-sitter (local) | unchanged |
+| verify() gate | deterministic (local) | unchanged |
+| Pattern store | local JSON | unchanged |
+| Diagnosis archive | local JSON + embeddings | local JSON + nomic vectors |
+| Internet required | Yes | No |
+| Cost per diagnosis | API tokens | $0 |
+| Context window | 1M (Gemini) | 128K (Gemma 4 E4B) |
+
+The 128K context window is the one real constraint. Your current `consult` mode builds a large §0 PROJECT OVERVIEW — keep an eye on how big that gets. For most Unravel sessions it'll be fine. For very large repos with big codex entries and full git context, you may need to trim what you pass to Gemma.
+
+Want me to now write the LoRA fine-tuning setup (Unsloth) as the next phase, or do you want to get this integration running first?

@@ -24,7 +24,7 @@ and enforces hallucination-free debugging — for Claude Code, Gemini CLI, Curso
 </table>
 
 [![Version](https://img.shields.io/badge/engine-v3.4-58a6ff?style=flat-square&labelColor=0d1117)](https://github.com/EruditeCoder108/UnravelAI)
-[![Benchmark](https://img.shields.io/badge/benchmark-22_bugs-3fb950?style=flat-square&labelColor=0d1117)](#benchmark)
+[![Benchmark](https://img.shields.io/badge/benchmark-25_bugs-3fb950?style=flat-square&labelColor=0d1117)](#benchmark)
 [![MCP](https://img.shields.io/badge/MCP-native-58a6ff?style=flat-square&labelColor=0d1117)](https://modelcontextprotocol.io)
 [![React](https://img.shields.io/badge/react-18.3-61dafb?style=flat-square&labelColor=0d1117&logo=react&logoColor=61dafb)](https://reactjs.org)
 [![Node.js](https://img.shields.io/badge/node.js-%3E%3D18-339933?style=flat-square&labelColor=0d1117&logo=node.js&logoColor=339933)](https://nodejs.org)
@@ -78,7 +78,7 @@ Tested on real bugs in major open-source repositories before any formal benchmar
 - [Web App & VS Code](#web-app--vs-code)
 - [The Core Problem](#the-core-problem)
 - [Architecture — The Sandwich](#architecture)
-- [The 5 MCP Tools](#the-5-mcp-tools)
+- [The 6 MCP Tools](#the-6-mcp-tools)
 - [The 11-Phase Pipeline](#the-11-phase-pipeline)
 - [AST Detectors](#ast-detectors)
 - [Anti-Sycophancy Guardrails](#anti-sycophancy-guardrails)
@@ -348,7 +348,7 @@ Two protocol gates fire before any claim is checked: `HYPOTHESIS_GATE` (hypothes
 
 | Tool | What It Does |
 |------|-------------|
-| `unravel.consult` | **The Project Oracle.** Given any question, finds the structural truth across the entire repo. Merges AST facts, JSDoc intent, Git history, and human docs. |
+| `unravel.consult` | **The Project Oracle.** Given any question, finds the structural truth across the entire repo. Merges AST facts, JSDoc intent, Git history, and human docs. ⚠️ *Temporarily paused — code is complete but output structure is being tightened before re-enabling.* |
 | `unravel.analyze` | Runs AST engine on provided files. Returns mutation chains, race conditions, closure captures, floating promises, pattern matches, and semantic archive hits. The evidence layer. |
 | `unravel.verify` | Takes the agent's diagnosis and checks every claim against real code. Hard-rejects hallucinated citations. The verification layer. |
 | `unravel.build_map` | Builds a Knowledge Graph from a project directory. Maps imports, function calls, and mutations. Embeds nodes via Gemini Embedding 2 for semantic routing. Incremental on subsequent calls. |
@@ -359,9 +359,9 @@ Two protocol gates fire before any claim is checked: `HYPOTHESIS_GATE` (hypothes
 
 ### `unravel.consult` 
 
-A tool that can answer questions about the project structure and architecture perfectly.
+> ⚠️ **Status: Temporarily paused.** The code is fully written and present in the repo. It works, but the output structure isn't tight enough yet — a tool this powerful can waste more tokens than it saves if the response format isn't precise. It will be re-enabled after output quality improvements are complete.
 
-Unlike `analyze` (which needs a bug symptom), `consult` takes any plain-language question and finds the structural truth. It is used for architecture deep-dives, data-flow analysis, and feasibility studies.
+Unlike `analyze` (which needs a bug symptom), `consult` takes any plain-language question and finds the structural truth. It is designed for architecture deep-dives, data-flow analysis, and feasibility studies — the vision is a project oracle that captures enough structural + historical knowledge that teams don't lose critical context when engineers leave.
 
 ```js
 consult({ query: "How does the auth middleware interact with the session store?" })
@@ -538,6 +538,8 @@ Every verified diagnosis is embedded via Gemini Embedding 2 (768-dim vector) and
 
 `.unravel/codex/` is institutional memory for debugging sessions. The agent writes a codex file during a task — discoveries, edits, and cross-file connections scoped to that specific problem. `query_graph` automatically surfaces relevant past codexes in `pre_briefing` before returning the file list. The agent reads past discoveries before opening any source files. Codex entries are also embedded for semantic retrieval — "redux resetting" finds a codex tagged `zustand, state-reversion`.
 
+**Why this matters — a real test:** During development, Claude was asked to read and understand the full Unravel codebase (~10 files, several thousand lines) using the Task Codex. By file 7, its recall of file 2 was visibly degraded. When asked to be brutally honest afterward, Claude confirmed: the codex saved significant effort because it had completely forgotten specifics from files it read 5 files earlier. Without the codex it would have been working from compressed summaries that had already lost the critical line numbers and invariants. With the codex, it went back to its own pinned DECISION entries and proceeded with accurate information. This is the problem the codex solves — context decay prevention, not retrieval.
+
 ### Visual Bug Reports
 
 `query_visual` accepts a PNG/JPEG/WebP screenshot (base64, data-URL, or file path), embeds it in Gemini Embedding 2's cross-modal vector space (same 768-dim geometry as text embeddings), and returns the source files most likely responsible by cosine similarity. Text symptom can be fused at 60/40 image/text weighting. This is the only debugging tool in existence that accepts a broken UI screenshot as its input query.
@@ -546,7 +548,7 @@ Every verified diagnosis is embedded via Gemini Embedding 2 (768-dim vector) and
 
 ## Benchmark
 
-> **This is a stress benchmark, not a coverage benchmark.** Each bug is designed to target a known LLM failure mode — proximate fixation, sycophancy, async reasoning failures, multi-file state corruption. 22 adversarial bugs reveal more about failure modes than 200 average ones.
+> **This is a stress benchmark, not a coverage benchmark.** Each bug is designed to target a known LLM failure mode — proximate fixation, sycophancy, async reasoning failures, multi-file state corruption. 25 adversarial bugs (20 core + 3 super bugs + Raft consensus) reveal more about failure modes than 200 average ones. These are custom-designed bugs, not SWE-bench — each one includes a deliberately planted "proximate fixation trap" that lures the model toward the wrong file. The entire suite is in [`validation/`](validation/) — you can rerun every single one.
 
 ### B-01 to B-22: Internal validation suite
 
@@ -731,26 +733,20 @@ Unravel stands on the shoulders of the community’s collective effort in making
 
 ---
 
-## 🤝 Built with AI Partnership
+## Built with AI
 
-Unravel is a testament to the power of human-AI collaboration. While the core deterministic engine and architectural vision were driven by its human creator, this project was developed, debugged, and documented through an intensive partnership with state-of-the-art AI coding agents.
-
-This collaborative process wasn't just about writing code—it was a meta-experiment in using AI to build a tool that makes AI better. By leveraging AI to help architect the "Sandwich Protocol," Unravel stands as a model for how high-trust, deterministic software can be built in the age of agentic coding.
+I built Unravel using Claude in Antigravity as my primary coding partner. The architecture, design decisions, and iterative debugging were mine — Claude helped execute. I think this is both evidence that current AI coding tools are genuinely useful for building real systems, and evidence of exactly the kind of bugs Unravel is designed to catch — I hit plenty of them during development.
 
 ---
 
-## 🎓 A Personal Note & Open Call
+## Get in Touch
 
-Unravel began as an ambitious experiment: **Could we build a debugging engine that doesn't just guess, but genuinely *knows*?**
+I'm a student who built this alone over several months. There's a lot of unrealized potential here — local-only mode (Ollama), Python/Go language support, codex consolidation, runtime instrumentation, git-integrated forensics — and I ran out of runway to execute it all solo.
 
-As a student developer working on this project, I’ve poured everything into creating this deterministic "Sandwich Protocol"—but the road ahead is even more exciting. With the right tools and more rigorous testing, I believe Unravel can evolve into the ultimate Project Oracle for every developer.
+If you hit a bug, see an architectural mistake, want to benchmark it properly, or want to talk about integrating it into something you're building — I'm reachable.
 
-Because I'm working with a limited budget and a huge vision, I would love to hear from anyone—developers, researchers, or companies—who is interested in the intersection of AST analysis and AI. Whether you've found a bug, have an architectural suggestion, or want to discuss the future of deterministic AI coding, my door is open.
-
-**Let's build the future of zero-hallucination coding together.**
-
-*   **Telegram:** [@TheEruditeSpartan108](https://t.me/TheEruditeSpartan108)
 *   **Email:** [eruditespartan@gmail.com](mailto:eruditespartan@gmail.com)
+*   **Telegram:** [@TheEruditeSpartan108](https://t.me/TheEruditeSpartan108)
 
 ---
 
