@@ -1,0 +1,106 @@
+{
+  "bugId": "super-bug-ghost-tenant",
+  "packageDir": "C:\\Users\\mukti\\Desktop\\UnravelAI\\validation\\benchmark\\packages\\super-bug-ghost-tenant",
+  "embeddingMode": "none",
+  "timeMs": 1160,
+  "buildMap": {
+    "status": "ok",
+    "incremental": false,
+    "durationMs": 24,
+    "stats": {
+      "filesIndexed": 11,
+      "nodes": 55,
+      "edges": 80,
+      "callEdges": 23
+    },
+    "summary": "Knowledge Graph built: 11 files, 55 nodes, 80 edges (23 call edges). Use query_graph to find relevant files for a bug."
+  },
+  "queryGraph": {
+    "symptom": "## Environment\n- Node 20.11, pnpm 8.15, Linux (production, 8-core server)\n- Express 4.18, TypeScript 5.4\n- Multi-tenant SaaS API, ~2,000 req/min peak load\n- Appeared after PR #891 (\"add tenant verification step to middleware pipeline\")\n- Severity: CRITICAL — confidential customer data exposure\n\n## Symptom\nUnder production load, documents belonging to one tenant are appearing in\nanother tenant's API responses. A customer from Acme Corporation reported\nseeing documents titled \"Globex Operations Manual\" and \"Globex Supplier\nContracts\" in their document listing. These documents are confidential to\nGlobex and should be completely invisible to Acme users.\n\nThe issue only manifests under concurrent load. In our staging environment\nwith single-threaded testing it has never reproduced. On the production\nserver processing ~2,000 requests per minute it occurs on approximately\n1 in 300 requests.\n\nThe data leakage is consistent in its pattern: the documents returned belong\nto a DIFFERENT tenant that was processing a request at approximately the same\ntime. The leaked documents are always real documents from a real tenant —\nthis is not garbage data.\n\nOur audit logs are also showing tenant misattribution: access events are\nbeing recorded under the wrong tenant ID, making it impossible to produce\naccurate per-tenant audit trails.\n\nWe believe the issue is in `TenantCache.ts`. The cache uses `getTenant()`\nto build cache keys — if cache keys are being constructed with the wrong\ntenant ID, one tenant's cached results would be returned to another. We\nhave seen suspicious cache key patterns in our monitoring that show keys\nlike `acme:documents:list` being read during a request that should be\nscoped to `globex`.\n\nAlternatively the bug may be in `AuthMiddleware.ts`. If the JWT validation\nis not correctly reading the `tenantId` claim and is falling back to a\nprevious request's tenant context, token validation could be serving the\nwrong tenant's data.\n\n## Stack trace\nNo crash. Silent data exposure.\n\nSequence observed in logs:\n```\n[req_4821] tenantId=acme  GET /documents → 200 (4 docs, all tenant_id=globex) ← WRONG\n[req_4822] tenantId=globex GET /documents → 200 (2 docs, all tenant_id=globex) ← correct\n```\n\n## What I tried\n- Added `console.log(getTenant())` at the top of `TenantCache.buildKey()` —\n  confirmed it returns the wrong tenant ID during affected requests\n- Added `console.log(req.tenantId)` at the entry of each request handler —\n  confirmed the incoming `req.tenantId` is correct (acme for acme requests)\n- Reviewed `AuthMiddleware.enrichRequest()` — correctly extracts tenantId\n  from the JWT claim and attaches it to the request object\n- Reviewed `TenantCache.get()` and `TenantCache.set()` — both look correct;\n  they use `buildKey()` which uses `getTenant()`\n- Checked `QueryBuilder.buildSelect()` — the WHERE clause uses `getTenant()`,\n  and logging confirms it receives the wrong value\n\nThe bug must be in `TenantCache.ts`. The `buildKey()` method is calling\n`getTenant()` which is returning a stale or wrong tenant ID. Either the\nTenantContext module is not being reset between requests, or `TenantCache`\nis somehow sharing state across requests. We should investigate whether\n`TenantCache` should store the tenant ID at construction time rather than\nreading it dynamically from TenantContext on every operation.\n",
+    "relevantFiles": [
+      "src/middleware/TenantMiddleware.ts",
+      "src/middleware/AuthMiddleware.ts",
+      "src/cache/TenantCache.ts",
+      "src/repositories/DocumentRepository.ts",
+      "src/context/TenantContext.ts",
+      "src/audit/AuditLogger.ts",
+      "src/services/DocumentService.ts",
+      "src/db/QueryBuilder.ts"
+    ],
+    "fileCount": 8,
+    "graphFreshness": {
+      "checked": true,
+      "stale": false,
+      "changedFiles": [],
+      "missingHashes": false,
+      "markedStaleEmbeddings": 0,
+      "reason": "graph is fresh"
+    },
+    "embeddingProvider": {
+      "provider": "none",
+      "model": "none",
+      "semanticSearch": false,
+      "visualSearch": false,
+      "requiresApiKey": false,
+      "status": "disabled"
+    },
+    "suggestion": "FAST PRE-BRIEFING: 1 past session(s) matched this symptom -> read the pre_briefing first. Then read the 8 files and pass them to 'analyze'.",
+    "pre_briefing": {
+      "note": "Prior debugging sessions matched this symptom. Read these discoveries BEFORE opening any files -> they may contain key insights that save investigation time.",
+      "entries": [
+        {
+          "codex": "codex-auto-1777564403263",
+          "problem": "Under production load, documents belonging to one tenant are",
+          "relevance_score": 66,
+          "discoveries": "### TenantContext.ts\nDiscovery context: Under production load, documents belonging to one tenant are appearing in another tenant's API respo\n\n- L1 -> DECISION: TenantContext.ts L1: let _activeTenant: string | null = null; - confirmed bug site. _(auto-seeded from verify)_\n- L4 -> DECISION: TenantContext.ts L4: _activeTenant = tenantId; - confirmed bug site. _(auto-seeded from verify)_\n\n### TenantMiddleware.ts\nDiscovery context: Under production load, documents belonging to one tenant are appearing in another tenant's API respo\n\n- L75 -> DECISION: TenantMiddleware.ts L75: setTenant(req.tenantId); - confirmed bug site. _(auto-seeded from verify)_\n- L76 -> DECISION: TenantMiddleware.ts L76: await verifyTenantExists(req.tenantId); - confirmed bug site. _(auto-seeded from verify)_\n\n### TenantCache.ts\nDiscovery context: Under production load, documents belonging to one tenant are appearing in another tenant's API respo\n\n- L26 -> DECISION: TenantCache.ts L26: const tenantId = getTenant(); - confirmed bug site. _(auto-seeded from verify)_\n\n### QueryBuilder.ts\nDiscovery context: Under production load, documents belonging to one tenant are appearing in another tenant's API respo\n\n- L27 -> DECISION: QueryBuilder.ts L27: const tenantId = getTenant(); - confirmed bug site. _(auto-seeded from verify)_\n\n### AuditLogger.ts\nDiscovery context: Under production load, documents belonging to one tenant are appearing in another tenant's API respo\n\n- L33 -> DECISION: AuditLogger.ts L33: const tenantId = getTenant(); - confirmed bug site. _(auto-seeded from verify)_\n\n### AuthMiddleware.ts\nDiscovery context: Under production load, documents belonging to one tenant are appearing in another tenant's API respo\n\n- L77 -> DECISION: AuthMiddleware.ts L77: tenantId: result.payload.tenantId, - confirmed bug site. _(auto-seeded from verify)_"
+        }
+      ]
+    }
+  },
+  "analysisContract": {
+    "hasCriticalSignal": true,
+    "hasProtocol": true,
+    "hasCrossFileGraph": true,
+    "hasRawAstData": true
+  },
+  "diagnosis": {
+    "supported": true,
+    "rootCause": "src/middleware/TenantMiddleware.ts:75 calls setTenant(req.tenantId) before src/middleware/TenantMiddleware.ts:76 awaits verifyTenantExists(), so the module-global _activeTenant from src/context/TenantContext.ts:1 can be overwritten by another request during the async gap.",
+    "evidence": [
+      "src/context/TenantContext.ts L1: let _activeTenant: string | null = null;",
+      "src/middleware/TenantMiddleware.ts L75: setTenant(req.tenantId);",
+      "src/middleware/TenantMiddleware.ts L76: await verifyTenantExists(req.tenantId);",
+      "src/cache/TenantCache.ts L26: const tenantId = getTenant();",
+      "src/db/QueryBuilder.ts L27: const tenantId = getTenant();"
+    ],
+    "codeLocation": "src/middleware/TenantMiddleware.ts:75",
+    "minimalFix": "Move setTenant(req.tenantId); after await verifyTenantExists(req.tenantId); so tenant context is written after tenant verification finishes and immediately before downstream reads.",
+    "hypotheses": [
+      "H1: TenantMiddleware writes a module-global tenant context before an await, creating a cross-request race.",
+      "H2: TenantCache constructs keys incorrectly and leaks entries between tenants.",
+      "H3: AuthMiddleware decodes or validates the tenant claim incorrectly."
+    ],
+    "trapElimination": [
+      "TenantCache is a consumer of getTenant(), not the writer of _activeTenant.",
+      "AuthMiddleware attaches req.tenantId but does not import or mutate TenantContext.",
+      "QueryBuilder consumes the already-corrupt tenant value; the WHERE clause is not the source of corruption."
+    ]
+  },
+  "verification": {
+    "verdict": "PASSED",
+    "allClaimsPassed": true,
+    "failures": [],
+    "confidencePenalty": 0,
+    "rootCauseRejected": false,
+    "summary": "All claims verified against actual code. Your diagnosis is consistent with the codebase."
+  },
+  "score": {
+    "RCA": 2,
+    "PFR": 2,
+    "CFR": 2,
+    "hallucination": false,
+    "verifyPassed": true,
+    "topKRoutingHit": true
+  },
+  "total": 6
+}

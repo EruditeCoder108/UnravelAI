@@ -278,7 +278,7 @@ Every debugging session can be recorded as a **codex file** in `.unravel/codex/`
     codex-embeddings.json ← Semantic embeddings of codex entries
 ```
 
-The agent writes to `.unravel/codex/` during a session. The format is a **detective's notebook** — not a wiki. Only what was relevant to THAT task: `BOUNDARY` (what to skip), `DECISION` (confirmed facts), `CONNECTION` (cross-file links), `CORRECTION` (prior findings that turned out wrong).
+Unravel can auto-seed compact entries in `.unravel/codex/` after `verify(PASSED)`, and the agent can write richer notes during a session. The format is a **detective's notebook** — not a wiki. Only what was relevant to THAT task: `BOUNDARY` (what to skip), `DECISION` (confirmed facts), `CONNECTION` (cross-file links), `CORRECTION` (prior findings that turned out wrong).
 
 ---
 
@@ -358,4 +358,3 @@ Unravel is licensed under the **Business Source License 1.1 (BSL-1.1)**.
 *   **Commercial Use:** Terms apply for larger organizations.
 
 See [LICENSE](LICENSE) for the full text.
-

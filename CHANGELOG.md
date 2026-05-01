@@ -3,6 +3,123 @@
 All notable changes to Unravel are documented here.
 Format: `YYYY-MM-DD HH:MM IST | File(s) | What changed | Why`
 
+## 2026-05-01 — 06:08 IST | MCP Reliability Harness, Benchmark Runner, Doctor CLI & Memory Hardening
+
+**Status: Reliability foundation implemented. Unravel now has a repeatable MCP proof loop instead of only manual smoke testing.**
+
+This entry covers the first reliability sprint after the "brutally reliable, measurable, demoable" plan. The goal was not to claim the whole system is finished; the goal was to install the rails that make every future claim measurable.
+
+### 1. Real MCP Contract Test Harness
+
+- **[NEW] Node test runner wiring (`unravel-mcp/package.json`):** Added `npm test` / `test:mcp` scripts using Node's built-in `node --test`, avoiding new dev dependencies and network install risk.
+- **[NEW] MCP client test helper (`unravel-mcp/test/helpers/mcp-client.js`):** Starts the real `index.js` MCP server over stdio using the official MCP SDK client. Child stderr is piped and drained so tests and demos stay readable.
+- **[NEW] Tool surface contract (`unravel-mcp/test/mcp-contract.test.js`):** Verifies the MCP server exposes exactly the stable reliability surface: `analyze`, `verify`, `build_map`, `query_graph`, `query_visual`, and intentionally paused `consult`.
+- **[NEW] Tool response contracts:** Added coverage for:
+  - `consult` returning `TEMPORARILY_PAUSED`
+  - `build_map(force:true, embeddings:false)` producing files/nodes/edges and nonzero call edges on the known ghost-tenant fixture
+  - `query_graph` returning ranked files plus graph freshness/provider metadata
+  - `analyze` returning the structured keys `critical_signal`, `protocol`, `cross_file_graph`, `raw_ast_data`, `metadata`
+  - `verify` rejecting missing hypotheses, missing `file:line`, and fake evidence
+  - `query_visual` failing cleanly without Gemini visual embedding readiness
+- **[NEW] Unit tests (`unravel-mcp/test/unit.test.js`):** Added focused tests for content hashing, incremental freshness decisions, exact identifier routing, graph metadata stamping, embedding provider diagnostics, and stale embedding marking.
+
+### 2. Benchmark & One-Command Demo Infrastructure
+
+- **[NEW] Demo runner (`validation/run-demo.js`):** `node validation/run-demo.js super-bug-ghost-tenant` now runs the full proof loop:
+  `build_map -> query_graph -> analyze -> naive diagnosis -> verify -> score`.
+- **[NEW] Benchmark runner (`validation/run-benchmark.js`):** Supports `--bug <id>` and emits machine-readable scoring fields:
+  RCA, PFR, CFR, hallucination, verifyPassed, topKRoutingHit, timeMs, embeddingMode.
+- **[NEW] Benchmark common library (`validation/lib/benchmark-common.js`):** Centralizes package discovery, source-only file loading, MCP execution, simple scoring, and result persistence.
+- **[NEW] Benchmark MCP client (`validation/lib/mcp-client.mjs`):** A dedicated benchmark-side MCP client so benchmark scripts do not depend on test helper paths.
+- **[DEMO RESULT] `super-bug-ghost-tenant`:** The scripted demo scored `6/6`, `verify: PASSED`, `hallucination: false`, `topKRoutingHit: true`, using `embeddingMode: none`.
+- **[OUTPUT] Result artifact:** Demo/benchmark runs save `validation/results/super-bug-ghost-tenant/unravel-mcp-benchmark.json`.
+
+### 3. Embedding Provider Abstraction
+
+- **[NEW] Provider interface (`unravel-mcp/server/embedding-provider.js`):** Added `UNRAVEL_EMBED_PROVIDER=gemini|none|local`.
+  - `gemini` remains the default and only active semantic/visual provider.
+  - `none` enables deterministic keyword/KG-only routing with no API calls.
+  - `local` is reserved for future `nomic-embed-text`, `embeddinggemma`, or similar local models.
+- **[SAFETY] API key handling:** Provider resolution reads `GEMINI_API_KEY` only when the provider is `gemini`. Keys are not logged or written into `.unravel`.
+- **[VISUAL ROUTING] Gemini-only guard:** `query_visual` now reports the active provider and clearly explains that visual search requires Gemini multimodal embeddings. Local text embeddings are not falsely advertised as image-capable.
+
+### 4. Knowledge Graph Freshness & Metadata
+
+- **[NEW] Graph freshness module (`unravel-mcp/server/graph-freshness.js`):** Added shared helpers for:
+  - `schemaVersion`
+  - `engineVersion`
+  - graph metadata stamping
+  - changed-file freshness inspection
+  - stale embedding marking
+- **[NEW] KG metadata stamping (`unravel-mcp/index.js`):** `build_map` now stamps graphs with `schemaVersion`, `engineVersion`, `builtAt`, and embedding provider metadata on full rebuilds, incremental rebuilds, and embedding upgrades.
+- **[NEW] `query_graph` freshness reporting:** `query_graph` now returns `graphFreshness` and `embeddingProvider` in its JSON response. If a changed file has an embedding, the node is marked `embeddingStatus: stale_file_changed`.
+- **[NEW] Query-time self-healing (`unravel-mcp/server/knowledge-graph.js`, `index.js`):** Extracted shared incremental patching into `patchKnowledgeGraph()`. `query_graph` now detects small stale KGs, patches changed files, recomputes import/call edges, saves the healed graph/meta, and routes against the fresh graph in the same call.
+- **[FIX] Class-method call edges (`unravel-mcp/core/ast-bridge.js`):** The fallback structural scanner now indexes class methods and member calls such as `this.service.listDocuments()`. This fixed a real blind spot where the ghost-tenant KG could report `callEdges: 0` despite obvious cross-file class-method calls.
+- **[LIMIT] Large stale KGs still require full rebuild:** If the changed-file ratio exceeds the incremental threshold, `query_graph` now reports `needsFullRebuild: true` and tells the caller to run `build_map(force:true)`.
+
+### 5. Task Codex Hardening
+
+- **[NEW] Discovery metadata (`unravel-mcp/server/codex.js`):** Auto-seeded codex entries now include a `## Discovery Metadata` JSON block containing:
+  - version
+  - confirmations
+  - failedUses
+  - status
+  - per-file path and content hash
+- **[NEW] Codex staleness checks:** Added `doctorCodex(projectRoot)` to detect missing metadata, stale file hashes, missing files, and unreliable entries.
+- **[DESIGN ENFORCED] Codex remains a pointer, not proof:** The metadata helps route future agents to useful discoveries, but `verify` still requires fresh code evidence before any diagnosis is accepted.
+
+### 6. Memory Visibility: `unravel doctor`
+
+- **[NEW] Doctor CLI (`unravel-mcp/cli.js`):** Added:
+  ```bash
+  node unravel-mcp/cli.js doctor <project> [--format json]
+  ```
+- **[REPORTS] Doctor output includes:**
+  - KG presence
+  - files indexed
+  - node/edge/call-edge/import-edge counts
+  - embedded node count
+  - graph schema/engine version
+  - Pattern Store count
+  - Diagnosis Archive count
+  - Task Codex count
+  - stale/suspect codex counts
+  - graph freshness state
+  - embedding provider readiness
+- **[VERIFIED] Doctor run:** `super-bug-ghost-tenant` reports a fresh KG, schema version `1`, engine `unravel-mcp-kg-v1`, active memory layers, and Gemini readiness metadata.
+
+### 7. Safe Modularization Started
+
+- **[NEW] Session module (`unravel-mcp/server/session.js`):** Extracted MCP session state construction into `createSession()`.
+- **[NEW] Shared server modules:** Added focused modules for embedding provider resolution, graph freshness, diagnostics, and codex doctor support.
+- **[NEW] `analyze` tool extraction (`unravel-mcp/server/tools/analyze.js`):** Moved active AST evidence generation out of `index.js`, preserving file resolution, analysis caching, mutation filtering, pattern/archive/Codex hint injection, Circle IR findings, and formatted agent instructions.
+- **[NEW] `verify` tool extraction (`unravel-mcp/server/tools/verify.js`):** Moved active verification out of `index.js`, preserving the hypothesis gate, file:line citation gate, claim verification, pattern learning/penalty, diagnosis archive writes, Codex auto-seeding, project overview enrichment, and layer-boundary hinting.
+- **[NEW] `build_map` tool extraction (`unravel-mcp/server/tools/build-map.js`):** Moved active KG construction out of `index.js`, preserving include/exclude filters, force rebuilds, embedding controls, metadata writes, project overview generation, and Codex hint attachment.
+- **[IMPROVED] Shared incremental KG patching:** `build_map` incremental rebuilds now reuse the same `patchKnowledgeGraph()` path used by query-time self-healing, reducing duplicated call-edge/import-edge patch logic.
+- **[NEW] `query_graph` tool extraction (`unravel-mcp/server/tools/query-graph.js`):** Moved active graph routing out of `index.js`, preserving freshness checks, query-time self-healing, semantic scoring, pattern boosts, Codex pre-briefing, and response shape.
+- **[NEW] `query_visual` tool extraction (`unravel-mcp/server/tools/query-visual.js`):** Moved the active visual-routing MCP registration out of `index.js`, preserving the exact contract: Gemini-only visual readiness checks, graph loading, embedded-node validation, image/text fusion, cosine ranking, and clear setup errors.
+- **[NEW] Paused `consult` extraction (`unravel-mcp/server/tools/consult.js`):** Moved the active paused consult registration out of `index.js` while keeping the public `TEMPORARILY_PAUSED` response stable.
+- **[CLEANUP] `index.js` reduced to bootstrap/wiring:** Removed the old inline tool bodies after contract tests passed. `index.js` now imports/registers tool modules instead of carrying every implementation inline.
+- **[RESULT] All MCP tools now live under `unravel-mcp/server/tools/`:** `analyze`, `verify`, `build_map`, `query_graph`, `query_visual`, and paused `consult`.
+
+### Verification
+
+- **Syntax checks:** All edited JS files passed `node --check`.
+- **Unit + MCP contract tests:** `npm.cmd test -- --test-reporter=spec` passed `8/8`, including query-time KG self-healing.
+- **Demo:** `node validation/run-demo.js super-bug-ghost-tenant` returned `Verify: PASSED` and `Score: 6/6`.
+- **Doctor:** `node unravel-mcp/cli.js doctor validation/benchmark/packages/super-bug-ghost-tenant --format json` reports a fresh KG with `nodes: 55`, `edges: 80`, and `callEdges: 23`.
+- **Index size:** `unravel-mcp/index.js` is now about `794` lines and contains no active inline `server.tool(...)` definitions.
+- **Benchmark single bug:** `node validation/run-benchmark.js --bug super-bug-ghost-tenant` returned `6/6`, `verifyPassed: 1`, `topKRoutingHit: 1`, `hallucinations: 0`.
+
+### Known Limits / Next Steps
+
+- **UDB-20 is not fully automated yet:** The harness can run and record benchmark packages, but only `super-bug-ghost-tenant` has a deterministic local diagnosis strategy today. More strategies or an LLM-driven diagnosis runner must be added before claiming full UDB-20 scores.
+- **`consult` remains paused:** This is intentional. It should be unfrozen only after `query_graph`, `analyze`, `verify`, and `consult-format.js` have stable contract coverage.
+- **Local embeddings are only designed for:** `UNRAVEL_EMBED_PROVIDER=local` is a reserved interface, not a live local embedding backend yet.
+- **Generated memory artifacts changed:** Running the tests/demo writes live `.unravel` KG, pattern, archive, codex, and benchmark result files. This is expected behavior for a learning/debugging engine, but should be separated from source-code changes when preparing a clean release commit.
+
+---
+
 ## 2026-04-11 — 06:30 IST | v3.5.0 — Code Audit: 8 Fixes (Correctness, Coverage & Context Integrity)
 
 **Status: Full code-audit pass. All confirmed bugs fixed, architectural gaps closed.**

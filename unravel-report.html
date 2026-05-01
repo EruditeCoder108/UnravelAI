@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Unravel — Structural Intelligence Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:#06090f;
+  color:#e6edf3;
+  display:flex;flex-direction:column;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(88,166,255,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 90%, rgba(248,81,73,0.04) 0%, transparent 60%),
+    radial-gradient(circle, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-size:auto, auto, 28px 28px;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+#hdr{
+  padding:12px 24px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid rgba(255,255,255,0.05);
+  background:rgba(6,9,15,0.92);backdrop-filter:blur(16px);
+  z-index:20;flex-shrink:0;
+}
+#logo{display:flex;align-items:center;gap:12px}
+#logo-pulse{width:9px;height:9px;border-radius:50%;background:#f85149;box-shadow:0 0 10px #f85149,0 0 20px rgba(248,81,73,0.4);animation:lp 2.4s ease-in-out infinite}
+@keyframes lp{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(0.75);opacity:0.5}}
+#logo h1{font-size:16px;font-weight:700;letter-spacing:-0.4px;color:#fff}
+#logo h1 .sep{color:rgba(255,255,255,0.18);margin:0 6px;font-weight:300}
+#logo h1 .sub{color:#6e7681;font-weight:400;font-size:14px}
+#stats{display:flex;gap:28px;align-items:center}
+.st{display:flex;flex-direction:column;align-items:flex-end;gap:1px;min-width:50px}
+.st em{font-size:9px;color:#484f58;text-transform:uppercase;letter-spacing:1px;font-style:normal;font-weight:600;white-space:nowrap}
+.st strong{font-size:21px;font-weight:700;line-height:1;color:#fff}
+.st.r strong{color:#f85149;text-shadow:0 0 16px rgba(248,81,73,0.6)}
+.st.y strong{color:#d29922;text-shadow:0 0 16px rgba(210,153,34,0.5)}
+.st.g strong{color:#3fb950;text-shadow:0 0 16px rgba(63,185,80,0.4)}
+.st.b strong{color:#58a6ff;text-shadow:0 0 16px rgba(88,166,255,0.4)}
+.st-divider{width:1px;height:32px;background:rgba(255,255,255,0.06)}
+
+/* ── Main layout ─────────────────────────────────────────── */
+#main{display:flex;flex:1;overflow:hidden;min-height:0}
+#canvas-wrap{flex:1;position:relative;overflow:hidden}
+#svg{width:100%;height:100%}
+
+/* ── Side panel ──────────────────────────────────────────── */
+#panel{
+  width:360px;flex-shrink:0;
+  background:rgba(8,11,18,0.97);
+  border-left:1px solid rgba(255,255,255,0.05);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+#panel-top{padding:18px 18px 14px;border-bottom:1px solid rgba(255,255,255,0.05);flex-shrink:0}
+#panel-top h2{font-size:10px;font-weight:700;color:#58a6ff;text-transform:uppercase;letter-spacing:1.8px;margin-bottom:6px}
+#panel-top p{font-size:12px;color:#6e7681;line-height:1.5}
+#flist{flex:1;overflow-y:auto;padding:12px}
+#flist::-webkit-scrollbar{width:3px}
+#flist::-webkit-scrollbar-track{background:transparent}
+#flist::-webkit-scrollbar-thumb{background:#21262d;border-radius:3px}
+.fc{
+  background:linear-gradient(135deg,rgba(22,27,34,0.6),rgba(13,17,23,0.9));
+  border:1px solid rgba(255,255,255,0.05);
+  border-left:3px solid transparent;
+  border-radius:0 10px 10px 0;
+  padding:13px 14px;margin-bottom:9px;
+  transition:border-color 0.2s,transform 0.2s,box-shadow 0.2s;
+  cursor:default;
+}
+.fc.fc-high{border-left-color:#f85149}
+.fc.fc-med{border-left-color:#d29922}
+.fc.fc-str{border-left-color:#58a6ff}
+.fc:hover{transform:translateX(3px);box-shadow:0 4px 20px rgba(0,0,0,0.4)}
+.fc-name{font-size:11px;font-weight:600;color:#c9d1d9;font-family:'SF Mono',monospace;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center}
+.fc-line{font-size:10px;color:#484f58;font-weight:400}
+.fc-msg{font-size:11px;color:#8b949e;line-height:1.5;margin-bottom:8px}
+.fc-tag{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase}
+.t-h{background:rgba(248,81,73,0.1);color:#f85149;border:1px solid rgba(248,81,73,0.2)}
+.t-m{background:rgba(210,153,34,0.1);color:#d29922;border:1px solid rgba(210,153,34,0.2)}
+.t-s{background:rgba(88,166,255,0.1);color:#58a6ff;border:1px solid rgba(88,166,255,0.2)}
+.no-findings{padding:20px 4px;color:#484f58;font-size:13px;text-align:center;line-height:1.6}
+.no-findings span{display:block;font-size:28px;margin-bottom:8px}
+
+/* ── Legend ──────────────────────────────────────────────── */
+#leg{padding:14px 18px;border-top:1px solid rgba(255,255,255,0.05);display:grid;grid-template-columns:1fr 1fr;gap:8px;flex-shrink:0}
+.li{display:flex;align-items:center;gap:8px;font-size:10px;color:#6e7681}
+.ld{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+#leg-title{grid-column:1/-1;font-size:9px;font-weight:700;color:#484f58;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px}
+
+/* ── Footer ──────────────────────────────────────────────── */
+#ftr{padding:7px 20px;border-top:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:space-between;font-size:10px;color:#30363d;flex-shrink:0;background:rgba(6,9,15,0.5)}
+#ftr a{color:#58a6ff;text-decoration:none;opacity:0.7;transition:opacity 0.2s}
+#ftr a:hover{opacity:1}
+
+/* ── Controls ────────────────────────────────────────────── */
+#ctrl{position:absolute;top:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:10}
+.cbtn{
+  background:rgba(8,11,18,0.88);border:1px solid rgba(255,255,255,0.09);
+  color:#8b949e;padding:7px 16px;border-radius:8px;font-size:11px;font-weight:500;
+  cursor:pointer;font-family:inherit;transition:all 0.2s;backdrop-filter:blur(10px);
+  white-space:nowrap;
+}
+.cbtn:hover{border-color:rgba(88,166,255,0.4);color:#58a6ff}
+.cbtn.active{border-color:rgba(248,81,73,0.5);color:#f85149;background:rgba(248,81,73,0.08);box-shadow:0 0 16px rgba(248,81,73,0.1)}
+
+/* ── Tooltip ─────────────────────────────────────────────── */
+#tip{
+  position:fixed;background:rgba(8,11,18,0.97);border:1px solid rgba(255,255,255,0.08);
+  border-radius:10px;padding:14px;font-size:12px;pointer-events:none;
+  opacity:0;transition:opacity 0.15s;max-width:280px;z-index:999;
+  box-shadow:0 20px 60px rgba(0,0,0,0.8);backdrop-filter:blur(16px);
+}
+#tip h3{font-size:11px;font-weight:600;color:#fff;margin-bottom:10px;font-family:monospace;word-break:break-all;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.06)}
+.tr{display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px}
+.tr .tk{color:#6e7681}.tr .tv{color:#c9d1d9;font-weight:500}
+.tf{margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);font-size:10px;color:#8b949e;line-height:1.6}
+
+/* ── SVG nodes/links ─────────────────────────────────────── */
+.node{cursor:pointer}
+.node:hover .nr{filter:brightness(1.5)}
+</style>
+</head>
+<body>
+<div id="hdr">
+  <div id="logo">
+    <div id="logo-pulse"></div>
+    <h1>Unravel<span class="sep">//</span><span class="sub">Structural Intelligence</span></h1>
+  </div>
+  <div id="stats">
+    <div class="st g"><strong id="sf">-</strong><em>files</em></div>
+    <div class="st-divider"></div>
+    <div class="st b"><strong id="sc">-</strong><em>import edges</em></div>
+    <div class="st-divider"></div>
+    <div class="st y"><strong id="sa">-</strong><em>mutation paths</em></div>
+    <div class="st-divider"></div>
+    <div class="st r"><strong id="sh">-</strong><em>high-confidence</em></div>
+  </div>
+</div>
+<div id="main">
+  <div id="canvas-wrap">
+    <svg id="svg"></svg>
+    <div id="tip"></div>
+    <div id="ctrl">
+      <button class="cbtn" id="tbtn">⚠ Danger paths only</button>
+      <button class="cbtn" id="rbtn">↺ Reset view</button>
+    </div>
+  </div>
+  <div id="panel">
+    <div id="panel-top">
+      <h2>Structural Findings</h2>
+      <p id="psub" style="color:#6e7681;font-size:12px;margin-top:4px"></p>
+    </div>
+    <div id="flist"></div>
+    <div id="leg">
+      <div id="leg-title">Legend</div>
+      <div class="li"><div class="ld" style="background:#f85149;box-shadow:0 0 8px rgba(248,81,73,0.7)"></div>Race / ECMA violation</div>
+      <div class="li"><div class="ld" style="background:#d29922;box-shadow:0 0 8px rgba(210,153,34,0.6)"></div>Async crossing</div>
+      <div class="li"><div class="ld" style="background:#58a6ff;box-shadow:0 0 8px rgba(88,166,255,0.5)"></div>Pattern detected</div>
+      <div class="li"><div class="ld" style="background:#3fb950;box-shadow:0 0 8px rgba(63,185,80,0.5)"></div>Clean file</div>
+      <div class="li" style="grid-column:1/-1;border-top:1px solid rgba(255,255,255,0.04);padding-top:8px;margin-top:2px">
+        <div style="width:24px;height:1px;background:linear-gradient(90deg,#30363d,#484f58);border-radius:1px;flex-shrink:0"></div>Import edge
+      </div>
+      <div class="li">
+        <div style="width:24px;height:2px;background:#d29922;border-radius:1px;flex-shrink:0"></div>Mutation path
+      </div>
+    </div>
+    <div id="ftr-panel" style="padding:10px 18px;border-top:1px solid rgba(255,255,255,0.04);font-size:10px;color:#30363d">
+      <span id="ftr-dir"></span>
+    </div>
+  </div>
+</div>
+<div id="ftr">
+  <span id="ftr-meta"></span>
+  <a href="https://github.com/EruditeCoder108/UnravelAI" target="_blank">⟡ Generated by Unravel</a>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const G = {"nodes":[{"id":"ast-bridge-browser.js","label":"ast-bridge-browser.js","path":"ast-bridge-browser.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"ast-bridge.js","label":"ast-bridge.js","path":"ast-bridge.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"ast-engine-ts.js","label":"ast-engine-ts.js","path":"ast-engine-ts.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"ast-project.js","label":"ast-project.js","path":"ast-project.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"config.js","label":"config.js","path":"config.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"embedding-browser.js","label":"embedding-browser.js","path":"embedding-browser.js","riskLevel":3,"findings":[{"type":"FLOATING_PROMISE","label":"put() unawaited in (anonymous)()","line":550,"confidence":"high"}],"asyncBoundaries":0,"mutationChains":0},{"id":"graph-builder.js","label":"graph-builder.js","path":"graph-builder.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"graph-storage-idb.js","label":"graph-storage-idb.js","path":"graph-storage-idb.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"graph-storage.js","label":"graph-storage.js","path":"graph-storage.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"index.js","label":"index.js","path":"index.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"indexer.js","label":"indexer.js","path":"indexer.js","riskLevel":3,"findings":[{"type":"FLOATING_PROMISE","label":"catch() unawaited in buildKnowledgeGraph()","line":230,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"then() unawaited in buildKnowledgeGraph()","line":230,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"catch() unawaited in updateKnowledgeGraph()","line":341,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"then() unawaited in updateKnowledgeGraph()","line":341,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"embedChangedNodes() unawaited in buildKnowledgeGraph()","line":230,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"embedChangedNodes() unawaited in updateKnowledgeGraph()","line":341,"confidence":"high"}],"asyncBoundaries":0,"mutationChains":0},{"id":"layer-detector.js","label":"layer-detector.js","path":"layer-detector.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"llm-analyzer.js","label":"llm-analyzer.js","path":"llm-analyzer.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"orchestrate.js","label":"orchestrate.js","path":"orchestrate.js","riskLevel":3,"findings":[{"type":"FLOATING_PROMISE","label":"catch() unawaited in orchestrate()","line":915,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"then() unawaited in orchestrate()","line":915,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"then() unawaited in (anonymous)()","line":924,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"archiveDiagnosis() unawaited in orchestrate()","line":915,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"appendDiagnosisEntryIDB() unawaited in (anonymous)()","line":924,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"orchestrate() unawaited in orchestrate()","line":1113,"confidence":"high"}],"asyncBoundaries":0,"mutationChains":0},{"id":"parse-json.js","label":"parse-json.js","path":"parse-json.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"pattern-store.js","label":"pattern-store.js","path":"pattern-store.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"provider.js","label":"provider.js","path":"provider.js","riskLevel":3,"findings":[{"type":"FLOATING_PROMISE","label":"callProvider() unawaited in callProviderStreaming()","line":131,"confidence":"high"},{"type":"FLOATING_PROMISE","label":"callProvider() unawaited in callProviderStreaming()","line":210,"confidence":"high"}],"asyncBoundaries":0,"mutationChains":0},{"id":"search.js","label":"search.js","path":"search.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0},{"id":"sidebar-ref.js","label":"sidebar-ref.js","path":"sidebar-ref.js","riskLevel":0,"findings":[],"asyncBoundaries":0,"mutationChains":0}],"edges":[{"source":"ast-project.js","target":"ast-engine-ts.js","type":"import"},{"source":"index.js","target":"config.js","type":"import"},{"source":"index.js","target":"ast-engine-ts.js","type":"import"},{"source":"index.js","target":"ast-project.js","type":"import"},{"source":"index.js","target":"parse-json.js","type":"import"},{"source":"index.js","target":"provider.js","type":"import"},{"source":"index.js","target":"orchestrate.js","type":"import"},{"source":"indexer.js","target":"graph-builder.js","type":"import"},{"source":"indexer.js","target":"layer-detector.js","type":"import"},{"source":"indexer.js","target":"llm-analyzer.js","type":"import"},{"source":"indexer.js","target":"graph-storage.js","type":"import"},{"source":"indexer.js","target":"search.js","type":"import"},{"source":"indexer.js","target":"embedding-browser.js","type":"import"},{"source":"orchestrate.js","target":"config.js","type":"import"},{"source":"orchestrate.js","target":"ast-engine-ts.js","type":"import"},{"source":"orchestrate.js","target":"ast-project.js","type":"import"},{"source":"orchestrate.js","target":"parse-json.js","type":"import"},{"source":"orchestrate.js","target":"provider.js","type":"import"},{"source":"orchestrate.js","target":"search.js","type":"import"},{"source":"orchestrate.js","target":"ast-bridge.js","type":"import"},{"source":"orchestrate.js","target":"pattern-store.js","type":"import"},{"source":"orchestrate.js","target":"embedding-browser.js","type":"import"},{"source":"provider.js","target":"config.js","type":"import"}],"stats":{"filesAnalyzed":19,"nodesShown":19,"mutationChains":0,"asyncCrossings":0,"highConfidence":15,"importEdges":23},"topFindings":[{"file":"indexer.js","path":"indexer.js","type":"FLOATING_PROMISE","label":"catch() unawaited in buildKnowledgeGraph()","line":230,"confidence":"high"},{"file":"indexer.js","path":"indexer.js","type":"FLOATING_PROMISE","label":"then() unawaited in buildKnowledgeGraph()","line":230,"confidence":"high"},{"file":"orchestrate.js","path":"orchestrate.js","type":"FLOATING_PROMISE","label":"catch() unawaited in orchestrate()","line":915,"confidence":"high"},{"file":"orchestrate.js","path":"orchestrate.js","type":"FLOATING_PROMISE","label":"then() unawaited in orchestrate()","line":915,"confidence":"high"},{"file":"provider.js","path":"provider.js","type":"FLOATING_PROMISE","label":"callProvider() unawaited in callProviderStreaming()","line":131,"confidence":"high"},{"file":"provider.js","path":"provider.js","type":"FLOATING_PROMISE","label":"callProvider() unawaited in callProviderStreaming()","line":210,"confidence":"high"},{"file":"embedding-browser.js","path":"embedding-browser.js","type":"FLOATING_PROMISE","label":"put() unawaited in (anonymous)()","line":550,"confidence":"high"}]};
+const M = {"symptom":"structural analysis","directory":"C:\\Users\\mukti\\Desktop\\UnravelAI\\unravel-mcp\\core","generatedAt":"2026-04-23T03:16:05.502Z"};
+
+// Stats
+document.getElementById('sf').textContent = G.stats.filesAnalyzed;
+document.getElementById('sc').textContent = G.stats.importEdges || 0;
+document.getElementById('sa').textContent = G.stats.mutationChains;
+document.getElementById('sh').textContent = G.stats.highConfidence;
+if(M.symptom) document.getElementById('psub').textContent = M.symptom;
+const dirShort = M.directory.split(/[\/]/).slice(-2).join('/');
+document.getElementById('ftr-meta').textContent = dirShort + ' · ' + new Date(M.generatedAt).toLocaleString();
+document.getElementById('ftr-dir').textContent = M.directory;
+
+// Findings panel
+const flist = document.getElementById('flist');
+if(!G.topFindings.length){
+  flist.innerHTML = '<div class="no-findings"><span>✓</span>No high-confidence structural patterns detected in the analyzed files.</div>';
+} else {
+  G.topFindings.forEach(f=>{
+    const [cls,tag] = f.confidence==='high'?['fc-high','t-h']:f.confidence==='medium'?['fc-med','t-m']:['fc-str','t-s'];
+    flist.innerHTML += `<div class="fc ${cls}">
+      <div class="fc-name">${f.file}<span class="fc-line">${f.line?'L'+f.line:''}</span></div>
+      <div class="fc-msg">${f.label}</div>
+      <span class="fc-tag ${tag}">${f.type.replace(/_/g,' ')}</span>
+    </div>`;
+  });
+}
+
+// ── D3 Graph ─────────────────────────────────────────────────────────────────
+const svg  = d3.select('#svg');
+const wrap = document.getElementById('canvas-wrap');
+const W    = wrap.clientWidth, H = wrap.clientHeight;
+svg.attr('viewBox',[0,0,W,H]);
+
+const RISK   = ['#3fb950','#58a6ff','#d29922','#f85149'];
+const nodes  = G.nodes.map(d=>({...d}));
+const links  = G.edges.map(d=>({...d}));
+const rad    = n => Math.min(9 + n.findings.length*3.5 + n.mutationChains*2, 30);
+
+// SVG defs
+const defs = svg.append('defs');
+
+// Glow filters — single blur pass (GPU friendly)
+[0,1,2,3].forEach(lv=>{
+  const sd = [2,3,5,7][lv];
+  const f = defs.append('filter').attr('id','gl'+lv)
+    .attr('x','-60%').attr('y','-60%').attr('width','220%').attr('height','220%');
+  f.append('feGaussianBlur').attr('in','SourceGraphic').attr('stdDeviation',sd).attr('result','b');
+  const m = f.append('feMerge');
+  m.append('feMergeNode').attr('in','b');
+  m.append('feMergeNode').attr('in','SourceGraphic');
+});
+
+// Radial gradient fills for nodes
+[0,1,2,3].forEach(lv=>{
+  const c = RISK[lv];
+  const rg = defs.append('radialGradient').attr('id','nfill'+lv);
+  rg.append('stop').attr('offset','0%').attr('stop-color',c).attr('stop-opacity',0.5);
+  rg.append('stop').attr('offset','100%').attr('stop-color',c).attr('stop-opacity',0.05);
+});
+
+// Arrow markers
+[['import','#484f58',0.5,14],['mutation','#d29922',1,16],['mutation-async','#f85149',1,18]].forEach(([t,c,o,rx])=>{
+  defs.append('marker').attr('id','arr-'+t).attr('viewBox','0 -4 10 8')
+    .attr('refX',rx).attr('refY',0).attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto')
+    .append('path').attr('d','M0,-4L10,0L0,4').attr('fill',c).attr('opacity',o);
+});
+
+// Force simulation
+const sim = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(links).id(d=>d.id)
+    .distance(d=>d.type==='import'?90:150).strength(d=>d.type==='import'?0.6:0.3))
+  .force('charge', d3.forceManyBody().strength(d=>-220 - d.findings.length*50))
+  .force('center', d3.forceCenter(W/2, H/2).strength(0.08))
+  .force('collide', d3.forceCollide().radius(d=>rad(d)+18).strength(0.8))
+  .alphaDecay(0.025);
+
+// Zoom/pan
+const g = svg.append('g');
+const zoom = d3.zoom().scaleExtent([0.08,8]).on('zoom',e=>g.attr('transform',e.transform));
+svg.call(zoom).on('dblclick.zoom',null);
+
+// Links
+const linkEl = g.append('g').attr('class','links').selectAll('line').data(links).join('line')
+  .attr('stroke', d=>d.type==='mutation-async'?'#f85149':d.type==='mutation'?'#d29922':'#2d3340')
+  .attr('stroke-width', d=>d.type==='mutation-async'?2:d.type==='mutation'?1.5:0.8)
+  .attr('stroke-opacity', d=>d.type==='mutation-async'?0.8:d.type==='mutation'?0.65:0.3)
+  .attr('stroke-dasharray', d=>d.type==='mutation-async'?'7 3':null)
+  .attr('marker-end', d=>'url(#arr-'+d.type+')');
+
+// Node groups
+const nodeG = g.append('g').attr('class','nodes').selectAll('g').data(nodes).join('g')
+  .attr('class','node')
+  .call(d3.drag()
+    .on('start',(e,d)=>{if(!e.active)sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;})
+    .on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y;})
+    .on('end',(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}));
+
+// Halo ring (wide glow)
+nodeG.append('circle').attr('class','nh')
+  .attr('r', d=>rad(d)+10)
+  .attr('fill','none')
+  .attr('stroke', d=>RISK[d.riskLevel])
+  .attr('stroke-width', 1)
+  .attr('stroke-opacity', d=>d.riskLevel>=2?0.35:0.12)
+  .attr('filter', d=>'url(#gl'+d.riskLevel+')');
+
+// Gradient filled body
+nodeG.append('circle').attr('class','nb')
+  .attr('r', rad)
+  .attr('fill', d=>'url(#nfill'+d.riskLevel+')')
+  .attr('stroke', d=>RISK[d.riskLevel])
+  .attr('stroke-width', d=>d.riskLevel>=2?2:1.2)
+  .attr('filter', d=>'url(#gl'+d.riskLevel+')');
+
+// Inner bright core
+nodeG.append('circle').attr('class','nc')
+  .attr('r', d=>Math.max(2.5, rad(d)*0.28))
+  .attr('fill', d=>RISK[d.riskLevel])
+  .attr('opacity', 0.9);
+
+// Labels — white with semi-transparent pill
+const labelG = nodeG.append('g').attr('class','nl').attr('transform', d=>`translate(0,${rad(d)+14})`);
+labelG.append('rect')
+  .attr('rx',3).attr('ry',3)
+  .attr('fill','rgba(6,9,15,0.75)')
+  .attr('x',-42).attr('y',-10).attr('width',84).attr('height',14);
+labelG.append('text')
+  .attr('text-anchor','middle').attr('dy','0px')
+  .attr('fill','#c9d1d9').attr('font-size','9.5px').attr('font-weight','500')
+  .attr('font-family','monospace')
+  .text(d=>d.label.length>16?d.label.slice(0,14)+'..':d.label);
+
+// Tooltip
+const tip = document.getElementById('tip');
+nodeG.on('mousemove',(e,d)=>{
+  tip.style.left = (e.clientX+16)+'px';
+  tip.style.top  = Math.min(e.clientY-10, window.innerHeight-220)+'px';
+  tip.style.opacity = '1';
+  const rows = d.findings.slice(0,4).map(f=>
+    `<div style="margin-top:3px;font-size:10px;color:#8b949e">• ${f.label}</div>`).join('');
+  const riskLabel = ['Clean','Pattern detected','Async crossing','High-confidence'][d.riskLevel];
+  const riskColor = RISK[d.riskLevel];
+  tip.innerHTML = `
+    <h3>${d.path}</h3>
+    <div class="tr"><span class="tk">Risk</span><span class="tv" style="color:${riskColor}">${riskLabel}</span></div>
+    <div class="tr"><span class="tk">Findings</span><span class="tv">${d.findings.length}</span></div>
+    <div class="tr"><span class="tk">Mutation chains</span><span class="tv">${d.mutationChains}</span></div>
+    ${rows.length?'<div class="tf">'+rows+'</div>':''}`;
+}).on('mouseleave',()=>tip.style.opacity='0');
+
+// Tick
+sim.on('tick',()=>{
+  linkEl.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+        .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+  nodeG.attr('transform',d=>`translate(${d.x},${d.y})`);
+});
+
+// Controls
+let dangerMode = false;
+document.getElementById('tbtn').addEventListener('click',function(){
+  dangerMode = !dangerMode;
+  this.textContent = dangerMode ? '◉ Show all nodes' : '⚠ Danger paths only';
+  this.className = 'cbtn' + (dangerMode?' active':'');
+  nodeG.transition().duration(350).style('opacity',d=>!dangerMode?1:d.riskLevel>=2?1:0.04);
+  linkEl.transition().duration(350).style('opacity',d=>!dangerMode?null:d.type.startsWith('mutation')?1:0.02);
+});
+document.getElementById('rbtn').addEventListener('click',()=>{
+  svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+});
+
+// Particles — only on meaningful edges, capped for performance
+function spawnParticles(){
+  const cfg = [
+    { type:'mutation-async', color:'#f85149', r:3, dur:1300, opacity:0.95, max:8 },
+    { type:'mutation',       color:'#d29922', r:2, dur:2000, opacity:0.8,  max:6 },
+  ];
+  cfg.forEach(({type,color,r,dur,opacity,max})=>{
+    const edgesOfType = links.filter(l=>l.type===type).slice(0,max);
+    edgesOfType.forEach(l=>{
+      const p = g.append('circle').attr('r',r).attr('fill',color)
+        .attr('opacity',opacity).style('pointer-events','none');
+      const jitter = Math.random()*500;
+      function go(){
+        if(!l.source.x) return setTimeout(go,500);
+        p.attr('cx',l.source.x).attr('cy',l.source.y);
+        p.transition().duration(dur+jitter).ease(d3.easeLinear)
+         .attr('cx',l.target.x).attr('cy',l.target.y)
+         .on('end',()=>setTimeout(go,500+Math.random()*700));
+      }
+      setTimeout(go, Math.random()*2000);
+    });
+  });
+}
+sim.on('end', spawnParticles);
+setTimeout(spawnParticles, 2800);
+</script>
+</body>
+</html>

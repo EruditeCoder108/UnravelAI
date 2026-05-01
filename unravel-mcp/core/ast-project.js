@@ -314,6 +314,11 @@ export function emitRiskSignals(crossFileChains, perFileMutations, symbolOrigins
     // setTimeout/setInterval are intentionally excluded — they are always
     // fire-and-forget by design. We check t.isAwaited (added to findTimingNodes)
     // to distinguish `await fetch()` from a floating `fetch()`.
+    //
+    // NOTE: Object.create(null) false-positive — 'create' is in the list but must
+    // not fire when the caller is a built-in (Object, Array, etc.). The primary guard
+    // lives in ast-engine-ts.js detectFloatingPromises (SYNC_OBJECT_CALLERS check),
+    // so timing nodes from Object.create() are never emitted in the first place.
     const ASYNC_PRODUCING_APIS = new Set([
         'fetch', 'axios', 'got', 'request',
         'then', 'catch', 'finally',
@@ -774,9 +779,11 @@ function resolveModuleName(importPath, files) {
 
     // Pass 3: index files — e.g. import './store' could resolve to store/index.ts
     for (const f of files) {
-        const shortName = f.name.split(/[\\/]/).pop();
+        const fNorm = f.name.replace(/\\/g, '/');
         for (const ext of extensions) {
-            if (shortName === lastSegment + '/index' + ext) return shortName;
+            if (fNorm.endsWith('/' + cleaned + '/index' + ext) || fNorm === cleaned + '/index' + ext) {
+                return f.name.split(/[\\/]/).pop();
+            }
         }
     }
 

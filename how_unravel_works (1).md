@@ -1392,7 +1392,7 @@ The agent is only told: what inputs it can give, what outputs it gets, and what 
 ## Source-Verified Architecture Diagram
 
 > [!NOTE]
-> The Codex write path is **agent-driven** (not automated). The diagram below shows the automated infrastructure that makes it searchable. The agent writes `codex-{taskId}.md` entries during and after each task; the infrastructure attaches and retrieves them automatically.
+> The Codex write path is **hybrid**. `verify(PASSED)` can auto-seed compact `codex-{taskId}.md` entries from confirmed diagnoses, and the agent can write richer task notes during or after a session. The infrastructure attaches and retrieves both forms automatically.
 
 ```
 MCP CALL: consult(query, directory?, include?, exclude?, maxFiles?, detail?)
@@ -1416,9 +1416,9 @@ MCP CALL: build_map(directory, embeddings?, exclude?)
     │
     ├── readFilesFromDirectory() → filter excludes + auto-skips (node_modules, dist, etc.)
     ├── ast-bridge.js:attachStructuralAnalysis() → imports, functions, classes per file
-    │   NOTE: calls[] always empty here — real call edges come from ast-project.js
+    │   NOTE: Node MCP bridge calls[] is empty here; analyze's cross-file call graph comes from ast-project.js
     ├── indexer.js:buildKnowledgeGraph()
-    │   ├── GraphBuilder: creates nodes (file/fn/class) + edges (imports/calls/contains)
+    │   ├── GraphBuilder: creates nodes (file/fn/class) + edges (imports/contains, plus calls only if supplied by the bridge)
     │   │   Trust levels: AST_VERIFIED (structural) | LLM_INFERRED (summaries, tags)
     │   └── graph-storage.js:saveGraph() → .unravel/knowledge.json
     ├── embedding.js:embedGraphNodes()
@@ -1450,7 +1450,7 @@ MCP CALL: analyze(files[], symptom, detail?)
     │   ├── Phase 1b: ast-project.js:runCrossFileAnalysis()
     │   │   → expandMutationChains, buildCallGraph (real call edges via tree-sitter)
     │   │   → emitRiskSignals: cross_file_mutation, async_state_race
-    │   │   NOTE: unawaited_promise DEFERRED (needs isAwaited field, not implemented)
+    │   │   NOTE: unawaited_promise is LIVE: timing nodes carry isAwaited and emitRiskSignals flags async-producing calls when isAwaited === false
     │   └── Returns MCP_EVIDENCE{astRaw, crossFileRaw, contextFormatted}
     ├── pattern-store.js:matchPatterns() → top-5 structural patterns (≥0.7 token coverage, then weight-sorted)
     ├── embedding.js:searchDiagnosisArchive() → cosine vs diagnosis-archive.json (≥75% threshold)

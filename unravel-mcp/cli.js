@@ -21,6 +21,8 @@ import { resolve, join, extname } from 'path';
 import { existsSync, writeFileSync, readFileSync, readdirSync, statSync } from 'fs';
 import { pathToFileURL } from 'url';
 import { createRequire } from 'module';
+import { getProjectDiagnostics, formatDiagnostics } from './server/diagnostics.js';
+import { inspectGraphFreshness } from './server/graph-freshness.js';
 
 // Parse CLI args
 function parseArgs(argv) {
@@ -42,13 +44,15 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv);
+const isDoctorCommand = process.argv[2] === 'doctor';
 
-if (args.help || (!args.directory && !args.files)) {
+if (args.help || (!isDoctorCommand && !args.directory && !args.files)) {
     console.log([
         'Unravel CLI — deterministic AST bug analyzer',
         '',
         'Usage:',
         '  node unravel-mcp/cli.js --directory <path> --symptom <description> [options]',
+        '  node unravel-mcp/cli.js doctor <project> [--format json]',
         '',
         'Options:',
         '  --directory <path>    Project root to analyze (required)',
@@ -121,6 +125,29 @@ function readFilesFromDirectory(dirPath, maxDepth = 5) {
 }
 
 // ── SARIF 2.1.0 builder ───────────────────────────────────────────────────────
+if (isDoctorCommand) {
+    const projectArg = process.argv[3] && !process.argv[3].startsWith('--')
+        ? process.argv[3]
+        : args.directory || '.';
+    const projectRoot = resolve(projectArg);
+    if (!existsSync(projectRoot)) {
+        console.error(`Directory not found: ${projectRoot}`);
+        process.exit(2);
+    }
+    const storage = await import(coreModule('graph-storage.js'));
+    const graph = storage.loadGraph(projectRoot);
+    const freshness = graph
+        ? inspectGraphFreshness(projectRoot, graph, {
+            readFilesFromDirectory,
+            getChangedFiles: storage.getChangedFiles,
+            computeContentHashSync: storage.computeContentHashSync,
+        })
+        : { checked: false, stale: null, changedFiles: [], reason: 'no KG found' };
+    const diagnostics = getProjectDiagnostics(projectRoot, freshness);
+    console.log(args.format === 'json' ? JSON.stringify(diagnostics, null, 2) : formatDiagnostics(diagnostics));
+    process.exit(0);
+}
+
 const SARIF_RULES = {
     RACE_CONDITION: {
         id: 'RACE_CONDITION',

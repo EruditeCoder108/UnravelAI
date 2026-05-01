@@ -1,9 +1,9 @@
 {
-  "builtAt": "2026-04-05T01:31:13.058Z",
-  "nodeCount": 309,
-  "edgeCount": 311,
-  "filesIndexed": 25,
-  "filesChanged": 1,
-  "mode": "semantic",
-  "incremental": true
+  "builtAt": "2026-04-30T15:29:04.218Z",
+  "nodeCount": 330,
+  "edgeCount": 389,
+  "callEdges": 55,
+  "filesIndexed": 29,
+  "mode": "structural",
+  "incremental": false
 }

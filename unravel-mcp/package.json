@@ -13,11 +13,14 @@
     "cli.js",
     "embedding.js",
     "circle-ir-adapter.js",
+    "server/",
     "core/",
     "README.md"
   ],
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test test/*.test.js",
+    "test:mcp": "node --test test/*.test.js"
   },
   "author": "EruditeCoder108",
   "repository": {

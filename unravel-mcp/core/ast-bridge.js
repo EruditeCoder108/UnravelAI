@@ -77,6 +77,8 @@ const FN_PATTERNS = [
     // Arrow / function expression: const|let|var name = ...
     /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[\w]+)\s*=>/gm,
     /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?function\s*\*?\s*\(/gm,
+    // MCP tool registrations behave like route handlers and need to be searchable.
+    /\bserver\.tool\s*\(\s*['"`]([\w-]+)['"`]/gm,
 ];
 
 function extractFunctions(code) {
@@ -96,7 +98,147 @@ function extractFunctions(code) {
             fns.push({ name, lineRange: [lineNum, lineNum] });
         }
     }
+    for (const method of extractClassMethods(stripped)) {
+        if (seen.has(method.name)) continue;
+        seen.add(method.name);
+        fns.push(method);
+    }
     return fns;
+}
+
+const CALL_SKIP_WORDS = new Set([
+    'if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'await',
+    'typeof', 'new', 'class', 'super', 'import', 'require',
+]);
+
+function findMatchingBrace(code, openIndex) {
+    let depth = 0;
+    for (let i = openIndex; i < code.length; i++) {
+        const ch = code[i];
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+            depth--;
+            if (depth === 0) return i;
+        }
+    }
+    return -1;
+}
+
+function extractClassMethods(stripped) {
+    const methods = [];
+    const seen = new Set();
+    const classPattern = /(?:export\s+(?:default\s+)?)?class\s+\w+(?:\s+extends\s+[\w.]+)?\s*\{/gm;
+    let classMatch;
+
+    while ((classMatch = classPattern.exec(stripped)) !== null) {
+        const classOpen = stripped.indexOf('{', classPattern.lastIndex - 1);
+        if (classOpen < 0) continue;
+        const classClose = findMatchingBrace(stripped, classOpen);
+        if (classClose < 0) continue;
+
+        const body = stripped.slice(classOpen + 1, classClose);
+        const bodyOffset = classOpen + 1;
+        const methodPattern = /(?:^|[\r\n]\s*)(?:(?:public|private|protected|static|async|override|readonly)\s+)*([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*(?::\s*[^{;]+)?\s*\{/gm;
+        let methodMatch;
+        while ((methodMatch = methodPattern.exec(body)) !== null) {
+            const name = methodMatch[1];
+            if (!name || CALL_SKIP_WORDS.has(name)) continue;
+            const openBrace = body.indexOf('{', methodPattern.lastIndex - 1);
+            if (openBrace < 0) continue;
+            const closeBrace = findMatchingBrace(body, openBrace);
+            if (closeBrace < 0) continue;
+
+            const absoluteIndex = bodyOffset + methodMatch.index;
+            const lineNum = (stripped.slice(0, absoluteIndex).match(/\n/g) || []).length + 1;
+            const key = `${name}:${lineNum}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                methods.push({ name, lineRange: [lineNum, lineNum] });
+            }
+
+            methodPattern.lastIndex = closeBrace + 1;
+        }
+
+        classPattern.lastIndex = classClose + 1;
+    }
+
+    return methods;
+}
+
+function extractCalls(code) {
+    const stripped = stripComments(code);
+    const calls = [];
+    const seen = new Set();
+    const fnBodies = [];
+
+    const fnPatterns = [
+        /(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s*\*?\s+(\w+)\s*\([^)]*\)\s*\{/gm,
+        /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[\w$]+)\s*=>\s*\{/gm,
+        /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?function\s*\*?\s*\([^)]*\)\s*\{/gm,
+    ];
+
+    for (const pattern of fnPatterns) {
+        pattern.lastIndex = 0;
+        let m;
+        while ((m = pattern.exec(stripped)) !== null) {
+            const caller = m[1];
+            const openBrace = stripped.indexOf('{', pattern.lastIndex - 1);
+            if (!caller || openBrace < 0) continue;
+            const closeBrace = findMatchingBrace(stripped, openBrace);
+            if (closeBrace < 0) continue;
+            fnBodies.push({ caller, body: stripped.slice(openBrace + 1, closeBrace) });
+        }
+    }
+    for (const method of extractClassMethodBodies(stripped)) {
+        fnBodies.push(method);
+    }
+
+    const callPattern = /\b(?:[A-Za-z_$][\w$]*\s*\.\s*)*([A-Za-z_$][\w$]*)\s*\(/g;
+    for (const { caller, body } of fnBodies) {
+        callPattern.lastIndex = 0;
+        let m;
+        while ((m = callPattern.exec(body)) !== null) {
+            const callee = m[1];
+            if (!callee || callee === caller || CALL_SKIP_WORDS.has(callee)) continue;
+            const key = `${caller}->${callee}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            calls.push({ caller, callee });
+        }
+    }
+
+    return calls;
+}
+
+function extractClassMethodBodies(stripped) {
+    const bodies = [];
+    const classPattern = /(?:export\s+(?:default\s+)?)?class\s+\w+(?:\s+extends\s+[\w.]+)?\s*\{/gm;
+    let classMatch;
+
+    while ((classMatch = classPattern.exec(stripped)) !== null) {
+        const classOpen = stripped.indexOf('{', classPattern.lastIndex - 1);
+        if (classOpen < 0) continue;
+        const classClose = findMatchingBrace(stripped, classOpen);
+        if (classClose < 0) continue;
+
+        const body = stripped.slice(classOpen + 1, classClose);
+        const methodPattern = /(?:^|[\r\n]\s*)(?:(?:public|private|protected|static|async|override|readonly)\s+)*([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*(?::\s*[^{;]+)?\s*\{/gm;
+        let methodMatch;
+        while ((methodMatch = methodPattern.exec(body)) !== null) {
+            const caller = methodMatch[1];
+            if (!caller || CALL_SKIP_WORDS.has(caller)) continue;
+            const openBrace = body.indexOf('{', methodPattern.lastIndex - 1);
+            if (openBrace < 0) continue;
+            const closeBrace = findMatchingBrace(body, openBrace);
+            if (closeBrace < 0) continue;
+            bodies.push({ caller, body: body.slice(openBrace + 1, closeBrace) });
+            methodPattern.lastIndex = closeBrace + 1;
+        }
+
+        classPattern.lastIndex = classClose + 1;
+    }
+
+    return bodies;
 }
 
 // ── Class extractor ───────────────────────────────────────────────────────────
@@ -197,8 +339,7 @@ function analyzeFile(name, content) {
             classes:   extractClasses(content),
             imports:   importSources.map(source => ({ source, resolvedPath: null })),
             exports:   extractExports(content),
-            calls:     [], // Phase A3: shape parity — regex cannot reliably track enclosing fn context;
-                           // WASM bridge (ast-bridge-browser.js) is the path that populates real call edges.
+            calls:     extractCalls(content),
         };
     } catch {
         return null;

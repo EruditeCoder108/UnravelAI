@@ -1754,12 +1754,19 @@ export function detectFloatingPromises(tree) {
 
         let apiName = null;
 
+        // Built-in JS namespaces/constructors whose methods are always synchronous
+        // and must never be flagged as async APIs regardless of method name.
+        // e.g. Object.create(null), Object.assign(), Promise.resolve()
+        const SYNC_OBJECT_CALLERS = new Set(['Object', 'Array', 'Math', 'JSON', 'Promise', 'Symbol', 'Number', 'String', 'Boolean']);
+
         if (fnNode.type === 'identifier' && ASYNC_CALL_PATTERNS.has(fnNode.text)) {
             apiName = fnNode.text;
         }
         if (fnNode.type === 'member_expression') {
             const prop = fnNode.childForFieldName('property');
-            if (prop && ASYNC_CALL_PATTERNS.has(prop.text)) {
+            const obj  = fnNode.childForFieldName('object');
+            // Skip calls on known synchronous built-in namespaces (Object.create, Array.from, etc.)
+            if (prop && ASYNC_CALL_PATTERNS.has(prop.text) && !(obj && obj.type === 'identifier' && SYNC_OBJECT_CALLERS.has(obj.text))) {
                 apiName = prop.text;
             }
         }

@@ -1603,6 +1603,44 @@ export function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode, symp
         return window.replace(/\s+/g, ' ').includes(frag.replace(/\s+/g, ' '));
     }
 
+    function normalizeEvidenceText(text) {
+        return String(text || '')
+            .replace(/['"`]/g, '"')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function stripCitationPrefix(text) {
+        return String(text || '')
+            .replace(/^[\w.\-/\\]+\.(js|jsx|ts|tsx|json|html|css|py|vue|svelte)\s*(?:[:Lline.\s-]*\d{1,5})?\s*:?\s*/i, '')
+            .trim();
+    }
+
+    function evidenceLiteralExists(evidenceText, fileRefs = []) {
+        const raw = String(evidenceText || '').trim();
+        if (raw.length < 5) return true;
+
+        const candidates = [
+            raw,
+            stripCitationPrefix(raw),
+            ...[...raw.matchAll(/`([^`]{5,})`/g)].map(m => m[1]),
+            ...[...raw.matchAll(/"([^"]{5,})"/g)].map(m => m[1]),
+            ...[...raw.matchAll(/'([^']{5,})'/g)].map(m => m[1]),
+        ]
+            .map(normalizeEvidenceText)
+            .filter(c => c.length >= 5);
+
+        const searchFiles = fileRefs.length > 0
+            ? fileRefs.map(findFile).filter(Boolean)
+            : Object.values(fileLookup).filter((v, idx, arr) => arr.indexOf(v) === idx);
+
+        for (const fileData of searchFiles) {
+            const content = normalizeEvidenceText(fileData.content || '');
+            if (candidates.some(c => content.includes(c))) return true;
+        }
+        return false;
+    }
+
     // Helper: extract line numbers from a text string
     function extractLineRefs(text) {
         if (!text) return [];
@@ -1713,11 +1751,9 @@ export function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode, symp
     if (mode === 'explain') return { failures, rootCauseRejected, confidencePenalty };
 
     // === Check 1: Evidence array (debug mode) ===
-    // Only checks file references — NOT line numbers.
-    // Evidence strings are narrative ("mutation at line 8 of sessionStore.js") and
-    // models miscount lines in free text constantly. Checking line numbers here
-    // produces false failures on correct analyses. The structured fields (Check 2 codeLocation,
-    // Check 3 rootCause) are where line validation belongs.
+    // Evidence must be grounded in actual source text. Line numbers are still
+    // validated by codeLocation/rootCause checks, but each evidence[] string must
+    // contain a literal code/content fragment after optional citation prefixes.
     const report = result.report || result; // report may be nested or flat
     const evidenceList = report.evidence || result.evidence;
     if (Array.isArray(evidenceList)) {
@@ -1739,6 +1775,11 @@ export function verifyClaims(result, codeFiles, astRaw, crossFileRaw, mode, symp
                 } else {
                     console.log(`[Verify] Check1 OK: "${fileName}"`);
                 }
+            }
+            if (!evidenceLiteralExists(e, fileRefs)) {
+                console.warn('[Verify] Check1 FAIL: evidence literal not found in provided files (+0.2 penalty)');
+                failures.push({ claim: e, reason: 'evidence literal was not found in provided file content' });
+                confidencePenalty += 0.2;
             }
         }
     }

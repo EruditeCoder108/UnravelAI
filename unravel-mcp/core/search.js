@@ -189,9 +189,19 @@ export function expandWeighted(seedNodeIds, edges, semanticScores = new Map(), {
  */
 export function queryGraphForFiles(graph, symptom, maxFiles = 12, semanticScores = new Map()) {
     const engine = new SearchEngine(graph.nodes);
+    const tokens = (symptom || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
 
     // Step 1: keyword match → seed node IDs
     const results = engine.search(symptom, { limit: 20, minScore: 0.1 });
+    for (const token of tokens) {
+        // Preserve high-signal exact identifiers inside longer natural-language
+        // queries. Without this, "autoSeedCodex writes codex-index..." can lose
+        // the exact autoSeedCodex function behind many generic codex/index hits.
+        const tokenHits = engine.search(token, { limit: 5, minScore: 0.25 });
+        for (const hit of tokenHits) {
+            if (!results.some(r => r.nodeId === hit.nodeId)) results.push(hit);
+        }
+    }
     if (results.length === 0) return [];
 
     // Merge any semantic scores onto keyword hit scores
@@ -218,6 +228,18 @@ export function queryGraphForFiles(graph, symptom, maxFiles = 12, semanticScores
         if (node && node.filePath) {
             const prev = fileScores.get(node.filePath) ?? 0;
             if (score > prev) fileScores.set(node.filePath, score);
+        }
+    }
+
+    // Direct keyword hits should outrank files reached only by graph expansion.
+    // This keeps exact identifier lookups (e.g. query_visual, autoSeedCodex)
+    // from being pushed down by semantically related neighbor files.
+    for (const r of results) {
+        const node = nodeMap.get(r.nodeId);
+        if (!node?.filePath) continue;
+        const directScore = 1.5 + r.score;
+        if (directScore > (fileScores.get(node.filePath) ?? 0)) {
+            fileScores.set(node.filePath, directScore);
         }
     }
 

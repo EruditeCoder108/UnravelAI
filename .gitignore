@@ -19,6 +19,10 @@ desktop.ini
 # Logs
 *.log
 npm-debug.log*
+unravel-mcp/.npm-cache/
+
+# Generated Unravel benchmark memory
+validation/benchmark/packages/*/.unravel/
 
 
 # Agent Config/Skills

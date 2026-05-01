@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "savedAt": "2026-04-05T01:41:55.427Z",
+  "savedAt": "2026-04-30T15:23:32.253Z",
   "patterns": [
     {
       "id": "race_condition_write_await_read",
@@ -127,8 +127,8 @@
       "description": "Async function called in expression position without await — errors are silently swallowed.",
       "severity": "medium",
       "cwe": "CWE-362",
-      "weight": 0.8,
-      "hitCount": 1,
+      "weight": 0.9200000000000002,
+      "hitCount": 4,
       "hash": "69f4caaab0cbc08c"
     },
     {
